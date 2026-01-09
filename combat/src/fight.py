@@ -145,3 +145,24 @@ class FightLog:
             future = self.get_state(hero, Temporality.FUTURE)
             result.append('d' if future.is_dead else 'a')
         return ''.join(result)
+
+    def get_valid_enemy_targets(self) -> list[Entity]:
+        """Get heroes that are valid targets (not dying in future state).
+
+        Enemy AI uses this to avoid wasting attacks on already-doomed heroes.
+        """
+        valid = []
+        for hero in self.heroes:
+            future = self.get_state(hero, Temporality.FUTURE)
+            if not future.is_dead:
+                valid.append(hero)
+        return valid
+
+    def get_alive_heroes(self, temporality: Temporality) -> list[Entity]:
+        """Get heroes that are alive at the given temporality."""
+        alive = []
+        for hero in self.heroes:
+            state = self.get_state(hero, temporality)
+            if not state.is_dead:
+                alive.append(hero)
+        return alive

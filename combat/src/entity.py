@@ -31,4 +31,6 @@ class Entity:
 
 # Common entity types
 FIGHTER = EntityType("Fighter", 6)
+HEALER = EntityType("Healer", 6)
 GOBLIN = EntityType("Goblin", 3)
+DRAGON = EntityType("Dragon", 20)

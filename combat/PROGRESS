@@ -1,7 +1,7 @@
 {
   "current": {
     "file": "TestStrangeScenarios",
-    "method": "targetingEfficienct",
+    "method": "painShouldKill",
     "status": "analyzing",
     "hypothesis": null,
     "verified": null
@@ -14,6 +14,14 @@
       "verified": "2,3,4 confirmed. 1 empirically correlated but unverifiable in-game.",
       "test": "tests/test_strange_scenarios.py::test_cleave_hits_target_and_adjacent, test_undo_preserves_death_state, test_killing_attacker_cancels_pending_damage",
       "timestamp": "2025-01-09T05:00:00Z"
+    },
+    {
+      "file": "TestStrangeScenarios",
+      "method": "targetingEfficienct",
+      "hypothesis": "Enemy targeting excludes already-dying heroes from the random target pool. getRandomTargetForEnemy checks future state and skips heroes that are already doomed, ensuring no wasted lethal attacks.",
+      "verified": "Confirmed via screenshot analysis: heroes only receive multiple attacks if earlier attacks weren't lethal. No hero receives redundant lethal damage while others are untargeted.",
+      "test": "tests/test_strange_scenarios.py::test_targeting_excludes_dying_heroes",
+      "timestamp": "2025-01-09T05:15:00Z"
     }
   ],
   "skipped": []

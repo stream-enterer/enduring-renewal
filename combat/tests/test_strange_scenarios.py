@@ -1,6 +1,6 @@
 """Tests from TestStrangeScenarios.java - strange edge cases."""
 
-from src.entity import Entity, EntityType, Team, FIGHTER, GOBLIN
+from src.entity import Entity, EntityType, Team, FIGHTER, HEALER, GOBLIN, DRAGON
 from src.fight import FightLog, Temporality
 
 
@@ -80,3 +80,45 @@ def test_killing_attacker_cancels_pending_damage():
 
     # Goblin is dead, so its pending damage is cancelled
     assert fight.count_dying_heroes() == 0
+
+
+def test_targeting_excludes_dying_heroes():
+    """Enemy targeting excludes heroes that are already dying in future state.
+
+    Verified: When an enemy makes lethal attacks, each subsequent attack
+    targets a hero that isn't already doomed. 4 lethal attacks against
+    4 heroes results in all 4 dying (no wasted overkill).
+    """
+    heroes = [Entity(HEALER, Team.HERO, i) for i in range(4)]
+    monsters = [Entity(DRAGON, Team.MONSTER, 0)]
+    fight = FightLog(heroes, monsters)
+
+    dragon = monsters[0]
+
+    # Initially all 4 heroes are valid targets
+    assert len(fight.get_valid_enemy_targets()) == 4
+    assert len(fight.get_alive_heroes(Temporality.FUTURE)) == 4
+
+    # Dragon makes 4 attacks, each targeting a valid (non-dying) hero
+    for i in range(4):
+        valid_targets = fight.get_valid_enemy_targets()
+        assert len(valid_targets) == 4 - i, f"Should have {4-i} valid targets before attack {i+1}"
+
+        # Pick first valid target (simulating AI choice)
+        target = valid_targets[0]
+
+        # 40 damage is lethal (Healer has 6 HP)
+        fight.apply_damage(dragon, target, amount=40, is_pending=True)
+
+    # After 4 attacks, all 4 heroes should be dying
+    assert fight.count_dying_heroes() == 4
+    assert len(fight.get_valid_enemy_targets()) == 0
+    assert len(fight.get_alive_heroes(Temporality.FUTURE)) == 0
+
+    # Undo all 4 attacks (8 undos since apply_damage records action)
+    for _ in range(4):
+        fight.undo()
+
+    # Back to initial state
+    assert fight.count_dying_heroes() == 0
+    assert len(fight.get_valid_enemy_targets()) == 4
