@@ -254,3 +254,33 @@ def test_shield_repel_spiky_interaction():
 
     # Monster should be damaged by 1 (repel reflected 1 damage)
     assert fight.get_state(monster, Temporality.PRESENT).hp == GOBLIN.hp - 1
+
+
+def test_selfheal_negates_pain():
+    """selfHeal buff negates pain damage, keeping hero at full HP.
+
+    Verified: selfHeal prevents pain from reducing HP.
+    """
+    heroes = [Entity(HEALER, Team.HERO, 0)]
+    monsters = [Entity(GOBLIN, Team.MONSTER, 0), Entity(GOBLIN, Team.MONSTER, 1)]
+    fight = FightLog(heroes, monsters)
+
+    hero = heroes[0]
+    monster = monsters[0]
+    hero_max_hp = HEALER.hp  # 6
+
+    # Give hero selfHeal buff
+    fight.apply_buff_self_heal(hero)
+    assert fight.get_state(hero, Temporality.PRESENT).self_heal is True
+
+    # Hero uses dmgPain(3) - normally takes 3 self-damage
+    fight.apply_pain_damage(hero, monster, damage=3, pain=3)
+
+    # Hero should NOT be damaged (selfHeal negates pain)
+    assert fight.get_state(hero, Temporality.PRESENT).hp == hero_max_hp
+    assert not fight.get_state(hero, Temporality.PRESENT).is_dead
+
+    # Even massive pain doesn't hurt
+    fight.apply_pain_damage(hero, monster, damage=30, pain=30)
+    assert fight.get_state(hero, Temporality.PRESENT).hp == hero_max_hp
+    assert not fight.get_state(hero, Temporality.PRESENT).is_dead

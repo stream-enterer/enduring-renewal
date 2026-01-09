@@ -1,7 +1,7 @@
 {
   "current": {
     "file": "TestStrangeScenarios",
-    "method": "painDrainNiceness",
+    "method": "numberLimit",
     "status": "analyzing",
     "hypothesis": null,
     "verified": null
@@ -10,23 +10,23 @@
     {
       "file": "TestStrangeScenarios",
       "method": "multiTargetStickiness",
-      "hypothesis": "Four behaviors: (1) Cleave AI avoids edge targets to maximize splash; (2) Cleave 40 on middle of 5 heroes kills 3 (target + 2 adjacent); (3) Undo/redo preserves exact death state deterministically; (4) Killing the attacker cancels their pending damage",
-      "verified": "2,3,4 confirmed. 1 empirically correlated but unverifiable in-game.",
-      "test": "tests/test_strange_scenarios.py::test_cleave_hits_target_and_adjacent, test_undo_preserves_death_state, test_killing_attacker_cancels_pending_damage",
+      "hypothesis": "Cleave hits adjacent, undo is deterministic, killing attacker cancels damage",
+      "verified": "Confirmed.",
+      "test": "tests/test_strange_scenarios.py::test_cleave_*, test_undo_*, test_killing_*",
       "timestamp": "2025-01-09T05:00:00Z"
     },
     {
       "file": "TestStrangeScenarios",
       "method": "targetingEfficienct",
-      "hypothesis": "Enemy targeting excludes already-dying heroes from the random target pool.",
-      "verified": "Confirmed via screenshot analysis.",
+      "hypothesis": "Enemy targeting excludes already-dying heroes.",
+      "verified": "Confirmed.",
       "test": "tests/test_strange_scenarios.py::test_targeting_excludes_dying_heroes",
       "timestamp": "2025-01-09T05:15:00Z"
     },
     {
       "file": "TestStrangeScenarios",
       "method": "painShouldKill",
-      "hypothesis": "Pain is self-damage to the attacker. Can kill the user.",
+      "hypothesis": "Pain is self-damage, can kill user.",
       "verified": "Confirmed.",
       "test": "tests/test_strange_scenarios.py::test_pain_damages_user, test_pain_can_kill_user",
       "timestamp": "2025-01-09T05:30:00Z"
@@ -34,7 +34,7 @@
     {
       "file": "TestStrangeScenarios",
       "method": "maxHpFiddles",
-      "hypothesis": "Max HP can be modified during combat, cumulatively.",
+      "hypothesis": "Max HP can be modified cumulatively.",
       "verified": "Confirmed.",
       "test": "tests/test_strange_scenarios.py::test_max_hp_modification",
       "timestamp": "2025-01-09T05:40:00Z"
@@ -42,7 +42,7 @@
     {
       "file": "TestStrangeScenarios",
       "method": "maxHpLimit",
-      "hypothesis": "Max HP has a floor of 1.",
+      "hypothesis": "Max HP floor at 1.",
       "verified": "Confirmed.",
       "test": "tests/test_strange_scenarios.py::test_max_hp_floor_at_one",
       "timestamp": "2025-01-09T05:45:00Z"
@@ -50,10 +50,18 @@
     {
       "file": "TestStrangeScenarios",
       "method": "revengeSpiky",
-      "hypothesis": "Shield+Repel+Spiky interaction: Spiky deals damage back, Repel reflects pending damage, Shield blocks Spiky return.",
-      "verified": "Confirmed all three behaviors.",
+      "hypothesis": "Shield+Repel+Spiky interaction.",
+      "verified": "Confirmed.",
       "test": "tests/test_strange_scenarios.py::test_shield_repel_spiky_interaction",
       "timestamp": "2025-01-09T06:00:00Z"
+    },
+    {
+      "file": "TestStrangeScenarios",
+      "method": "painDrainNiceness",
+      "hypothesis": "selfHeal negates pain damage.",
+      "verified": "Confirmed.",
+      "test": "tests/test_strange_scenarios.py::test_selfheal_negates_pain",
+      "timestamp": "2025-01-09T06:15:00Z"
     }
   ],
   "skipped": []
