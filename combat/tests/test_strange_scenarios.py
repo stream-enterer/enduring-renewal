@@ -284,3 +284,27 @@ def test_selfheal_negates_pain():
     fight.apply_pain_damage(hero, monster, damage=30, pain=30)
     assert fight.get_state(hero, Temporality.PRESENT).hp == hero_max_hp
     assert not fight.get_state(hero, Temporality.PRESENT).is_dead
+
+
+def test_effect_value_number_limit():
+    """Effect values are clamped to a global number limit.
+
+    Verified: Game has number limit, default is 999.
+    The test uses custom limit (99) to demonstrate the mechanism.
+    """
+    from src.effects import clamp_effect_value, DEFAULT_NUMBER_LIMIT
+
+    # Default limit is 999
+    assert DEFAULT_NUMBER_LIMIT == 999
+
+    # Values under limit pass through unchanged
+    assert clamp_effect_value(50) == 50
+    assert clamp_effect_value(999) == 999
+
+    # Values over limit are clamped
+    assert clamp_effect_value(1000) == 999
+    assert clamp_effect_value(100_000_000) == 999
+
+    # Custom limit can be specified (like the test uses 99)
+    assert clamp_effect_value(100_000_000, limit=99) == 99
+    assert clamp_effect_value(50, limit=99) == 50

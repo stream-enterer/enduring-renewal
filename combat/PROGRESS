@@ -1,8 +1,8 @@
 {
   "current": {
-    "file": "TestStrangeScenarios",
-    "method": "numberLimit",
-    "status": "analyzing",
+    "file": "TestBasicEff",
+    "method": null,
+    "status": "not_started",
     "hypothesis": null,
     "verified": null
   },
@@ -62,7 +62,22 @@
       "verified": "Confirmed.",
       "test": "tests/test_strange_scenarios.py::test_selfheal_negates_pain",
       "timestamp": "2025-01-09T06:15:00Z"
+    },
+    {
+      "file": "TestStrangeScenarios",
+      "method": "numberLimit",
+      "hypothesis": "Effect values capped at global limit (999).",
+      "verified": "Confirmed.",
+      "test": "tests/test_strange_scenarios.py::test_effect_value_number_limit",
+      "timestamp": "2025-01-09T06:30:00Z"
     }
   ],
-  "skipped": []
+  "skipped": [
+    {
+      "file": "TestStrangeScenarios",
+      "method": "ironHelmDiedLastTurn",
+      "reason": "Has @Skip in original. Tests save/load serialization, not combat mechanics.",
+      "timestamp": "2025-01-09T06:35:00Z"
+    }
+  ]
 }
