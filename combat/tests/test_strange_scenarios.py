@@ -190,3 +190,24 @@ def test_max_hp_modification():
     # Decrease max HP by 4 (net -3 from start)
     fight.modify_max_hp(hero, -4)
     assert fight.get_state(hero, Temporality.PRESENT).max_hp == start_max_hp - 3
+
+
+def test_max_hp_floor_at_one():
+    """Max HP cannot go below 1, even with extreme reductions.
+
+    Verified: Max HP stays at minimum 1.
+    """
+    heroes = [Entity(HEALER, Team.HERO, 0)]
+    monsters = [Entity(GOBLIN, Team.MONSTER, 0)]
+    fight = FightLog(heroes, monsters)
+
+    hero = heroes[0]
+    start_max_hp = fight.get_state(hero, Temporality.PRESENT).max_hp  # 6
+
+    # Reduce by exactly start_max_hp (would be 0, clamped to 1)
+    fight.modify_max_hp(hero, -start_max_hp)
+    assert fight.get_state(hero, Temporality.PRESENT).max_hp == 1
+
+    # Reduce by another 400 (would be -399, still clamped to 1)
+    fight.modify_max_hp(hero, -400)
+    assert fight.get_state(hero, Temporality.PRESENT).max_hp == 1

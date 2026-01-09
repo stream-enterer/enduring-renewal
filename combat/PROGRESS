@@ -1,7 +1,7 @@
 {
   "current": {
     "file": "TestStrangeScenarios",
-    "method": "maxHpLimit",
+    "method": "revengeSpiky",
     "status": "analyzing",
     "hypothesis": null,
     "verified": null
@@ -38,6 +38,14 @@
       "verified": "Confirmed.",
       "test": "tests/test_strange_scenarios.py::test_max_hp_modification",
       "timestamp": "2025-01-09T05:40:00Z"
+    },
+    {
+      "file": "TestStrangeScenarios",
+      "method": "maxHpLimit",
+      "hypothesis": "Max HP has a floor of 1 and cannot go to 0 or negative. Even extreme reductions (e.g., -400) clamp at 1.",
+      "verified": "Confirmed: max HP stays at minimum 1.",
+      "test": "tests/test_strange_scenarios.py::test_max_hp_floor_at_one",
+      "timestamp": "2025-01-09T05:45:00Z"
     }
   ],
   "skipped": []

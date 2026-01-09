@@ -187,9 +187,10 @@ class FightLog:
         """Modify an entity's max HP by amount (can be positive or negative).
 
         Max HP changes are cumulative during combat.
+        Max HP has a floor of 1 - it can never go to 0 or below.
         """
         self._record_action()
 
         state = self._states[target]
-        new_max_hp = state.max_hp + amount
+        new_max_hp = max(1, state.max_hp + amount)  # Floor at 1
         self._states[target] = EntityState(target, state.hp, new_max_hp)
