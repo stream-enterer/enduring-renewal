@@ -19,6 +19,8 @@ class EntityState:
     entity: Entity
     hp: int
     max_hp: int
+    shield: int = 0  # Temporary damage block
+    spiky: int = 0   # Damage dealt back to attackers
 
     @property
     def is_dead(self) -> bool:
@@ -52,10 +54,10 @@ class FightLog:
         self._states: dict[Entity, EntityState] = {}
         for i, h in enumerate(heroes):
             h.position = i
-            self._states[h] = EntityState(h, h.entity_type.hp, h.entity_type.hp)
+            self._states[h] = EntityState(h, h.entity_type.hp, h.entity_type.hp, 0, 0)
         for i, m in enumerate(monsters):
             m.position = i
-            self._states[m] = EntityState(m, m.entity_type.hp, m.entity_type.hp)
+            self._states[m] = EntityState(m, m.entity_type.hp, m.entity_type.hp, 0, 0)
 
         # Pending damage (applies in future, cancelled if source dies)
         self._pending: list[PendingDamage] = []
@@ -65,7 +67,7 @@ class FightLog:
 
     def _snapshot_states(self) -> dict[Entity, EntityState]:
         """Deep copy current states."""
-        return {e: EntityState(e, s.hp, s.max_hp) for e, s in self._states.items()}
+        return {e: EntityState(e, s.hp, s.max_hp, s.shield, s.spiky) for e, s in self._states.items()}
 
     def _record_action(self):
         """Record state before an action for undo."""
@@ -90,7 +92,7 @@ class FightLog:
                 if not source_state.is_dead:
                     future_hp -= pending.amount
 
-        return EntityState(entity, future_hp, base.max_hp)
+        return EntityState(entity, future_hp, base.max_hp, base.shield, base.spiky)
 
     def apply_damage(self, source: Entity, target: Entity, amount: int, is_pending: bool = False):
         """Apply damage to target. If is_pending, damage goes to future state."""
@@ -100,7 +102,7 @@ class FightLog:
             self._pending.append(PendingDamage(target, amount, source))
         else:
             state = self._states[target]
-            self._states[target] = EntityState(target, state.hp - amount, state.max_hp)
+            self._states[target] = EntityState(target, state.hp - amount, state.max_hp, state.shield, state.spiky)
 
     def apply_cleave(self, source: Entity, target: Entity, amount: int, is_pending: bool = True):
         """Apply cleave damage to target and adjacent allies."""
@@ -119,7 +121,7 @@ class FightLog:
                 self._pending.append(PendingDamage(t, amount, source))
             else:
                 state = self._states[t]
-                self._states[t] = EntityState(t, state.hp - amount, state.max_hp)
+                self._states[t] = EntityState(t, state.hp - amount, state.max_hp, state.shield, state.spiky)
 
     def undo(self):
         """Undo the last action."""
@@ -177,11 +179,11 @@ class FightLog:
 
         # Pain: immediate self-damage to attacker
         source_state = self._states[source]
-        self._states[source] = EntityState(source, source_state.hp - pain, source_state.max_hp)
+        self._states[source] = EntityState(source, source_state.hp - pain, source_state.max_hp, source_state.shield, source_state.spiky)
 
         # Damage to target (also immediate for this test's behavior)
         target_state = self._states[target]
-        self._states[target] = EntityState(target, target_state.hp - damage, target_state.max_hp)
+        self._states[target] = EntityState(target, target_state.hp - damage, target_state.max_hp, target_state.shield, target_state.spiky)
 
     def modify_max_hp(self, target: Entity, amount: int):
         """Modify an entity's max HP by amount (can be positive or negative).
@@ -193,4 +195,81 @@ class FightLog:
 
         state = self._states[target]
         new_max_hp = max(1, state.max_hp + amount)  # Floor at 1
-        self._states[target] = EntityState(target, state.hp, new_max_hp)
+        self._states[target] = EntityState(target, state.hp, new_max_hp, state.shield, state.spiky)
+
+    def apply_buff_spiky(self, target: Entity, amount: int):
+        """Apply Spiky buff to target. Spiky deals damage back to attackers."""
+        self._record_action()
+        state = self._states[target]
+        self._states[target] = EntityState(
+            target, state.hp, state.max_hp, state.shield, state.spiky + amount
+        )
+
+    def apply_shield(self, target: Entity, amount: int):
+        """Apply shield to target. Shield blocks incoming damage."""
+        self._record_action()
+        state = self._states[target]
+        self._states[target] = EntityState(
+            target, state.hp, state.max_hp, state.shield + amount, state.spiky
+        )
+
+    def apply_shield_repel(self, user: Entity, shield_amount: int):
+        """Apply shield and repel pending damage back to attackers.
+
+        Shield: blocks incoming damage
+        Repel: reflects damage back to the source of pending damage
+
+        If attacker has Spiky, the repel damage triggers Spiky,
+        but the user's shield absorbs the Spiky return damage.
+        """
+        self._record_action()
+
+        user_state = self._states[user]
+        remaining_shield = shield_amount
+        remaining_repel = shield_amount
+
+        # Process pending damage targeting this user
+        new_pending = []
+        for pending in self._pending:
+            if pending.target == user and remaining_repel > 0:
+                # Repel: reflect damage back to source
+                reflect_amount = min(remaining_repel, pending.amount)
+                remaining_repel -= reflect_amount
+
+                # Deal reflected damage to source
+                source_state = self._states[pending.source]
+                new_source_hp = source_state.hp - reflect_amount
+                self._states[pending.source] = EntityState(
+                    pending.source, new_source_hp, source_state.max_hp,
+                    source_state.shield, source_state.spiky
+                )
+
+                # If source has Spiky, it triggers and damages user
+                # But user's shield absorbs it
+                if source_state.spiky > 0:
+                    spiky_damage = source_state.spiky
+                    absorbed = min(remaining_shield, spiky_damage)
+                    remaining_shield -= absorbed
+                    actual_spiky_damage = spiky_damage - absorbed
+                    if actual_spiky_damage > 0:
+                        user_state = self._states[user]
+                        self._states[user] = EntityState(
+                            user, user_state.hp - actual_spiky_damage, user_state.max_hp,
+                            user_state.shield, user_state.spiky
+                        )
+
+                # Reduce pending damage by repel amount
+                remaining_damage = pending.amount - reflect_amount
+                if remaining_damage > 0:
+                    new_pending.append(PendingDamage(pending.target, remaining_damage, pending.source))
+            else:
+                new_pending.append(pending)
+
+        self._pending = new_pending
+
+        # Apply remaining shield to user's state
+        user_state = self._states[user]
+        self._states[user] = EntityState(
+            user, user_state.hp, user_state.max_hp,
+            user_state.shield + remaining_shield, user_state.spiky
+        )

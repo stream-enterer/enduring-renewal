@@ -211,3 +211,46 @@ def test_max_hp_floor_at_one():
     # Reduce by another 400 (would be -399, still clamped to 1)
     fight.modify_max_hp(hero, -400)
     assert fight.get_state(hero, Temporality.PRESENT).max_hp == 1
+
+
+def test_shield_repel_spiky_interaction():
+    """Tests Shield+Repel+Spiky interaction.
+
+    Verified:
+    - Spiky deals damage back when entity is hit
+    - Repel reflects pending damage back to attacker
+    - Shield blocks Spiky return damage
+
+    Scenario: Hero at 1 HP with lethal pending damage from monster.
+    Monster has Spiky(1). Hero uses shieldRepel(1).
+    Result: Hero survives (shield blocks Spiky), monster takes 1 damage.
+    """
+    heroes = [Entity(HEALER, Team.HERO, 0)]
+    monsters = [Entity(GOBLIN, Team.MONSTER, 0)]
+    fight = FightLog(heroes, monsters)
+
+    hero = heroes[0]
+    monster = monsters[0]
+
+    # Give monster Spiky(1)
+    fight.apply_buff_spiky(monster, 1)
+    assert fight.get_state(monster, Temporality.PRESENT).spiky == 1
+
+    # Damage hero to 1 HP
+    hero_max = HEALER.hp  # 6
+    fight.apply_damage(monster, hero, hero_max - 1, is_pending=False)
+    assert fight.get_state(hero, Temporality.PRESENT).hp == 1
+
+    # Monster deals 3 pending damage to hero (lethal)
+    fight.apply_damage(monster, hero, 3, is_pending=True)
+    assert fight.get_state(hero, Temporality.PRESENT).hp == 1  # Present unchanged
+    assert fight.get_state(hero, Temporality.FUTURE).is_dead  # Will die
+
+    # Hero uses shieldRepel(1)
+    fight.apply_shield_repel(hero, 1)
+
+    # Hero should still be at 1 HP (shield absorbed Spiky's return damage)
+    assert fight.get_state(hero, Temporality.PRESENT).hp == 1
+
+    # Monster should be damaged by 1 (repel reflected 1 damage)
+    assert fight.get_state(monster, Temporality.PRESENT).hp == GOBLIN.hp - 1
