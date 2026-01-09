@@ -1,11 +1,20 @@
 {
   "current": {
     "file": "TestStrangeScenarios",
-    "method": null,
-    "status": "not_started",
+    "method": "targetingEfficienct",
+    "status": "analyzing",
     "hypothesis": null,
     "verified": null
   },
-  "completed": [],
+  "completed": [
+    {
+      "file": "TestStrangeScenarios",
+      "method": "multiTargetStickiness",
+      "hypothesis": "Four behaviors: (1) Cleave AI avoids edge targets to maximize splash; (2) Cleave 40 on middle of 5 heroes kills 3 (target + 2 adjacent); (3) Undo/redo preserves exact death state deterministically; (4) Killing the attacker cancels their pending damage",
+      "verified": "2,3,4 confirmed. 1 empirically correlated but unverifiable in-game.",
+      "test": "tests/test_strange_scenarios.py::test_cleave_hits_target_and_adjacent, test_undo_preserves_death_state, test_killing_attacker_cancels_pending_damage",
+      "timestamp": "2025-01-09T05:00:00Z"
+    }
+  ],
   "skipped": []
 }
