@@ -182,3 +182,14 @@ class FightLog:
         # Damage to target (also immediate for this test's behavior)
         target_state = self._states[target]
         self._states[target] = EntityState(target, target_state.hp - damage, target_state.max_hp)
+
+    def modify_max_hp(self, target: Entity, amount: int):
+        """Modify an entity's max HP by amount (can be positive or negative).
+
+        Max HP changes are cumulative during combat.
+        """
+        self._record_action()
+
+        state = self._states[target]
+        new_max_hp = state.max_hp + amount
+        self._states[target] = EntityState(target, state.hp, new_max_hp)

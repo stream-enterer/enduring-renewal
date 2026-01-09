@@ -1,7 +1,7 @@
 {
   "current": {
     "file": "TestStrangeScenarios",
-    "method": "maxHpFiddles",
+    "method": "maxHpLimit",
     "status": "analyzing",
     "hypothesis": null,
     "verified": null
@@ -30,6 +30,14 @@
       "verified": "Confirmed: Pain damages user, can kill user, doesn't require HP to use, not tied to damage (e.g., mana+pain exists).",
       "test": "tests/test_strange_scenarios.py::test_pain_damages_user, test_pain_can_kill_user",
       "timestamp": "2025-01-09T05:30:00Z"
+    },
+    {
+      "file": "TestStrangeScenarios",
+      "method": "maxHpFiddles",
+      "hypothesis": "Max HP can be modified during combat. MaxHP(+1) increases max HP by 1, MaxHP(-4) decreases by 4. Effects are cumulative.",
+      "verified": "Confirmed.",
+      "test": "tests/test_strange_scenarios.py::test_max_hp_modification",
+      "timestamp": "2025-01-09T05:40:00Z"
     }
   ],
   "skipped": []

@@ -169,3 +169,24 @@ def test_pain_can_kill_user():
     # Hero should be dead from pain
     hero_state = fight.get_state(hero, Temporality.PRESENT)
     assert hero_state.is_dead, "Hero should be dead from pain"
+
+
+def test_max_hp_modification():
+    """Max HP can be modified during combat, cumulatively.
+
+    Verified: Effects can increase or decrease max HP.
+    """
+    heroes = [Entity(HEALER, Team.HERO, 0)]
+    monsters = [Entity(GOBLIN, Team.MONSTER, 0)]
+    fight = FightLog(heroes, monsters)
+
+    hero = heroes[0]
+    start_max_hp = fight.get_state(hero, Temporality.PRESENT).max_hp  # 6
+
+    # Increase max HP by 1
+    fight.modify_max_hp(hero, +1)
+    assert fight.get_state(hero, Temporality.PRESENT).max_hp == start_max_hp + 1
+
+    # Decrease max HP by 4 (net -3 from start)
+    fight.modify_max_hp(hero, -4)
+    assert fight.get_state(hero, Temporality.PRESENT).max_hp == start_max_hp - 3
