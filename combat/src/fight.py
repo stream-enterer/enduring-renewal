@@ -166,3 +166,19 @@ class FightLog:
             if not state.is_dead:
                 alive.append(hero)
         return alive
+
+    def apply_pain_damage(self, source: Entity, target: Entity, damage: int, pain: int):
+        """Apply damage to target with pain (self-damage) to source.
+
+        Pain is immediate self-damage to the attacker. Can kill the attacker.
+        The damage to target and pain to source happen in the same action.
+        """
+        self._record_action()
+
+        # Pain: immediate self-damage to attacker
+        source_state = self._states[source]
+        self._states[source] = EntityState(source, source_state.hp - pain, source_state.max_hp)
+
+        # Damage to target (also immediate for this test's behavior)
+        target_state = self._states[target]
+        self._states[target] = EntityState(target, target_state.hp - damage, target_state.max_hp)

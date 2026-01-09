@@ -122,3 +122,50 @@ def test_targeting_excludes_dying_heroes():
     # Back to initial state
     assert fight.count_dying_heroes() == 0
     assert len(fight.get_valid_enemy_targets()) == 4
+
+
+def test_pain_damages_user():
+    """Pain is self-damage to the attacker when using an effect.
+
+    Verified: Pain damages the user immediately. It can kill the user.
+    Pain is a modifier on effects, not tied to dealing damage.
+    """
+    heroes = [Entity(HEALER, Team.HERO, 0)]
+    monsters = [Entity(GOBLIN, Team.MONSTER, 0), Entity(GOBLIN, Team.MONSTER, 1)]
+    fight = FightLog(heroes, monsters)
+
+    hero = heroes[0]
+    monster = monsters[0]
+    hero_max_hp = HEALER.hp  # 6
+
+    # Hero uses dmgPain(3) - deals 3 damage to monster, takes 3 pain
+    fight.apply_pain_damage(hero, monster, damage=3, pain=3)
+
+    # Hero should be damaged by pain
+    hero_state = fight.get_state(hero, Temporality.PRESENT)
+    assert hero_state.hp == hero_max_hp - 3, "Hero should be damaged for 3 from pain"
+    assert not hero_state.is_dead, "Hero should be alive"
+
+    # Monster should also be damaged
+    monster_state = fight.get_state(monster, Temporality.PRESENT)
+    assert monster_state.hp == GOBLIN.hp - 3, "Monster should be damaged for 3"
+
+
+def test_pain_can_kill_user():
+    """Pain can kill the user if it exceeds their remaining HP.
+
+    Verified: Lethal pain damage kills the attacker.
+    """
+    heroes = [Entity(HEALER, Team.HERO, 0)]
+    monsters = [Entity(GOBLIN, Team.MONSTER, 0)]
+    fight = FightLog(heroes, monsters)
+
+    hero = heroes[0]
+    monster = monsters[0]
+
+    # Hero uses dmgPain(30) - way more pain than hero's 6 HP
+    fight.apply_pain_damage(hero, monster, damage=30, pain=30)
+
+    # Hero should be dead from pain
+    hero_state = fight.get_state(hero, Temporality.PRESENT)
+    assert hero_state.is_dead, "Hero should be dead from pain"

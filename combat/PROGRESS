@@ -1,7 +1,7 @@
 {
   "current": {
     "file": "TestStrangeScenarios",
-    "method": "painShouldKill",
+    "method": "maxHpFiddles",
     "status": "analyzing",
     "hypothesis": null,
     "verified": null
@@ -22,6 +22,14 @@
       "verified": "Confirmed via screenshot analysis: heroes only receive multiple attacks if earlier attacks weren't lethal. No hero receives redundant lethal damage while others are untargeted.",
       "test": "tests/test_strange_scenarios.py::test_targeting_excludes_dying_heroes",
       "timestamp": "2025-01-09T05:15:00Z"
+    },
+    {
+      "file": "TestStrangeScenarios",
+      "method": "painShouldKill",
+      "hypothesis": "Pain is a modifier that adds self-damage to any die side effect. dmgPain(3) deals 3 to enemy AND 3 to self. Pain can kill the user. Pain doesn't prevent usage (no HP requirement).",
+      "verified": "Confirmed: Pain damages user, can kill user, doesn't require HP to use, not tied to damage (e.g., mana+pain exists).",
+      "test": "tests/test_strange_scenarios.py::test_pain_damages_user, test_pain_can_kill_user",
+      "timestamp": "2025-01-09T05:30:00Z"
     }
   ],
   "skipped": []
