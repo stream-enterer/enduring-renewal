@@ -10,11 +10,24 @@ class Team(Enum):
     MONSTER = auto()
 
 
+class EntitySize(Enum):
+    """Field size units for entities. Field capacity is 165 units."""
+    TINY = 16
+    HERO = 24
+    BIG = 30
+    HUGE = 64
+
+
+# Field capacity in units
+FIELD_CAPACITY = 165
+
+
 @dataclass
 class EntityType:
     """Template for an entity (e.g., Fighter, Goblin)."""
     name: str
     hp: int
+    size: EntitySize = EntitySize.HERO
 
 
 @dataclass
@@ -29,8 +42,11 @@ class Entity:
         return id(self)
 
 
-# Common entity types
-FIGHTER = EntityType("Fighter", 6)
-HEALER = EntityType("Healer", 6)
-GOBLIN = EntityType("Goblin", 3)
-DRAGON = EntityType("Dragon", 20)
+# Common entity types - heroes are always HERO sized
+FIGHTER = EntityType("Fighter", 6, EntitySize.HERO)
+HEALER = EntityType("Healer", 6, EntitySize.HERO)
+
+# Monsters with various sizes
+GOBLIN = EntityType("Goblin", 3, EntitySize.HERO)  # Hero-sized
+TEST_GOBLIN = EntityType("testGoblin", 3, EntitySize.HERO)  # For tests
+DRAGON = EntityType("Dragon", 20, EntitySize.HUGE)

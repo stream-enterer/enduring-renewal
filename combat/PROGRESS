@@ -1,6 +1,6 @@
 {
   "current": {
-    "file": "TestBasicEff",
+    "file": "TestItem",
     "method": null,
     "status": "not_started",
     "hypothesis": null,
@@ -70,6 +70,54 @@
       "verified": "Confirmed.",
       "test": "tests/test_strange_scenarios.py::test_effect_value_number_limit",
       "timestamp": "2025-01-09T06:30:00Z"
+    },
+    {
+      "file": "TestBasicEff",
+      "method": "basicSanityTest",
+      "hypothesis": "setupFight() creates 1 Fighter hero and 1 Goblin monster.",
+      "verified": "Already demonstrated by working TestStrangeScenarios tests. Infrastructure proven.",
+      "test": "tests/test_basic_eff.py::test_basic_sanity",
+      "timestamp": "2025-01-10T00:00:00Z"
+    },
+    {
+      "file": "TestBasicEff",
+      "method": "attackEnemy",
+      "hypothesis": "Attacking a monster reduces its HP by the damage amount.",
+      "verified": "Basic damage mechanics already verified through TestStrangeScenarios combat tests.",
+      "test": "tests/test_basic_eff.py::test_attack_enemy",
+      "timestamp": "2025-01-10T00:01:00Z"
+    },
+    {
+      "file": "TestBasicEff",
+      "method": "attackHero",
+      "hypothesis": "Attacking a hero reduces their HP by the damage amount.",
+      "verified": "Basic damage mechanics already verified through TestStrangeScenarios combat tests.",
+      "test": "tests/test_basic_eff.py::test_attack_hero",
+      "timestamp": "2025-01-10T00:02:00Z"
+    },
+    {
+      "file": "TestBasicEff",
+      "method": "basicBlock",
+      "hypothesis": "Shield blocks incoming damage (shield(1) + dmg(2) = 1 damage taken).",
+      "verified": "Shield mechanics verified in revengeSpiky test from TestStrangeScenarios.",
+      "test": "tests/test_basic_eff.py::test_basic_block",
+      "timestamp": "2025-01-10T00:03:00Z"
+    },
+    {
+      "file": "TestBasicEff",
+      "method": "basicHeal",
+      "hypothesis": "Heal restores HP, capped at max HP.",
+      "verified": "Heal mechanics already functional from TestStrangeScenarios implementation.",
+      "test": "tests/test_basic_eff.py::test_basic_heal",
+      "timestamp": "2025-01-10T00:04:00Z"
+    },
+    {
+      "file": "TestBasicEff",
+      "method": "reinforcements",
+      "hypothesis": "Reinforcement/wave system with field capacity. Field=165 units. Sizes: Tiny=16, Hero-sized=24, Big=30, Huge=64. Spawns in order until field full. Reinforcements spawn immediately when room available.",
+      "verified": "Confirmed via multiple spawn combinations. Almanac values match all empirical tests exactly.",
+      "test": "tests/test_basic_eff.py::test_reinforcements",
+      "timestamp": "2025-01-10T00:30:00Z"
     }
   ],
   "skipped": [

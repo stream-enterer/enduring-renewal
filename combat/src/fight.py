@@ -5,7 +5,7 @@ from enum import Enum, auto
 from typing import Optional
 from copy import deepcopy
 
-from .entity import Entity, Team
+from .entity import Entity, Team, FIELD_CAPACITY
 
 
 class Temporality(Enum):
@@ -22,6 +22,7 @@ class EntityState:
     shield: int = 0      # Temporary damage block
     spiky: int = 0       # Damage dealt back to attackers
     self_heal: bool = False  # If True, damage dealt heals self (negates pain)
+    damage_blocked: int = 0  # Total damage blocked by shield this turn
 
     @property
     def is_dead(self) -> bool:
@@ -49,16 +50,18 @@ class FightLog:
 
     def __init__(self, heroes: list[Entity], monsters: list[Entity]):
         self.heroes = heroes
-        self.monsters = monsters
+        self._all_monsters = monsters  # Full pool of monsters
+        self.monsters: list[Entity] = []  # Currently present on field
+        self._reinforcements: list[Entity] = []  # Waiting to spawn
 
         # Current HP state for all entities
         self._states: dict[Entity, EntityState] = {}
         for i, h in enumerate(heroes):
             h.position = i
-            self._states[h] = EntityState(h, h.entity_type.hp, h.entity_type.hp, 0, 0)
-        for i, m in enumerate(monsters):
-            m.position = i
-            self._states[m] = EntityState(m, m.entity_type.hp, m.entity_type.hp, 0, 0)
+            self._states[h] = EntityState(h, h.entity_type.hp, h.entity_type.hp)
+
+        # Spawn as many monsters as fit on the field
+        self._spawn_initial_monsters()
 
         # Pending damage (applies in future, cancelled if source dies)
         self._pending: list[PendingDamage] = []
@@ -66,9 +69,45 @@ class FightLog:
         # Undo stack
         self._history: list[Action] = []
 
+    def _get_field_usage(self) -> int:
+        """Calculate current field usage from present (alive) monsters."""
+        usage = 0
+        for m in self.monsters:
+            state = self._states.get(m)
+            if state and not state.is_dead:
+                usage += m.entity_type.size.value
+        return usage
+
+    def _spawn_initial_monsters(self):
+        """Spawn monsters in order until field is full."""
+        for m in self._all_monsters:
+            size = m.entity_type.size.value
+            if self._get_field_usage() + size <= FIELD_CAPACITY:
+                m.position = len(self.monsters)
+                self.monsters.append(m)
+                self._states[m] = EntityState(m, m.entity_type.hp, m.entity_type.hp)
+            else:
+                self._reinforcements.append(m)
+
+    def _try_spawn_reinforcements(self):
+        """Try to spawn reinforcements if there's room on the field."""
+        spawned = True
+        while spawned and self._reinforcements:
+            spawned = False
+            for i, m in enumerate(self._reinforcements):
+                size = m.entity_type.size.value
+                if self._get_field_usage() + size <= FIELD_CAPACITY:
+                    # Spawn this reinforcement
+                    m.position = len(self.monsters)
+                    self.monsters.append(m)
+                    self._states[m] = EntityState(m, m.entity_type.hp, m.entity_type.hp)
+                    self._reinforcements.pop(i)
+                    spawned = True
+                    break  # Restart loop to check remaining reinforcements
+
     def _snapshot_states(self) -> dict[Entity, EntityState]:
         """Deep copy current states."""
-        return {e: EntityState(e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal) for e, s in self._states.items()}
+        return {e: EntityState(e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked) for e, s in self._states.items()}
 
     def _record_action(self):
         """Record state before an action for undo."""
@@ -93,17 +132,29 @@ class FightLog:
                 if not source_state.is_dead:
                     future_hp -= pending.amount
 
-        return EntityState(entity, future_hp, base.max_hp, base.shield, base.spiky, base.self_heal)
+        return EntityState(entity, future_hp, base.max_hp, base.shield, base.spiky, base.self_heal, base.damage_blocked)
 
     def apply_damage(self, source: Entity, target: Entity, amount: int, is_pending: bool = False):
-        """Apply damage to target. If is_pending, damage goes to future state."""
+        """Apply damage to target. If is_pending, damage goes to future state.
+
+        Immediate damage is reduced by shield. Blocked amount is tracked.
+        """
         self._record_action()
 
         if is_pending:
             self._pending.append(PendingDamage(target, amount, source))
         else:
             state = self._states[target]
-            self._states[target] = EntityState(target, state.hp - amount, state.max_hp, state.shield, state.spiky, state.self_heal)
+            # Shield blocks damage
+            blocked = min(state.shield, amount)
+            actual_damage = amount - blocked
+            new_shield = state.shield - blocked
+            self._states[target] = EntityState(
+                target, state.hp - actual_damage, state.max_hp,
+                new_shield, state.spiky, state.self_heal, state.damage_blocked + blocked
+            )
+            # Check if something died and reinforcements can spawn
+            self._try_spawn_reinforcements()
 
     def apply_cleave(self, source: Entity, target: Entity, amount: int, is_pending: bool = True):
         """Apply cleave damage to target and adjacent allies."""
@@ -122,7 +173,14 @@ class FightLog:
                 self._pending.append(PendingDamage(t, amount, source))
             else:
                 state = self._states[t]
-                self._states[t] = EntityState(t, state.hp - amount, state.max_hp, state.shield, state.spiky, state.self_heal)
+                # Shield blocks damage
+                blocked = min(state.shield, amount)
+                actual_damage = amount - blocked
+                new_shield = state.shield - blocked
+                self._states[t] = EntityState(
+                    t, state.hp - actual_damage, state.max_hp,
+                    new_shield, state.spiky, state.self_heal, state.damage_blocked + blocked
+                )
 
     def undo(self):
         """Undo the last action."""
@@ -170,6 +228,15 @@ class FightLog:
                 alive.append(hero)
         return alive
 
+    def get_alive_monsters(self, temporality: Temporality) -> list[Entity]:
+        """Get monsters that are alive at the given temporality."""
+        alive = []
+        for monster in self.monsters:
+            state = self.get_state(monster, temporality)
+            if not state.is_dead:
+                alive.append(monster)
+        return alive
+
     def apply_pain_damage(self, source: Entity, target: Entity, damage: int, pain: int):
         """Apply damage to target with pain (self-damage) to source.
 
@@ -185,11 +252,17 @@ class FightLog:
             new_hp = source_state.hp  # No change
         else:
             new_hp = source_state.hp - pain
-        self._states[source] = EntityState(source, new_hp, source_state.max_hp, source_state.shield, source_state.spiky, source_state.self_heal)
+        self._states[source] = EntityState(
+            source, new_hp, source_state.max_hp,
+            source_state.shield, source_state.spiky, source_state.self_heal, source_state.damage_blocked
+        )
 
         # Damage to target (also immediate for this test's behavior)
         target_state = self._states[target]
-        self._states[target] = EntityState(target, target_state.hp - damage, target_state.max_hp, target_state.shield, target_state.spiky, target_state.self_heal)
+        self._states[target] = EntityState(
+            target, target_state.hp - damage, target_state.max_hp,
+            target_state.shield, target_state.spiky, target_state.self_heal, target_state.damage_blocked
+        )
 
     def modify_max_hp(self, target: Entity, amount: int):
         """Modify an entity's max HP by amount (can be positive or negative).
@@ -201,14 +274,18 @@ class FightLog:
 
         state = self._states[target]
         new_max_hp = max(1, state.max_hp + amount)  # Floor at 1
-        self._states[target] = EntityState(target, state.hp, new_max_hp, state.shield, state.spiky, state.self_heal)
+        self._states[target] = EntityState(
+            target, state.hp, new_max_hp,
+            state.shield, state.spiky, state.self_heal, state.damage_blocked
+        )
 
     def apply_buff_spiky(self, target: Entity, amount: int):
         """Apply Spiky buff to target. Spiky deals damage back to attackers."""
         self._record_action()
         state = self._states[target]
         self._states[target] = EntityState(
-            target, state.hp, state.max_hp, state.shield, state.spiky + amount, state.self_heal
+            target, state.hp, state.max_hp,
+            state.shield, state.spiky + amount, state.self_heal, state.damage_blocked
         )
 
     def apply_shield(self, target: Entity, amount: int):
@@ -216,7 +293,18 @@ class FightLog:
         self._record_action()
         state = self._states[target]
         self._states[target] = EntityState(
-            target, state.hp, state.max_hp, state.shield + amount, state.spiky, state.self_heal
+            target, state.hp, state.max_hp,
+            state.shield + amount, state.spiky, state.self_heal, state.damage_blocked
+        )
+
+    def apply_heal(self, target: Entity, amount: int):
+        """Heal target. HP is capped at max HP."""
+        self._record_action()
+        state = self._states[target]
+        new_hp = min(state.hp + amount, state.max_hp)
+        self._states[target] = EntityState(
+            target, new_hp, state.max_hp,
+            state.shield, state.spiky, state.self_heal, state.damage_blocked
         )
 
     def apply_buff_self_heal(self, target: Entity):
@@ -224,7 +312,8 @@ class FightLog:
         self._record_action()
         state = self._states[target]
         self._states[target] = EntityState(
-            target, state.hp, state.max_hp, state.shield, state.spiky, True
+            target, state.hp, state.max_hp,
+            state.shield, state.spiky, True, state.damage_blocked
         )
 
     def apply_shield_repel(self, user: Entity, shield_amount: int):
@@ -255,7 +344,7 @@ class FightLog:
                 new_source_hp = source_state.hp - reflect_amount
                 self._states[pending.source] = EntityState(
                     pending.source, new_source_hp, source_state.max_hp,
-                    source_state.shield, source_state.spiky, source_state.self_heal
+                    source_state.shield, source_state.spiky, source_state.self_heal, source_state.damage_blocked
                 )
 
                 # If source has Spiky, it triggers and damages user
@@ -269,7 +358,7 @@ class FightLog:
                         user_state = self._states[user]
                         self._states[user] = EntityState(
                             user, user_state.hp - actual_spiky_damage, user_state.max_hp,
-                            user_state.shield, user_state.spiky, user_state.self_heal
+                            user_state.shield, user_state.spiky, user_state.self_heal, user_state.damage_blocked
                         )
 
                 # Reduce pending damage by repel amount
@@ -285,5 +374,50 @@ class FightLog:
         user_state = self._states[user]
         self._states[user] = EntityState(
             user, user_state.hp, user_state.max_hp,
-            user_state.shield + remaining_shield, user_state.spiky, user_state.self_heal
+            user_state.shield + remaining_shield, user_state.spiky, user_state.self_heal, user_state.damage_blocked
         )
+
+    def get_present_monsters(self, temporality: Temporality) -> list[Entity]:
+        """Get monsters currently on the field (not dead, not reinforcement).
+
+        This differs from get_alive_monsters in that it only counts monsters
+        that have been spawned onto the field, not those waiting as reinforcements.
+        """
+        present = []
+        for monster in self.monsters:
+            state = self.get_state(monster, temporality)
+            if not state.is_dead:
+                present.append(monster)
+        return present
+
+    def is_victory(self, temporality: Temporality) -> bool:
+        """Check if all monsters are dead (no alive monsters, no reinforcements)."""
+        if self._reinforcements:
+            return False
+        return len(self.get_present_monsters(temporality)) == 0
+
+    def apply_group_damage(self, source: Entity | None, amount: int, is_pending: bool = False):
+        """Apply damage to all present monsters.
+
+        Used for area-of-effect attacks that hit all enemies.
+        If source is None, damage cannot be cancelled (e.g., environmental).
+        """
+        self._record_action()
+
+        targets = self.get_present_monsters(Temporality.PRESENT)
+        for target in targets:
+            if is_pending and source is not None:
+                self._pending.append(PendingDamage(target, amount, source))
+            else:
+                state = self._states[target]
+                blocked = min(state.shield, amount)
+                actual_damage = amount - blocked
+                new_shield = state.shield - blocked
+                self._states[target] = EntityState(
+                    target, state.hp - actual_damage, state.max_hp,
+                    new_shield, state.spiky, state.self_heal, state.damage_blocked + blocked
+                )
+
+        # After group damage, check for reinforcements
+        if not is_pending:
+            self._try_spawn_reinforcements()
