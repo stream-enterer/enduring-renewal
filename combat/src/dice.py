@@ -92,6 +92,13 @@ class Keyword(Enum):
     UNDERGROWTH = auto()   # After use, the opposite side gets +1 pip
     GROOOOOOWTH = auto()   # After use, all my sides get +1 pip
     DECAY = auto()         # After use, this side gets -1 pip
+    DOUBLE_GROWTH = auto() # After use, this side gets +2 pips
+    # Anti variants (additional)
+    ANTI_DOG = auto()   # x2 if source HP != target HP
+    ANTI_PAIR = auto()  # x2 if previous die had different pip value
+    # Self-targeting keywords
+    SELF_SHIELD = auto()   # Shield myself for N pips
+    SELF_HEAL = auto()     # Heal myself for N pips
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom

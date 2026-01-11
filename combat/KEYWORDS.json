@@ -75,7 +75,12 @@
     "hyperGrowth",
     "undergrowth",
     "groooooowth",
-    "decay"
+    "decay",
+    "doubleGrowth",
+    "antiDog",
+    "antiPair",
+    "selfShield",
+    "selfHeal"
   ],
   "blocked": {
     "turn_tracking": ["patient", "era", "minusEra"],
@@ -84,7 +89,10 @@
     "poison_tracking": ["plague", "acidic"],
     "buff_tracking": ["buffed", "affected", "skill"],
     "usage_tracking": ["doubleUse", "quadUse", "hyperUse", "rite"],
-    "entity_summoning": ["boned", "hyperBoned"]
+    "entity_summoning": ["boned", "hyperBoned"],
+    "depends_on_duel": ["halveDuel", "duegue"],
+    "depends_on_focus": ["underocus"],
+    "depends_on_skill": ["trill"]
   },
   "all": [
     "heal", "shield", "damage", "manaGain",

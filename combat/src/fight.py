@@ -1355,6 +1355,18 @@ class FightLog:
         if original_side.has_keyword(Keyword.DECAY) or calculated_side.has_keyword(Keyword.DECAY):
             original_side.apply_growth_n(-1)
 
+        # DOUBLE_GROWTH: this side gains +2 pips
+        if original_side.has_keyword(Keyword.DOUBLE_GROWTH) or calculated_side.has_keyword(Keyword.DOUBLE_GROWTH):
+            original_side.apply_growth_n(2)
+
+        # SELF_SHIELD: shield myself for N pips
+        if calculated_side.has_keyword(Keyword.SELF_SHIELD):
+            self.apply_shield(entity, value)
+
+        # SELF_HEAL: heal myself for N pips
+        if calculated_side.has_keyword(Keyword.SELF_HEAL):
+            self.apply_heal(entity, value)
+
     def get_most_recent_die_effect(self) -> Optional[SideState]:
         """Get the most recently used die's side state (for copycat keyword)."""
         return self._most_recent_die_effect
@@ -1607,6 +1619,18 @@ class FightLog:
             future_state = self.get_state(source_entity, Temporality.FUTURE)
             if future_state.hp > 0:
                 value *= 2
+
+        # ANTI_DOG: x2 if source HP != target HP (inverted dog)
+        if side.has_keyword(Keyword.ANTI_DOG):
+            if source_state.hp != target_state.hp:
+                value *= 2
+
+        # ANTI_PAIR: x2 if previous die had DIFFERENT pip value
+        if side.has_keyword(Keyword.ANTI_PAIR):
+            previous = self.get_most_recent_die_effect()
+            if previous is not None:
+                if side.calculated_value != previous.calculated_effect.calculated_value:
+                    value *= 2
 
         # === SWAP* VARIANTS (swap source/target check) ===
         # SWAP_ENGAGE: x2 if SOURCE at full HP (instead of target)

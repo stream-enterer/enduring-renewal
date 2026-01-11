@@ -5089,3 +5089,333 @@ class TestDecay:
         fight.use_die(hero, 0, monster)
 
         assert hero.die.get_side(0).calculated_value == 0  # 1 - 1 = 0
+
+
+class TestDoubleGrowth:
+    """Tests for DoubleGrowth keyword.
+
+    DoubleGrowth: After use, this side gains +2 pips.
+    """
+
+    def test_double_growth_adds_two_pips(self):
+        """DoubleGrowth adds 2 pips to the side after use."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 2, {Keyword.DOUBLE_GROWTH})
+        hero.die.set_all_sides(side)
+
+        # First use: 2 damage
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 18  # 20 - 2
+
+        # Side should have grown by +2
+        assert hero.die.get_side(0).growth_bonus == 2
+        assert hero.die.get_side(0).calculated_value == 4
+
+    def test_double_growth_stacks(self):
+        """DoubleGrowth stacks across multiple uses."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=30)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 1, {Keyword.DOUBLE_GROWTH})
+        hero.die.set_all_sides(side)
+
+        # Use the die multiple times
+        fight.use_die(hero, 0, monster)  # 1 damage, grows to 3
+        assert hero.die.get_side(0).calculated_value == 3
+
+        fight.use_die(hero, 0, monster)  # 3 damage, grows to 5
+        assert hero.die.get_side(0).calculated_value == 5
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 26  # 30 - 1 - 3
+
+
+class TestAntiDog:
+    """Tests for AntiDog keyword.
+
+    AntiDog: x2 damage if source HP != target HP.
+    This is the inverted condition of Dog (x2 if HP equal).
+    """
+
+    def test_anti_dog_bonus_when_hp_different(self):
+        """AntiDog gets x2 when source HP differs from target HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)  # 5 HP
+        monster = make_monster("Goblin", hp=4)  # 4 HP - different
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 2, {Keyword.ANTI_DOG})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 0  # 4 - (2 * 2) = 0
+
+    def test_anti_dog_no_bonus_when_hp_equal(self):
+        """AntiDog gets no bonus when source HP equals target HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)  # 5 HP
+        monster = make_monster("Goblin", hp=5)  # 5 HP - same
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 2, {Keyword.ANTI_DOG})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 3  # 5 - 2 = 3 (no bonus)
+
+
+class TestAntiPair:
+    """Tests for AntiPair keyword.
+
+    AntiPair: x2 damage if previous die had a DIFFERENT pip value.
+    This is the inverted condition of Pair (x2 if same value).
+    """
+
+    def test_anti_pair_bonus_when_values_differ(self):
+        """AntiPair gets x2 when previous die had different value."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter1", hp=5)
+        hero2 = make_hero("Fighter2", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 has a 3 damage die
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 3))
+
+        # Hero2 has a 2 damage die with antiPair
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.ANTI_PAIR}))
+
+        # First use hero1's die (3 damage)
+        fight.use_die(hero1, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 17  # 20 - 3
+
+        # Second use hero2's die - different value (2 vs 3), should get x2
+        fight.use_die(hero2, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 13  # 17 - (2 * 2) = 13
+
+    def test_anti_pair_no_bonus_when_values_same(self):
+        """AntiPair gets no bonus when previous die had same value."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter1", hp=5)
+        hero2 = make_hero("Fighter2", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Both have 2 damage dies
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.ANTI_PAIR}))
+
+        # First use hero1's die (2 damage)
+        fight.use_die(hero1, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 18  # 20 - 2
+
+        # Second use hero2's die - same value (2 vs 2), no bonus
+        fight.use_die(hero2, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 16  # 18 - 2 = 16 (no x2)
+
+    def test_anti_pair_no_bonus_on_first_use(self):
+        """AntiPair gets no bonus when it's the first die used."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.ANTI_PAIR}))
+
+        # First use - no previous die, no bonus
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 18  # 20 - 2 (no bonus)
+
+
+class TestSelfShield:
+    """Tests for SelfShield keyword.
+
+    SelfShield: Shield myself for N pips (the side's calculated value).
+    The shield is applied to the source, not the target.
+    """
+
+    def test_self_shield_grants_shields_to_source(self):
+        """SelfShield grants shields to the source entity."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # A damage side with selfShield: deals damage AND shields self
+        side = Side(EffectType.DAMAGE, 3, {Keyword.SELF_SHIELD})
+        hero.die.set_all_sides(side)
+
+        # Use the die against monster
+        fight.use_die(hero, 0, monster)
+
+        # Monster takes damage
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 7  # 10 - 3
+
+        # Hero gains shields equal to pip value
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.shield == 3
+
+    def test_self_shield_on_heal_side(self):
+        """SelfShield works on a heal side (heals target, shields self)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Healer", hp=5)
+        hero2 = make_hero("Fighter", hp=5)  # Will be damaged
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Damage Fighter so they can be healed
+        fight.apply_damage(monster, hero2, 2, is_pending=False)
+        fighter_state = fight.get_state(hero2, Temporality.PRESENT)
+        assert fighter_state.hp == 3
+
+        hero1.die = Die()
+        # A heal side with selfShield: heals target AND shields self
+        side = Side(EffectType.HEAL, 2, {Keyword.SELF_SHIELD})
+        hero1.die.set_all_sides(side)
+
+        # Healer heals Fighter
+        fight.use_die(hero1, 0, hero2)
+
+        # Fighter gets healed
+        fighter_state = fight.get_state(hero2, Temporality.PRESENT)
+        assert fighter_state.hp == 5  # 3 + 2
+
+        # Healer gains shields
+        healer_state = fight.get_state(hero1, Temporality.PRESENT)
+        assert healer_state.shield == 2
+
+
+class TestSelfHeal:
+    """Tests for SelfHeal keyword.
+
+    SelfHeal: Heal myself for N pips (the side's calculated value).
+    The heal is applied to the source, not the target.
+    """
+
+    def test_self_heal_heals_source(self):
+        """SelfHeal heals the source entity."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Damage the hero first
+        fight.apply_damage(monster, hero, 3, is_pending=False)
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.hp == 2
+
+        hero.die = Die()
+        # A damage side with selfHeal: deals damage AND heals self
+        side = Side(EffectType.DAMAGE, 2, {Keyword.SELF_HEAL})
+        hero.die.set_all_sides(side)
+
+        # Use the die against monster
+        fight.use_die(hero, 0, monster)
+
+        # Monster takes damage
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 8  # 10 - 2
+
+        # Hero heals for 2
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.hp == 4  # 2 + 2
+
+    def test_self_heal_capped_at_max_hp(self):
+        """SelfHeal cannot heal above max HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Hero is at full HP (5)
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 3, {Keyword.SELF_HEAL})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Hero can't heal above 5
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.hp == 5  # Still 5 (capped at max)
+
+    def test_self_heal_on_shield_side(self):
+        """SelfHeal works on a shield side (shields target, heals self)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Support", hp=5)
+        hero2 = make_hero("Tank", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Damage support first
+        fight.apply_damage(monster, hero1, 2, is_pending=False)
+        support_state = fight.get_state(hero1, Temporality.PRESENT)
+        assert support_state.hp == 3
+
+        hero1.die = Die()
+        # A shield side with selfHeal: shields target AND heals self
+        side = Side(EffectType.SHIELD, 2, {Keyword.SELF_HEAL})
+        hero1.die.set_all_sides(side)
+
+        # Support shields Tank
+        fight.use_die(hero1, 0, hero2)
+
+        # Tank gets shields
+        tank_state = fight.get_state(hero2, Temporality.PRESENT)
+        assert tank_state.shield == 2
+
+        # Support heals
+        support_state = fight.get_state(hero1, Temporality.PRESENT)
+        assert support_state.hp == 5  # 3 + 2
