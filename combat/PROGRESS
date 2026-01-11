@@ -1,47 +1,66 @@
 {
-  "phase": "complete",
-  "status": "Core combat system reimplementation complete",
-  "summary": {
-    "phase1_tests_implemented": 36,
-    "phase2_infrastructure_components": 9,
-    "total_python_tests": 124,
-    "files_skipped": 18,
-    "tests_deferred": 3
-  },
-  "infrastructure_completed": [
-    "die_sides - Die/Side classes, mana system, use_die, growth keyword",
-    "side_mutation - Petrify, BLANK effect, get_side_state",
-    "used_state - Die usage tracking, rescue, rampage keywords",
-    "mana - Mana pool, shield_mana helper",
-    "triggers - Personal/AffectSides system, conditions, effects, Buff wrapper",
-    "engage_keyword - Engage x2 vs full HP targets",
-    "copycat_keyword - Copycat/cruel meta-keywords",
-    "pair_keyword - Pair doubles matching values",
-    "poison_cleanse - Poison/Cleansed personals, merge support, cleanse tracking"
-  ],
-  "deferred": {
-    "reason": "Outside core combat scope or require significant additional infrastructure",
-    "tests": [
-      {"test": "TestTriggerOrdering.testTriggerHPOrdering", "needs": "ModifierLib", "type": "combat-adjacent"},
-      {"test": "TestTriggerOrdering.testCreakyJointsSword", "needs": "Items + Modifiers", "type": "combat-adjacent"},
-      {"test": "TestStates.test2hpStates", "needs": "Save/Load (loadFromString)", "type": "persistence"}
+  "phase": 3,
+  "status": "Keyword completeness - expanding from 11 to full library",
+  "keywords": {
+    "implemented": [
+      "GROWTH", "MANA", "PETRIFY", "RESCUE", "RAMPAGE",
+      "ENGAGE", "RANGED", "SINGLE_USE", "COPYCAT", "CRUEL", "PAIR"
     ],
-    "note": "Modifier system would add dynamic stat/trigger modification layer. Save/load is persistence infrastructure, not combat logic."
+    "count": 11,
+    "target": 150,
+    "current_tier": 1,
+    "current_batch": []
   },
-  "completed_tests": [
-    "TestStrangeScenarios: multiTargetStickiness, targetingEfficienct, painShouldKill, maxHpFiddles, maxHpLimit, revengeSpiky, painDrainNiceness, numberLimit",
-    "TestBasicEff: basicSanityTest, attackEnemy, attackHero, basicBlock, basicHeal, reinforcements",
-    "TestItem: testGauntlet, testSteelHeart, testPipeAndStudsWithHealShield, testBonusIncomingWithHealShields",
-    "TestComplexEff: pain, doubleTaunt, keepShield, stoneskin, resurrect, fortitudeHeal, goblinFlee, petrify, copycatManagain, pair",
-    "TestKeyword: bloodlust, poison, precise, fierce, weaken, drain, lifestealVsInvincible, regen, pain, growth, rescue, rampageHeroKill, precisePlusMagic, testComboCruel, testComboCruelWand",
-    "TestKeywordSpell: engage, cruel",
-    "TestTriggerOrdering: testBuffReplacedSides, testBrainGrips",
-    "TestCleanse: testPoisonCombine, testPoisonCleanse, testPoisonCleanseWithRecalculate, testPoisonPartialCleanse, testMultiPoisonPartialCleanse, testMultiPoisonPartialCleanseNextTurn"
-  ],
-  "skipped_files": [
-    "TestRandomBits", "TestParty", "TestBugRepro", "TestBugReproIgnored", "TestScattershot",
-    "TestBannedCombos", "TestModifierOffer", "TestUniqueness", "TestValidation", "TestFiles",
-    "TestCollision", "TestPipe", "TestHeroes", "TestMusic", "TestBattleSim", "TestAbilities",
-    "TestBook", "TestModding"
+  "tiers": {
+    "1": {
+      "name": "Conditional x2 Keywords",
+      "keywords": ["pristine", "deathwish", "armoured", "wham", "terminal", "moxie", "bully", "squish", "uppercut"],
+      "status": "pending"
+    },
+    "2": {
+      "name": "Pip Bonus Keywords",
+      "keywords": ["bloodlust", "charged", "steel", "flesh", "fizz", "skill", "defy", "era"],
+      "status": "pending"
+    },
+    "3": {
+      "name": "Streak/Combo Keywords",
+      "keywords": ["trio", "quin", "step", "run", "sprint", "chain", "inspired"],
+      "status": "pending"
+    },
+    "4": {
+      "name": "Buff/Debuff Application",
+      "keywords": ["regen", "weaken", "boost", "vulnerable", "cleanse"],
+      "status": "pending"
+    },
+    "5": {
+      "name": "Die Modification",
+      "keywords": ["doubleUse", "stasis", "sticky", "decay", "hyperGrowth"],
+      "status": "pending"
+    },
+    "6": {
+      "name": "Self-Targeting Variants",
+      "keywords": ["selfShield", "selfHeal", "selfPoison", "selfRegen"],
+      "status": "pending"
+    },
+    "7": {
+      "name": "Meta/Copy Keywords",
+      "keywords": ["echo", "resonate", "share", "spy"],
+      "status": "pending"
+    },
+    "8": {
+      "name": "Targeting Restrictions",
+      "keywords": ["eliminate", "heavy", "generous", "scared"],
+      "status": "pending"
+    }
+  },
+  "summary": {
+    "phase1_tests": 36,
+    "phase2_components": 9,
+    "total_python_tests": 124
+  },
+  "deferred": [
+    {"test": "TestTriggerOrdering.testTriggerHPOrdering", "needs": "ModifierLib"},
+    {"test": "TestTriggerOrdering.testCreakyJointsSword", "needs": "Items + Modifiers"},
+    {"test": "TestStates.test2hpStates", "needs": "Save/Load"}
   ]
 }

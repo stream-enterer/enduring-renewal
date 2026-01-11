@@ -1,10 +1,11 @@
 # Slice & Dice Combat System Reverse Engineering
 
-## Current Status: Phase 2 (Infrastructure)
+## Current Status: Phase 3 (Keyword Completeness)
 
-**Phase 1 complete**: 36 test methods implemented, 77 passing Python tests.
-**Phase 2 active**: Building infrastructure to unblock 16 remaining tests.
-**On "Continue"**: Read PROGRESS, follow the infrastructure workflow below.
+**Phase 1 complete**: 36 test methods implemented from original test suite.
+**Phase 2 complete**: 9 infrastructure components, 124 passing Python tests.
+**Phase 3 active**: Expanding keyword coverage from ~11 to full game library (~150).
+**On "Continue"**: Read PROGRESS, follow the keyword workflow below.
 
 ---
 
@@ -23,16 +24,6 @@ Documentation is lossy. Instead of writing prose docs that drift, we use executa
 
 Tests ARE the documentation. If it's not in a test, it's not verified.
 
-## Phase 1 (Complete): Test-Following
-
-We followed the original developer's test suite (`decompiled/test/`), processing each test method:
-1. **Analyze** - Read Java test, form hypothesis
-2. **Verify** - Human confirms behavior in real game
-3. **Implement** - Write Python test + code until green
-4. **Commit** - Update PROGRESS, git commit
-
-**Results**: 36 tests implemented across 7 files. 18 files skipped (non-combat). 16 tests blocked (need infrastructure). Details in `combat/PROGRESS`.
-
 ## Project Structure
 
 ```
@@ -50,12 +41,6 @@ combat/           # Python reimplementation + test harness
 notes/            # Scratch space (gitignored)
 ```
 
-## State Tracking: PROGRESS
-
-`combat/PROGRESS` is a JSON file tracking current position. Single source of truth.
-
-**On session start**: Read PROGRESS, check `phase`, follow the appropriate workflow.
-
 ## Tooling
 
 - **Python 3.13** with **uv** (not pip)
@@ -63,173 +48,245 @@ notes/            # Scratch space (gitignored)
 - Run all tests: `uv run pytest` from `combat/`
 - Run single test: `uv run pytest tests/test_file.py::test_name -v`
 
-## Key Reference Files (in decompiled/decompiled/)
+## Key Reference Files
+
+Keywords source:
+- `decompiled/gameplay/effect/eff/keyword/Keyword.java` - Full keyword enum (~150 keywords)
 
 Combat logic:
-- `decompiled/decompiled/gameplay/fightLog/FightLog.java` - Central combat state manager
-- `decompiled/decompiled/gameplay/fightLog/EntState.java` - Entity state snapshots
-- `decompiled/decompiled/gameplay/effect/` - Effects, buffs, damage
+- `decompiled/gameplay/fightLog/FightLog.java` - Central combat state manager
+- `decompiled/gameplay/fightLog/EntState.java` - Entity state snapshots
 
-Test patterns (how the original dev tested):
-- `decompiled/decompiled/test/util/TestUtils.java` - Fight setup helpers
-- `decompiled/decompiled/test/TestBasicEff.java` - Basic effect tests
-- `decompiled/decompiled/test/TestTriggerOrdering.java` - Trigger/ordering tests
-
-Entity types:
-- `decompiled/decompiled/gameplay/content/ent/` - Hero, Monster, Die, Side
+Conditional bonus system:
+- `decompiled/gameplay/effect/eff/conditionalBonus/` - How keywords modify values
 
 ## Conventions
 
 - Keep tests atomic: one behavior per test
-- Name tests after what they verify: `test_shield_blocks_before_damage`
+- Name tests after what they verify: `test_bloodlust_adds_pip_per_damaged_enemy`
 - When uncertain about behavior, verify in the real game first
 - Don't guess. Test.
 
 ---
 
-# Phase 2: Infrastructure
+# Phase 3: Keyword Completeness
 
-**16 tests remain blocked** because they require infrastructure we haven't built:
-- Die/Sides system (getSideState, turnInto, getCalculatedEffect)
-- Mana system (getTotalMana, shieldMana)
-- Trigger system (getActivePersonals, addTrigger)
+The game has ~150 keywords. We have ~11 implemented. Phase 3 expands coverage.
 
-Phase 2 uses the **same methodology** (spec-as-test, verify before implement) but the source changes:
-- Phase 1: Test methods → told us what behaviors to implement
-- Phase 2: Blocked tests → tell us what infrastructure to build
+## Currently Implemented Keywords
 
-## Infrastructure Components
+```python
+GROWTH      # After use, side value increases by +1
+MANA        # Effect also grants mana equal to value
+PETRIFY     # Turns target's sides to stone (Blank)
+RESCUE      # Die recharged if heal saves a dying hero
+RAMPAGE     # Die recharged if attack kills an enemy
+ENGAGE      # x2 effect vs full HP targets
+RANGED      # Can hit back row, avoids on-hit passives
+SINGLE_USE  # Side becomes blank after use
+COPYCAT     # Copies keywords from previous die
+CRUEL       # x2 effect vs targets at half HP or less
+PAIR        # x2 effect if previous die had same value
+```
 
-Based on analysis of blocked tests and decompiled source, we need:
+## Keyword Categories (Priority Order)
 
-### 1. Die/Sides System (unblocks ~12 tests)
+### Tier 1: Conditional x2 Keywords (high impact, common)
+Similar to ENGAGE/CRUEL - double effect based on condition.
 
-**What it is**: Each entity has a Die with 6 Sides. Each Side has a base effect that can be modified by triggers/items.
+| Keyword | Condition | Target/Self |
+|---------|-----------|-------------|
+| pristine | I have full HP | self |
+| deathwish | I am dying this turn | self |
+| armoured | I have shields | self |
+| wham | target has shields | target |
+| terminal | target on 1 HP | target |
+| moxie | I have least HP of all | self |
+| bully | I have most HP of all | self |
+| squish | target has least HP | target |
+| uppercut | target has most HP | target |
 
-**Key concepts**:
-- `Die` - Has 6 `EntSide` objects, tracks which side is "up" (lockedSide)
-- `EntSide` - Base effect + texture + keywords
-- `EntSideState` - Calculated effect after applying all triggers/bonuses
-- `getSideState(index)` - Returns the calculated state for a side
-- `getCalculatedEffect()` - The final effect after all modifiers
-- `turnInto(side, newEffect)` - Replace a side's effect (for growth, petrify, etc.)
-- `isUsed()` - Whether the die has been used this turn
+### Tier 2: Pip Bonus Keywords (dynamic value modification)
+Add pips based on game state.
 
-**Key source files**:
-- `decompiled/gameplay/content/ent/die/Die.java`
-- `decompiled/gameplay/content/ent/die/side/EntSide.java`
-- `decompiled/gameplay/fightLog/EntSideState.java`
+| Keyword | Bonus Source |
+|---------|--------------|
+| bloodlust | +1 per damaged enemy |
+| charged | +1 per stored mana |
+| steel | +1 per shield I have |
+| flesh | +1 per HP I have |
+| fizz | +1 per ability used this turn |
+| skill | +1 per my level/tier |
+| defy | +1 per incoming damage |
+| era | +1 per elapsed turn |
 
-### 2. Mana System (unblocks ~3 tests)
+### Tier 3: Streak/Combo Keywords
+Based on die sequences.
 
-**What it is**: Resource pool for casting spells. Some effects grant mana, others consume it.
+| Keyword | Condition | Multiplier |
+|---------|-----------|------------|
+| trio | 3 dice same value | x3 |
+| quin | 5 dice same value | x5 |
+| step | run of 2 (eg 1,2) | x2 |
+| run | run of 3 (eg 1,2,3) | x3 |
+| sprint | run of 5 | x5 |
+| chain | shares keyword with prev | x2 |
+| inspired | prev die had more pips | x2 |
 
-**Key concepts**:
-- `getTotalMana()` - Current mana pool
-- `shieldMana(N)` - Grants N shields AND N mana
-- Mana persists across turns (unlike shields by default)
+### Tier 4: Buff/Debuff Application
+Apply effects to target.
 
-### 3. Trigger System (unblocks ~6 tests)
+| Keyword | Effect |
+|---------|--------|
+| regen | heal N at end of each turn |
+| poison | (already have) |
+| weaken | -N to all pips for 1 turn |
+| boost | +N to all pips for 1 turn |
+| vulnerable | take +N damage for 1 turn |
+| cleanse | remove N negative effects |
 
-**What it is**: Personal triggers that modify sides or respond to events.
+### Tier 5: Die Modification
+Change how dies work.
 
-**Key concepts**:
-- `Personal` - A trigger attached to an entity
-- `getActivePersonals()` - List of active triggers
-- `addTrigger(trigger)` - Add a new trigger
-- `AffectSides` - Trigger that modifies die sides (add keywords, flat bonus, etc.)
+| Keyword | Effect |
+|---------|--------|
+| doubleUse | can be used twice per turn |
+| stasis | side cannot change |
+| sticky | cannot be rerolled |
+| decay | -1 pip after each use |
+| hyperGrowth | +N pips after use |
 
-## Infrastructure Workflow
+### Tier 6: Self-Targeting Variants
+selfX versions of existing keywords.
+
+| Keyword | Effect |
+|---------|--------|
+| selfShield | shield myself for N |
+| selfHeal | heal myself for N |
+| selfPoison | poison myself |
+| selfRegen | regen on myself |
+
+### Tier 7: Meta/Copy Keywords
+Copy effects from other sources.
+
+| Keyword | Effect |
+|---------|--------|
+| echo | copy pips from previous die |
+| resonate | copy full effect from previous die |
+| share | targets gain my keywords |
+| spy | copy keywords from first enemy attack |
+
+### Tier 8: Targeting Restrictions
+Limit valid targets.
+
+| Keyword | Restriction |
+|---------|-------------|
+| eliminate | target must have least HP |
+| heavy | target must have most HP |
+| generous | cannot target myself |
+| scared | target must have N or less HP |
+
+## Keyword Workflow
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ 1. IDENTIFY                                    [agent]   │
-│    Pick a blocked test                                   │
-│    Read what infrastructure it needs                     │
-│    Research decompiled Java classes                      │
-│    Status: researching                                   │
+│ 1. SELECT                                      [agent]   │
+│    Pick next keyword(s) from priority tier               │
+│    Read Keyword.java for exact behavior                  │
+│    Check ConditionalBonus if applicable                  │
 └─────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────┐
-│ 2. DESIGN                                      [agent]   │
-│    Propose minimal Python implementation                 │
-│    Write failing test based on blocked test behavior     │
-│    Status: designing                                     │
+│ 2. TEST                                        [agent]   │
+│    Write failing test capturing keyword behavior         │
+│    Test edge cases (stacking, ordering, etc)             │
 └─────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────┐
 │ 3. VERIFY                                      [HUMAN]   │
-│    Human reviews design, tests in game if needed         │
-│    Confirms approach or suggests changes                 │
-│    Status: verifying                                     │
+│    Human confirms behavior matches real game             │
+│    (Skip if behavior is obvious from source)             │
 └─────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────┐
 │ 4. IMPLEMENT                                   [agent]   │
-│    Build infrastructure                                  │
+│    Add keyword to Keyword enum                           │
+│    Implement in appropriate handler                      │
 │    Run tests until green                                 │
-│    Status: implementing                                  │
 └─────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────┐
-│ 5. UNBLOCK                                     [agent]   │
-│    Move blocked tests to ready                           │
-│    Commit infrastructure + tests                         │
-│    Status: complete                                      │
+│ 5. COMMIT                                      [agent]   │
+│    Update PROGRESS with new keyword count                │
+│    Git commit with keyword name(s)                       │
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Recommended Order
-
-Build infrastructure in dependency order, maximizing unblocked tests:
-
-1. **Die + Side basics** - Die class, Side class, entity.sides array
-2. **EntSideState** - getSideState(), getCalculatedEffect()
-3. **Side mutation** - turnInto(), side replacement
-4. **Used state** - isUsed(), marking sides as used
-5. **Mana** - mana pool, shieldMana
-6. **Triggers** - Personal, AffectSides, addTrigger
-
-## PROGRESS Format for Phase 2
+## PROGRESS Format for Phase 3
 
 ```json
 {
-  "phase": 2,
-  "infrastructure": {
-    "current": {
-      "component": "die_sides",
-      "status": "implementing",
-      "design": "Add Die class with sides array, EntSideState for calculated effects",
-      "unblocks": ["TestKeyword.growth", "TestTriggerOrdering.testBuffReplacedSides"]
-    },
-    "completed": [
-      {
-        "component": "die_sides",
-        "tests_added": ["tests/test_die.py::TestDieSides"],
-        "tests_unblocked": ["TestKeyword.growth"],
-        "timestamp": "2025-01-11T..."
-      }
-    ]
-  },
-  "blocked": [...],
-  "completed": [...],
-  "skipped": [...]
+  "phase": 3,
+  "keywords": {
+    "implemented": ["GROWTH", "MANA", "PETRIFY", ...],
+    "current_tier": 1,
+    "current_batch": ["pristine", "deathwish"],
+    "count": 11
+  }
 }
 ```
 
-## Key Differences from Phase 1
+## Implementation Patterns
 
-| Aspect | Phase 1 | Phase 2 |
-|--------|---------|---------|
-| Source of truth | Original test methods | Blocked tests + decompiled source |
-| Granularity | One test method at a time | One infrastructure component at a time |
-| Verification | "Does X behave like Y in game?" | "Does this design enable the blocked tests?" |
-| Success metric | Test passes | Previously-blocked tests pass |
+### Conditional x2 Keywords
+Most x2 keywords use the same pattern - check condition, double value:
+
+```python
+# In use_die or effect application:
+if Keyword.PRISTINE in keywords:
+    if source_state.hp == source_state.max_hp:
+        value *= 2
+```
+
+### Pip Bonus Keywords
+Add to calculated value based on game state:
+
+```python
+# In get_side_state or effect calculation:
+if Keyword.BLOODLUST in keywords:
+    damaged_enemies = sum(1 for e in enemies if e.hp < e.max_hp)
+    value += damaged_enemies
+```
+
+### Streak Keywords
+Track die history and check patterns:
+
+```python
+# Need to track: fight_log._die_value_history
+if Keyword.TRIO in keywords:
+    if len(history) >= 2 and history[-1] == history[-2] == current_value:
+        value *= 3
+```
 
 ## On "Continue"
 
-1. Read `combat/PROGRESS` - check `infrastructure.current`
-2. If `status: "not_started"` → begin IDENTIFY step for that component
-3. If `status: "verifying"` → present design to human, wait for approval
-4. If `status: "implementing"` → continue building until tests pass
-5. Follow the infrastructure workflow above
+1. Read `combat/PROGRESS` - check `keywords.current_tier` and `current_batch`
+2. If batch is empty → pick next keywords from current tier
+3. Follow the keyword workflow above
+4. When tier complete → move to next tier
+5. Commit after each batch (1-3 keywords)
+
+---
+
+# Completed Phases
+
+## Phase 1: Test-Following (Complete)
+36 test methods from original test suite implemented.
+
+## Phase 2: Infrastructure (Complete)
+9 components built:
+- die_sides, side_mutation, used_state, mana
+- triggers, engage_keyword, copycat_keyword, pair_keyword
+- poison_cleanse
+
+124 Python tests passing. 3 tests deferred (need ModifierLib or save/load).
