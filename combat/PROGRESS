@@ -1,12 +1,28 @@
 {
   "current": {
     "file": "TestComplexEff",
-    "method": null,
-    "status": "not_started",
+    "method": "keepShield",
+    "status": "analyzing",
     "hypothesis": null,
     "verified": null
   },
   "completed": [
+    {
+      "file": "TestComplexEff",
+      "method": "doubleTaunt",
+      "hypothesis": "Redirect(N) moves ALL incoming damage from target ally to the redirector. Redirect has selfShield keyword granting N shields to redirector. Shields then block redirected damage. Multiple redirects stack shields.",
+      "verified": "Confirmed. Redirect moves all damage to taunter. selfShield keyword provides the damage reduction via shields.",
+      "test": "tests/test_complex_eff.py::TestRedirect",
+      "timestamp": "2025-01-10T17:45:00Z"
+    },
+    {
+      "file": "TestComplexEff",
+      "method": "pain",
+      "hypothesis": "dmgPain effect damages both the target and the user.",
+      "verified": "Already verified and implemented in TestStrangeScenarios.painShouldKill and painDrainNiceness.",
+      "test": "tests/test_strange_scenarios.py::test_pain_damages_user, test_pain_can_kill_user",
+      "timestamp": "2025-01-10T17:30:00Z"
+    },
     {
       "file": "TestItem",
       "method": "testBonusIncomingWithHealShields",

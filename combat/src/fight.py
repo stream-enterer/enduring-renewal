@@ -518,3 +518,29 @@ class FightLog:
         # After group damage, check for reinforcements
         if not is_pending:
             self._try_spawn_reinforcements()
+
+    def apply_redirect(self, user: Entity, target: Entity, self_shield: int = 0):
+        """Apply redirect (taunt) - move incoming damage from target to user.
+
+        Redirect:
+        1. Moves ALL pending damage from target to user (redirector)
+        2. If self_shield > 0, gives user that many shields (selfShield keyword)
+
+        Some redirects have selfShield keyword (e.g., die sides), others don't
+        (e.g., Red Flag item). Pass self_shield=0 for redirects without selfShield.
+        Multiple redirects stack shields. Redirecting to self just adds shields.
+        """
+        self._record_action()
+
+        # Move all pending damage from target to user
+        for pending in self._pending:
+            if pending.target == target:
+                pending.target = user
+
+        # Give user shields if selfShield keyword present
+        if self_shield > 0:
+            state = self._states[user]
+            self._states[user] = EntityState(
+                user, state.hp, state.max_hp,
+                state.shield + self_shield, state.spiky, state.self_heal, state.damage_blocked
+            )
