@@ -5712,3 +5712,320 @@ class TestExert:
         # Exert flag is set
         hero_state = fight.get_state(hero, Temporality.PRESENT)
         assert hero_state.is_exerted
+
+
+class TestSingleUse:
+    """Tests for SINGLE_USE keyword.
+
+    After use, the side is replaced with a blank for the rest of this fight.
+    """
+
+    def test_single_use_replaces_with_blank(self):
+        """Side with SINGLE_USE becomes blank after use."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Wizard", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        single_use_side = Side(EffectType.DAMAGE, 3, {Keyword.SINGLE_USE})
+        hero.die.set_all_sides(single_use_side)
+
+        # Use side 0
+        fight.use_die(hero, 0, monster)
+
+        # Monster takes damage
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 7
+
+        # Side 0 is now blank
+        used_side = hero.die.get_side(0)
+        assert used_side.effect_type == EffectType.BLANK
+        assert used_side.value == 0
+        assert len(used_side.keywords) == 0
+
+    def test_single_use_only_affects_used_side(self):
+        """Only the used side becomes blank, not other sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Wizard", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        single_use_side = Side(EffectType.DAMAGE, 3, {Keyword.SINGLE_USE})
+        hero.die.set_all_sides(single_use_side)
+
+        # Use side 0
+        fight.use_die(hero, 0, monster)
+
+        # Side 0 is blank
+        assert hero.die.get_side(0).effect_type == EffectType.BLANK
+
+        # Other sides are NOT blank
+        for i in range(1, 6):
+            assert hero.die.get_side(i).effect_type == EffectType.DAMAGE
+            assert hero.die.get_side(i).value == 3
+
+
+class TestGroupGrowth:
+    """Tests for GROUP_GROWTH keyword.
+
+    When used, all allies' sides at the same index gain +1 pip.
+    """
+
+    def test_group_growth_affects_all_allies(self):
+        """GROUP_GROWTH gives +1 pip to same side index on all allies."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        # 3 heroes
+        hero1 = make_hero("Healer", hp=5)
+        hero2 = make_hero("Fighter", hp=10)
+        hero3 = make_hero("Mage", hp=8)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2, hero3], [monster])
+
+        # Set up dice for all heroes
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.GROUP_GROWTH}))
+
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 3))
+
+        hero3.die = Die()
+        hero3.die.set_all_sides(Side(EffectType.HEAL, 1))
+
+        # Use hero1's side 0
+        fight.use_die(hero1, 0, monster)
+
+        # All heroes' side 0 should have +1 pip (growth_bonus)
+        assert hero1.die.get_side(0).growth_bonus == 1
+        assert hero2.die.get_side(0).growth_bonus == 1
+        assert hero3.die.get_side(0).growth_bonus == 1
+
+        # Other sides should be unaffected
+        assert hero2.die.get_side(1).growth_bonus == 0
+        assert hero3.die.get_side(1).growth_bonus == 0
+
+    def test_group_growth_skips_dead_allies(self):
+        """GROUP_GROWTH doesn't affect dead allies."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Healer", hp=5)
+        hero2 = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Kill hero2
+        fight.apply_damage(monster, hero2, 10, is_pending=False)
+
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.GROUP_GROWTH}))
+
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 3))
+
+        # Use hero1's side 0
+        fight.use_die(hero1, 0, monster)
+
+        # Hero1 (alive) gets +1
+        assert hero1.die.get_side(0).growth_bonus == 1
+
+        # Hero2 (dead) doesn't get +1
+        assert hero2.die.get_side(0).growth_bonus == 0
+
+
+class TestGroupDecay:
+    """Tests for GROUP_DECAY keyword.
+
+    When used, all allies' sides at the same index lose -1 pip.
+    """
+
+    def test_group_decay_affects_all_allies(self):
+        """GROUP_DECAY gives -1 pip to same side index on all allies."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Healer", hp=5)
+        hero2 = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.GROUP_DECAY}))
+
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 5))
+
+        # Use hero1's side 0
+        fight.use_die(hero1, 0, monster)
+
+        # All heroes' side 0 should have -1 pip
+        assert hero1.die.get_side(0).growth_bonus == -1
+        assert hero2.die.get_side(0).growth_bonus == -1
+
+
+class TestGroupSingleUse:
+    """Tests for GROUP_SINGLE_USE keyword.
+
+    When used, all allies' sides at the same index become blank.
+    """
+
+    def test_group_single_use_blanks_all_allies(self):
+        """GROUP_SINGLE_USE blanks same side index on all allies."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Healer", hp=5)
+        hero2 = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.GROUP_SINGLE_USE}))
+
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 5))
+
+        # Use hero1's side 0
+        fight.use_die(hero1, 0, monster)
+
+        # All heroes' side 0 should be blank
+        assert hero1.die.get_side(0).effect_type == EffectType.BLANK
+        assert hero2.die.get_side(0).effect_type == EffectType.BLANK
+
+        # Other sides remain unchanged
+        assert hero2.die.get_side(1).effect_type == EffectType.DAMAGE
+        assert hero2.die.get_side(1).value == 5
+
+
+class TestGroupExert:
+    """Tests for GROUP_EXERT keyword.
+
+    When used, all allies become exerted.
+    """
+
+    def test_group_exert_affects_all_allies(self):
+        """GROUP_EXERT sets is_exerted on all alive allies."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Healer", hp=5)
+        hero2 = make_hero("Fighter", hp=10)
+        hero3 = make_hero("Mage", hp=8)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2, hero3], [monster])
+
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.GROUP_EXERT}))
+
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 3))
+
+        hero3.die = Die()
+        hero3.die.set_all_sides(Side(EffectType.HEAL, 1))
+
+        # Use hero1's die
+        fight.use_die(hero1, 0, monster)
+
+        # All alive heroes should be exerted
+        assert fight.get_state(hero1, Temporality.PRESENT).is_exerted
+        assert fight.get_state(hero2, Temporality.PRESENT).is_exerted
+        assert fight.get_state(hero3, Temporality.PRESENT).is_exerted
+
+    def test_group_exert_skips_dead_allies(self):
+        """GROUP_EXERT doesn't exert dead allies."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Healer", hp=5)
+        hero2 = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Kill hero2
+        fight.apply_damage(monster, hero2, 10, is_pending=False)
+
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.GROUP_EXERT}))
+
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 3))
+
+        # Use hero1's die
+        fight.use_die(hero1, 0, monster)
+
+        # Hero1 (alive) is exerted
+        assert fight.get_state(hero1, Temporality.PRESENT).is_exerted
+
+        # Hero2 (dead) is not exerted (dead state doesn't have exerted flag set)
+        assert not fight.get_state(hero2, Temporality.PRESENT).is_exerted
+
+
+class TestGroupGroooooowth:
+    """Tests for GROUP_GROOOOOOWTH keyword.
+
+    When used, all allies' dice get +1 pip on ALL sides.
+    """
+
+    def test_group_groooooowth_affects_all_sides_all_allies(self):
+        """GROUP_GROOOOOOWTH gives +1 pip to all sides on all allies."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Healer", hp=5)
+        hero2 = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.GROUP_GROOOOOOWTH}))
+
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 3))
+
+        # Use hero1's side 0
+        fight.use_die(hero1, 0, monster)
+
+        # All sides of hero1 should have +1 pip
+        for i in range(6):
+            assert hero1.die.get_side(i).growth_bonus == 1
+
+        # All sides of hero2 should have +1 pip
+        for i in range(6):
+            assert hero2.die.get_side(i).growth_bonus == 1
+
+    def test_group_groooooowth_skips_dead_allies(self):
+        """GROUP_GROOOOOOWTH doesn't affect dead allies."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Healer", hp=5)
+        hero2 = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Kill hero2
+        fight.apply_damage(monster, hero2, 10, is_pending=False)
+
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.GROUP_GROOOOOOWTH}))
+
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 3))
+
+        # Use hero1's side 0
+        fight.use_die(hero1, 0, monster)
+
+        # Hero1's sides all have +1 pip
+        for i in range(6):
+            assert hero1.die.get_side(i).growth_bonus == 1
+
+        # Hero2's sides unchanged (dead)
+        for i in range(6):
+            assert hero2.die.get_side(i).growth_bonus == 0

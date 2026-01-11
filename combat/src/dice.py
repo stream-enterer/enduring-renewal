@@ -105,6 +105,12 @@ class Keyword(Enum):
     EXERT = auto()         # Replace all sides with blanks until end of next turn
     # Value modifier keywords
     TREBLE = auto()        # Other keywords x2 -> x3
+    # Group keywords - apply base keyword to all allies
+    GROUP_GROWTH = auto()       # All allies' sides gain +1 pip
+    GROUP_DECAY = auto()        # All allies' sides lose -1 pip
+    GROUP_SINGLE_USE = auto()   # All allies' sides become blank
+    GROUP_EXERT = auto()        # All allies become exerted
+    GROUP_GROOOOOOWTH = auto()  # All allies' dice get +1 pip on all sides
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
@@ -227,6 +233,17 @@ def petrified_blank() -> Side:
         keywords=set(),
         growth_bonus=0,
         is_petrified=True
+    )
+
+
+def single_use_blank() -> Side:
+    """Create a blank side for singleUse - no effect, not petrified."""
+    return Side(
+        effect_type=EffectType.BLANK,
+        value=0,
+        keywords=set(),
+        growth_bonus=0,
+        is_petrified=False
     )
 
 

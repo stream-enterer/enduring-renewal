@@ -84,7 +84,12 @@
     "treble",
     "pain",
     "death",
-    "exert"
+    "exert",
+    "groupGrowth",
+    "groupDecay",
+    "groupSingleUse",
+    "groupExert",
+    "groupGroooooowth"
   ],
   "blocked": {
     "turn_tracking": ["patient", "era", "minusEra"],

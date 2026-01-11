@@ -1384,6 +1384,54 @@ class FightLog:
             source_state = self.get_state(entity, Temporality.PRESENT)
             source_state.is_exerted = True
 
+        # SINGLE_USE: replace this side with a blank (for this fight)
+        if original_side.has_keyword(Keyword.SINGLE_USE) or calculated_side.has_keyword(Keyword.SINGLE_USE):
+            from .dice import single_use_blank
+            die.set_side(side_index, single_use_blank())
+
+        # === GROUP KEYWORDS (apply base effect to all alive allies) ===
+        team = self.heroes if entity.team == Team.HERO else self.monsters
+
+        # GROUP_GROWTH: all allies' sides at same index gain +1 pip
+        if original_side.has_keyword(Keyword.GROUP_GROWTH) or calculated_side.has_keyword(Keyword.GROUP_GROWTH):
+            for ally in team:
+                ally_state = self.get_state(ally, Temporality.PRESENT)
+                if not ally_state.is_dead and ally.die:
+                    ally_side = ally.die.get_side(side_index)
+                    ally_side.apply_growth()
+
+        # GROUP_DECAY: all allies' sides at same index lose -1 pip
+        if original_side.has_keyword(Keyword.GROUP_DECAY) or calculated_side.has_keyword(Keyword.GROUP_DECAY):
+            for ally in team:
+                ally_state = self.get_state(ally, Temporality.PRESENT)
+                if not ally_state.is_dead and ally.die:
+                    ally_side = ally.die.get_side(side_index)
+                    ally_side.apply_growth_n(-1)
+
+        # GROUP_SINGLE_USE: all allies' sides at same index become blank
+        if original_side.has_keyword(Keyword.GROUP_SINGLE_USE) or calculated_side.has_keyword(Keyword.GROUP_SINGLE_USE):
+            from .dice import single_use_blank
+            for ally in team:
+                ally_state = self.get_state(ally, Temporality.PRESENT)
+                if not ally_state.is_dead and ally.die:
+                    ally.die.set_side(side_index, single_use_blank())
+
+        # GROUP_EXERT: all allies become exerted
+        if calculated_side.has_keyword(Keyword.GROUP_EXERT):
+            for ally in team:
+                ally_state = self.get_state(ally, Temporality.PRESENT)
+                if not ally_state.is_dead:
+                    ally_state.is_exerted = True
+
+        # GROUP_GROOOOOOWTH: all allies' dice get +1 pip on all sides
+        if original_side.has_keyword(Keyword.GROUP_GROOOOOOWTH) or calculated_side.has_keyword(Keyword.GROUP_GROOOOOOWTH):
+            for ally in team:
+                ally_state = self.get_state(ally, Temporality.PRESENT)
+                if not ally_state.is_dead and ally.die:
+                    for i in range(6):
+                        ally_side = ally.die.get_side(i)
+                        ally_side.apply_growth()
+
     def get_most_recent_die_effect(self) -> Optional[SideState]:
         """Get the most recently used die's side state (for copycat keyword)."""
         return self._most_recent_die_effect
