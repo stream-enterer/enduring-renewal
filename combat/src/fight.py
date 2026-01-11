@@ -408,6 +408,15 @@ class SideState:
         """Add to the calculated value."""
         self.calculated_effect.value += amount
 
+    def set_value(self, value: int):
+        """Set the calculated value to an absolute value.
+
+        Used by hypnotise to set DAMAGE sides to 0.
+        This sets the base value directly, ignoring growth_bonus.
+        """
+        self.calculated_effect.value = value
+        self.calculated_effect.growth_bonus = 0  # Clear growth bonus too
+
     def replace_with(self, new_side: "Side"):
         """Replace the calculated effect with a new side entirely."""
         self.calculated_effect = new_side.copy()
@@ -1128,8 +1137,16 @@ class FightLog:
             # Track whether die was used this turn (for patient keyword)
             was_used_this_turn = state.used_die
 
-            # Preserve buffs, reset turn-specific state for new turn
+            # Tick buffs and remove expired ones
+            new_buffs = []
+            for buff in state.buffs:
+                buff.tick()
+                if not buff.is_expired():
+                    new_buffs.append(buff)
+
+            # Update state with remaining buffs and reset turn-specific state
             self._update_state(entity,
+                buffs=new_buffs,
                 hp=new_hp,
                 shield=new_shield,
                 damage_blocked=0,  # Reset damage_blocked
@@ -1704,6 +1721,10 @@ class FightLog:
         # SELF_VULNERABLE: apply N vulnerable to myself
         if calculated_side.has_keyword(Keyword.SELF_VULNERABLE):
             self.apply_vulnerable(entity, value)
+
+        # HYPNOTISE: set target's DAMAGE sides to 0 for one turn
+        if calculated_side.has_keyword(Keyword.HYPNOTISE):
+            self.apply_hypnotise(target)
 
         # === MAX HP MODIFICATION KEYWORDS ===
         # VITALITY: grant target +N max HP (as empty HP) this fight
@@ -2767,6 +2788,33 @@ class FightLog:
         # Cap current HP at new max HP
         new_hp = min(state.hp, new_max_hp)
         self._update_state(target, hp=new_hp, max_hp=new_max_hp)
+
+    def apply_hypnotise(self, target: Entity):
+        """Apply hypnotise to target - set all DAMAGE sides to 0 for one turn.
+
+        Hypnotise creates a buff that modifies all DAMAGE-type sides on the
+        target's die to have 0 pips. This is a 1-turn debuff.
+
+        Java: Buff(1, AffectSides(TypeCondition(EffType.Damage), SetValue(0)))
+        """
+        from .triggers import AffectSides, TypeCondition, SetValue, Buff
+
+        self._record_action()
+
+        state = self._states[target]
+
+        # Create AffectSides that matches DAMAGE sides and sets value to 0
+        affect_sides = AffectSides(
+            conditions=TypeCondition(EffectType.DAMAGE),
+            effects=SetValue(0)
+        )
+
+        # Add buff (1 turn duration)
+        new_buffs = list(state.buffs)
+        buff = Buff(personal=affect_sides, turns_remaining=1)
+        state_copy = replace(state, buffs=new_buffs)
+        state_copy.add_buff(buff)
+        self._states[target] = state_copy
 
     def get_vulnerable_bonus(self, target: Entity) -> int:
         """Get total vulnerable bonus on an entity.

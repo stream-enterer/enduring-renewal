@@ -778,3 +778,150 @@ class TestSkill:
         state = fight.get_state(monster, Temporality.PRESENT)
         # Base 1 + skill bonus (tier 3) = 4 damage
         assert state.hp == 16
+
+
+# ============================================================================
+# Side Modification Keywords Tests
+# ============================================================================
+
+class TestHypnotise:
+    """Tests for hypnotise keyword.
+
+    Hypnotise: Set target's DAMAGE sides to 0 for one turn.
+    """
+
+    def test_hypnotise_sets_damage_sides_to_zero(self):
+        """Hypnotise sets all DAMAGE sides on target to 0."""
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Give monster a die with damage sides
+        monster.die = Die()
+        monster.die.sides = [
+            Side(EffectType.DAMAGE, 5),
+            Side(EffectType.DAMAGE, 3),
+            Side(EffectType.HEAL, 2),
+            Side(EffectType.SHIELD, 4),
+            Side(EffectType.DAMAGE, 6),
+            Side(EffectType.BLANK, 0),
+        ]
+
+        # Apply hypnotise to monster
+        fight.apply_hypnotise(monster)
+
+        # Check damage sides are 0
+        side0 = fight.get_side_state(monster, 0)
+        assert side0.value == 0  # Was 5
+        assert side0.effect_type == EffectType.DAMAGE
+
+        side1 = fight.get_side_state(monster, 1)
+        assert side1.value == 0  # Was 3
+
+        side4 = fight.get_side_state(monster, 4)
+        assert side4.value == 0  # Was 6
+
+        # Non-DAMAGE sides should be unchanged
+        heal_side = fight.get_side_state(monster, 2)
+        assert heal_side.value == 2  # Unchanged
+
+        shield_side = fight.get_side_state(monster, 3)
+        assert shield_side.value == 4  # Unchanged
+
+    def test_hypnotise_from_keyword(self):
+        """Hypnotise keyword applies hypnotise to target."""
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Give monster a damage die
+        monster.die = Die()
+        damage_side = Side(EffectType.DAMAGE, 5)
+        monster.die.set_all_sides(damage_side)
+
+        # Create a hypnotise side for hero (no pips needed)
+        hero.die = Die()
+        hypnotise_side = Side(EffectType.DAMAGE, 1, {Keyword.HYPNOTISE})
+        hero.die.set_all_sides(hypnotise_side)
+
+        # Use hypnotise on monster
+        fight.use_die(hero, 0, monster)
+
+        # Monster's damage sides should now be 0
+        side_state = fight.get_side_state(monster, 0)
+        assert side_state.value == 0
+
+    def test_hypnotise_expires_after_one_turn(self):
+        """Hypnotise buff expires after one turn."""
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Give monster damage die
+        monster.die = Die()
+        damage_side = Side(EffectType.DAMAGE, 5)
+        monster.die.set_all_sides(damage_side)
+
+        # Apply hypnotise
+        fight.apply_hypnotise(monster)
+
+        # Check side is 0
+        side_state = fight.get_side_state(monster, 0)
+        assert side_state.value == 0
+
+        # End turn - hypnotise should expire
+        fight.next_turn()
+
+        # Check side is back to normal
+        side_state = fight.get_side_state(monster, 0)
+        assert side_state.value == 5
+
+    def test_hypnotise_does_not_affect_heal_sides(self):
+        """Hypnotise does not affect HEAL sides."""
+        hero = make_hero("Fighter", hp=10)
+        fight = FightLog([hero], [])
+
+        hero.die = Die()
+        hero.die.sides = [
+            Side(EffectType.DAMAGE, 3),
+            Side(EffectType.HEAL, 5),
+            Side(EffectType.DAMAGE, 2),
+            Side(EffectType.HEAL, 4),
+            Side(EffectType.SHIELD, 3),
+            Side(EffectType.MANA, 2),
+        ]
+
+        fight.apply_hypnotise(hero)
+
+        # Damage sides should be 0
+        assert fight.get_side_state(hero, 0).value == 0
+        assert fight.get_side_state(hero, 2).value == 0
+
+        # Other sides should be unchanged
+        assert fight.get_side_state(hero, 1).value == 5  # HEAL
+        assert fight.get_side_state(hero, 3).value == 4  # HEAL
+        assert fight.get_side_state(hero, 4).value == 3  # SHIELD
+        assert fight.get_side_state(hero, 5).value == 2  # MANA
+
+    def test_hypnotise_clears_growth_bonus(self):
+        """Hypnotise clears growth bonus on DAMAGE sides."""
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Give monster a damage die with growth bonus
+        monster.die = Die()
+        damage_side = Side(EffectType.DAMAGE, 3)
+        damage_side.growth_bonus = 2  # Grown to effectively 5
+        monster.die.set_all_sides(damage_side)
+
+        # Verify growth bonus is active
+        side_state = fight.get_side_state(monster, 0)
+        assert side_state.value == 5  # 3 + 2 growth
+
+        # Apply hypnotise
+        fight.apply_hypnotise(monster)
+
+        # Should be 0, including growth bonus
+        side_state = fight.get_side_state(monster, 0)
+        assert side_state.value == 0

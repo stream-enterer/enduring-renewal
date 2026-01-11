@@ -23,6 +23,13 @@ class EffectType(Enum):
             return other in (EffectType.HEAL, EffectType.SHIELD)
         return False
 
+    def has_value(self) -> bool:
+        """Check if this effect type has a numeric pip value.
+
+        All effect types except BLANK have values that can be modified.
+        """
+        return self != EffectType.BLANK
+
 
 # Default maximum value for any effect (damage, healing, shield, etc.)
 DEFAULT_NUMBER_LIMIT = 999

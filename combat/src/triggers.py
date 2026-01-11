@@ -303,6 +303,22 @@ class ReplaceWith(AffectSideEffect):
         side_state.replace_with(self.new_side)
 
 
+class SetValue(AffectSideEffect):
+    """Set the side's value to a fixed value.
+
+    Used by hypnotise to set all DAMAGE sides to 0.
+    Only affects sides that have a value (non-blank, non-effect-only).
+    """
+
+    def __init__(self, value: int):
+        self.value = value
+
+    def affect(self, side_state: "SideState", owner: "EntityState", index: int, trigger_index: int):
+        # Only set value if the side has a value
+        if side_state.calculated_effect.effect_type.has_value():
+            side_state.set_value(self.value)
+
+
 # ============================================================================
 # Buff wrapper
 # ============================================================================
