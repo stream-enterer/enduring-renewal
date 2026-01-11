@@ -1,6 +1,6 @@
 """FightLog - central combat state manager."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum, auto
 from typing import Optional, TYPE_CHECKING
 from copy import deepcopy
@@ -331,26 +331,14 @@ class FightLog:
             The new EntityState that was stored.
         """
         old = self._states[entity]
-        new = EntityState(
-            entity=entity,
-            hp=kwargs.get('hp', old.hp),
-            max_hp=kwargs.get('max_hp', old.max_hp),
-            shield=kwargs.get('shield', old.shield),
-            spiky=kwargs.get('spiky', old.spiky),
-            self_heal=kwargs.get('self_heal', old.self_heal),
-            damage_blocked=kwargs.get('damage_blocked', old.damage_blocked),
-            keep_shields=kwargs.get('keep_shields', old.keep_shields),
-            stone_hp=kwargs.get('stone_hp', old.stone_hp),
-            fled=kwargs.get('fled', old.fled),
-            dodge=kwargs.get('dodge', old.dodge),
-            regen=kwargs.get('regen', old.regen),
-            petrified_sides=kwargs.get('petrified_sides', list(old.petrified_sides)),
-            used_die=kwargs.get('used_die', old.used_die),
-            times_used_this_turn=kwargs.get('times_used_this_turn', old.times_used_this_turn),
-            buffs=kwargs.get('buffs', list(old.buffs)),
-            cleansed_map=kwargs.get('cleansed_map', dict(old.cleansed_map)),
-            deaths_this_fight=kwargs.get('deaths_this_fight', old.deaths_this_fight),
-        )
+        # Copy mutable fields if not explicitly provided to avoid sharing references
+        if 'petrified_sides' not in kwargs:
+            kwargs['petrified_sides'] = list(old.petrified_sides)
+        if 'buffs' not in kwargs:
+            kwargs['buffs'] = list(old.buffs)
+        if 'cleansed_map' not in kwargs:
+            kwargs['cleansed_map'] = dict(old.cleansed_map)
+        new = replace(old, **kwargs)
         self._states[entity] = new
         return new
 
@@ -406,25 +394,17 @@ class FightLog:
         if len(alive_monsters) == 1:
             remaining = alive_monsters[0]
             if remaining.entity_type.flees_on_ally_death:
-                state = self._states[remaining]
-                self._states[remaining] = EntityState(
-                    remaining, state.hp, state.max_hp,
-                    state.shield, state.spiky, state.self_heal, state.damage_blocked,
-                    state.keep_shields, state.stone_hp, fled=True
-                )
+                self._update_state(remaining, fled=True)
 
     def _snapshot_states(self) -> dict[Entity, EntityState]:
         """Deep copy current states."""
         result = {}
         for e, s in self._states.items():
-            # Copy buffs list (buffs themselves are deep copied for mutable personals like Poison)
-            copied_buffs = [b.copy() for b in s.buffs]
-            result[e] = EntityState(
-                e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked,
-                s.keep_shields, s.stone_hp, s.fled, s.dodge, s.regen,
-                list(s.petrified_sides), s.used_die, s.times_used_this_turn, copied_buffs,
-                dict(s.cleansed_map),  # Copy cleansed_map for undo support
-                s.deaths_this_fight  # Preserve death count
+            # Deep copy mutable fields to prevent mutations affecting history
+            result[e] = replace(s,
+                petrified_sides=list(s.petrified_sides),
+                buffs=[b.copy() for b in s.buffs],
+                cleansed_map=dict(s.cleansed_map)
             )
         return result
 
@@ -503,7 +483,12 @@ class FightLog:
             # Regen heals, capped at max HP
             future_hp = min(future_hp + health_delta, base.max_hp)
 
-        return EntityState(entity, future_hp, base.max_hp, base.shield, base.spiky, base.self_heal, base.damage_blocked, base.keep_shields, base.stone_hp, base.fled, base.dodge, base.regen, list(base.petrified_sides), base.used_die, base.times_used_this_turn, list(base.buffs), dict(base.cleansed_map), base.deaths_this_fight)
+        return replace(base,
+            hp=future_hp,
+            petrified_sides=list(base.petrified_sides),
+            buffs=list(base.buffs),
+            cleansed_map=dict(base.cleansed_map)
+        )
 
     def apply_damage(self, source: Entity, target: Entity, amount: int, is_pending: bool = False):
         """Apply damage to target. If is_pending, damage goes to future state.
@@ -536,10 +521,10 @@ class FightLog:
             # Track if this damage kills the target (for reborn keyword)
             was_alive = state.hp > 0
             new_deaths = state.deaths_this_fight + (1 if was_alive and new_hp <= 0 else 0)
-            self._states[target] = EntityState(
-                target, new_hp, state.max_hp,
-                new_shield, state.spiky, state.self_heal, state.damage_blocked + blocked,
-                state.keep_shields, state.stone_hp, state.fled, state.dodge,
+            self._update_state(target,
+                hp=new_hp,
+                shield=new_shield,
+                damage_blocked=state.damage_blocked + blocked,
                 deaths_this_fight=new_deaths
             )
             # Check if target died and triggers flee
@@ -569,9 +554,10 @@ class FightLog:
                 blocked = min(state.shield, amount)
                 actual_damage = amount - blocked
                 new_shield = state.shield - blocked
-                self._states[t] = EntityState(
-                    t, state.hp - actual_damage, state.max_hp,
-                    new_shield, state.spiky, state.self_heal, state.damage_blocked + blocked
+                self._update_state(t,
+                    hp=state.hp - actual_damage,
+                    shield=new_shield,
+                    damage_blocked=state.damage_blocked + blocked
                 )
 
     def undo(self):
@@ -644,17 +630,11 @@ class FightLog:
             new_hp = source_state.hp  # No change
         else:
             new_hp = source_state.hp - pain
-        self._states[source] = EntityState(
-            source, new_hp, source_state.max_hp,
-            source_state.shield, source_state.spiky, source_state.self_heal, source_state.damage_blocked
-        )
+        self._update_state(source, hp=new_hp)
 
         # Damage to target (also immediate for this test's behavior)
         target_state = self._states[target]
-        self._states[target] = EntityState(
-            target, target_state.hp - damage, target_state.max_hp,
-            target_state.shield, target_state.spiky, target_state.self_heal, target_state.damage_blocked
-        )
+        self._update_state(target, hp=target_state.hp - damage)
 
     def modify_max_hp(self, target: Entity, amount: int):
         """Modify an entity's max HP by amount (can be positive or negative).
@@ -666,19 +646,13 @@ class FightLog:
 
         state = self._states[target]
         new_max_hp = max(1, state.max_hp + amount)  # Floor at 1
-        self._states[target] = EntityState(
-            target, state.hp, new_max_hp,
-            state.shield, state.spiky, state.self_heal, state.damage_blocked
-        )
+        self._update_state(target, max_hp=new_max_hp)
 
     def apply_buff_spiky(self, target: Entity, amount: int):
         """Apply Spiky buff to target. Spiky deals damage back to attackers."""
         self._record_action()
         state = self._states[target]
-        self._states[target] = EntityState(
-            target, state.hp, state.max_hp,
-            state.shield, state.spiky + amount, state.self_heal, state.damage_blocked
-        )
+        self._update_state(target, spiky=state.spiky + amount)
 
     def apply_shield(self, target: Entity, amount: int):
         """Apply shield to target. Shield blocks incoming damage.
@@ -716,10 +690,7 @@ class FightLog:
         self._record_action()
         state = self._states[target]
         new_hp = min(state.hp + total_heal, state.max_hp)
-        self._states[target] = EntityState(
-            target, new_hp, state.max_hp,
-            state.shield, state.spiky, state.self_heal, state.damage_blocked
-        )
+        self._update_state(target, hp=new_hp)
 
     def apply_heal_shield(self, target: Entity, heal_amount: int, shield_amount: int):
         """Apply both heal and shield to target.
@@ -742,10 +713,7 @@ class FightLog:
         self._record_action()
         state = self._states[target]
         new_hp = min(state.hp + total_heal, state.max_hp)
-        self._states[target] = EntityState(
-            target, new_hp, state.max_hp,
-            state.shield + total_shield, state.spiky, state.self_heal, state.damage_blocked
-        )
+        self._update_state(target, hp=new_hp, shield=state.shield + total_shield)
 
         # Check for rescue and fire triggers
         self._check_and_fire_rescue(target, was_dying)
@@ -753,11 +721,7 @@ class FightLog:
     def apply_buff_self_heal(self, target: Entity):
         """Apply selfHeal buff to target. SelfHeal negates pain damage."""
         self._record_action()
-        state = self._states[target]
-        self._states[target] = EntityState(
-            target, state.hp, state.max_hp,
-            state.shield, state.spiky, True, state.damage_blocked
-        )
+        self._update_state(target, self_heal=True)
 
     def apply_shield_repel(self, user: Entity, shield_amount: int):
         """Apply shield and repel pending damage back to attackers.
@@ -785,10 +749,7 @@ class FightLog:
                 # Deal reflected damage to source
                 source_state = self._states[pending.source]
                 new_source_hp = source_state.hp - reflect_amount
-                self._states[pending.source] = EntityState(
-                    pending.source, new_source_hp, source_state.max_hp,
-                    source_state.shield, source_state.spiky, source_state.self_heal, source_state.damage_blocked
-                )
+                self._update_state(pending.source, hp=new_source_hp)
 
                 # If source has Spiky, it triggers and damages user
                 # But user's shield absorbs it
@@ -799,10 +760,7 @@ class FightLog:
                     actual_spiky_damage = spiky_damage - absorbed
                     if actual_spiky_damage > 0:
                         user_state = self._states[user]
-                        self._states[user] = EntityState(
-                            user, user_state.hp - actual_spiky_damage, user_state.max_hp,
-                            user_state.shield, user_state.spiky, user_state.self_heal, user_state.damage_blocked
-                        )
+                        self._update_state(user, hp=user_state.hp - actual_spiky_damage)
 
                 # Reduce pending damage by repel amount
                 remaining_damage = pending.amount - reflect_amount
@@ -815,10 +773,7 @@ class FightLog:
 
         # Apply remaining shield to user's state
         user_state = self._states[user]
-        self._states[user] = EntityState(
-            user, user_state.hp, user_state.max_hp,
-            user_state.shield + remaining_shield, user_state.spiky, user_state.self_heal, user_state.damage_blocked
-        )
+        self._update_state(user, shield=user_state.shield + remaining_shield)
 
     def get_present_monsters(self, temporality: Temporality) -> list[Entity]:
         """Get monsters currently on the field (not dead, not fled, not reinforcement).
@@ -856,9 +811,10 @@ class FightLog:
                 blocked = min(state.shield, amount)
                 actual_damage = amount - blocked
                 new_shield = state.shield - blocked
-                self._states[target] = EntityState(
-                    target, state.hp - actual_damage, state.max_hp,
-                    new_shield, state.spiky, state.self_heal, state.damage_blocked + blocked
+                self._update_state(target,
+                    hp=state.hp - actual_damage,
+                    shield=new_shield,
+                    damage_blocked=state.damage_blocked + blocked
                 )
 
         # After group damage, check for reinforcements
@@ -886,21 +842,12 @@ class FightLog:
         # Give user shields if selfShield keyword present
         if self_shield > 0:
             state = self._states[user]
-            self._states[user] = EntityState(
-                user, state.hp, state.max_hp,
-                state.shield + self_shield, state.spiky, state.self_heal, state.damage_blocked,
-                state.keep_shields
-            )
+            self._update_state(user, shield=state.shield + self_shield)
 
     def apply_keep_shields(self, target: Entity):
         """Apply KeepShields buff - shields persist across turns."""
         self._record_action()
-        state = self._states[target]
-        self._states[target] = EntityState(
-            target, state.hp, state.max_hp,
-            state.shield, state.spiky, state.self_heal, state.damage_blocked,
-            keep_shields=True, stone_hp=state.stone_hp
-        )
+        self._update_state(target, keep_shields=True)
 
     def apply_stone_hp(self, target: Entity, amount: int):
         """Apply Stone HP buff - caps all incoming damage to 1 per hit.
@@ -909,12 +856,7 @@ class FightLog:
         Amount is the number of stone HP pips (affects how much total damage can be absorbed).
         """
         self._record_action()
-        state = self._states[target]
-        self._states[target] = EntityState(
-            target, state.hp, state.max_hp,
-            state.shield, state.spiky, state.self_heal, state.damage_blocked,
-            state.keep_shields, stone_hp=amount
-        )
+        self._update_state(target, stone_hp=amount)
 
     def next_turn(self):
         """Advance to next turn - clears shields (unless keep_shields), pending damage, etc.
@@ -958,15 +900,15 @@ class FightLog:
             was_alive = state.hp > 0
             new_deaths = state.deaths_this_fight + (1 if was_alive and new_hp <= 0 else 0)
 
-            # Preserve buffs, reset cleansed_map for new turn
-            self._states[entity] = EntityState(
-                entity, new_hp, state.max_hp,
-                new_shield, state.spiky, state.self_heal, 0,  # Reset damage_blocked
-                state.keep_shields, state.stone_hp, state.fled, state.dodge, state.regen,
-                list(state.petrified_sides), False, 0,  # Reset used_die
-                list(state.buffs),  # Preserve buffs (poison persists)
-                {},  # Reset cleansed_map for new turn
-                new_deaths  # Preserve/update death count
+            # Preserve buffs, reset turn-specific state for new turn
+            self._update_state(entity,
+                hp=new_hp,
+                shield=new_shield,
+                damage_blocked=0,  # Reset damage_blocked
+                used_die=False,  # Reset used_die
+                times_used_this_turn=0,  # Reset times used
+                cleansed_map={},  # Reset cleansed_map for new turn
+                deaths_this_fight=new_deaths  # Preserve/update death count
             )
 
     def apply_kill(self, target: Entity):
@@ -976,10 +918,8 @@ class FightLog:
         """
         self._record_action()
         state = self._states[target]
-        self._states[target] = EntityState(
-            target, 0, state.max_hp,
-            state.shield, state.spiky, state.self_heal, state.damage_blocked,
-            state.keep_shields, state.stone_hp,
+        self._update_state(target,
+            hp=0,
             deaths_this_fight=state.deaths_this_fight + 1  # Record the death
         )
 
@@ -1013,11 +953,16 @@ class FightLog:
         to_resurrect = dead_heroes[:amount]
         for hero in to_resurrect:
             state = self._states[hero]
-            self._states[hero] = EntityState(
-                hero, state.max_hp, state.max_hp,  # Full HP
-                0, 0, False, 0,  # Reset buffs
-                False, 0,  # Reset keep_shields and stone_hp
-                deaths_this_fight=state.deaths_this_fight  # Preserve death count
+            # Reset to clean state but preserve death count
+            self._update_state(hero,
+                hp=state.max_hp,  # Full HP
+                shield=0,
+                spiky=0,
+                self_heal=False,
+                damage_blocked=0,
+                keep_shields=False,
+                stone_hp=0
+                # deaths_this_fight is preserved by _update_state
             )
 
     def get_dead_heroes(self) -> list[Entity]:
@@ -1048,11 +993,7 @@ class FightLog:
         # Heal by amount, capped at new max
         new_hp = min(state.hp + amount, new_max_hp)
 
-        self._states[target] = EntityState(
-            target, new_hp, new_max_hp,
-            state.shield, state.spiky, state.self_heal, state.damage_blocked,
-            state.keep_shields, state.stone_hp
-        )
+        self._update_state(target, hp=new_hp, max_hp=new_max_hp)
 
     def count_damaged_enemies(self) -> int:
         """Count enemies (monsters) that are damaged but not dead.
@@ -1145,12 +1086,7 @@ class FightLog:
 
         # Heal capped at max HP
         new_hp = min(state.hp + total_heal, state.max_hp)
-        self._states[target] = EntityState(
-            target, new_hp, state.max_hp,
-            state.shield, state.spiky, state.self_heal, state.damage_blocked,
-            state.keep_shields, state.stone_hp, state.fled,
-            state.dodge, state.regen
-        )
+        self._update_state(target, hp=new_hp)
 
     def apply_weaken_damage(self, source: Entity, target: Entity, amount: int):
         """Apply damage with Weaken keyword.
@@ -1175,10 +1111,10 @@ class FightLog:
         actual_damage = effective_amount - blocked
         new_shield = state.shield - blocked
         new_hp = state.hp - actual_damage
-        self._states[target] = EntityState(
-            target, new_hp, state.max_hp,
-            new_shield, state.spiky, state.self_heal, state.damage_blocked + blocked,
-            state.keep_shields, state.stone_hp, state.fled
+        self._update_state(target,
+            hp=new_hp,
+            shield=new_shield,
+            damage_blocked=state.damage_blocked + blocked
         )
 
         # Check if target died and triggers flee
@@ -1211,12 +1147,7 @@ class FightLog:
         # Heal the attacker
         source_state = self._states[source]
         new_hp = min(source_state.hp + amount, source_state.max_hp)
-        self._states[source] = EntityState(
-            source, new_hp, source_state.max_hp,
-            source_state.shield, source_state.spiky, source_state.self_heal,
-            source_state.damage_blocked, source_state.keep_shields,
-            source_state.stone_hp, source_state.fled, source_state.dodge
-        )
+        self._update_state(source, hp=new_hp)
 
     def apply_dodge(self, target: Entity):
         """Apply Dodge buff to target - makes them invincible (immune to damage).
@@ -1224,12 +1155,7 @@ class FightLog:
         While dodge is active, the entity takes no damage from any source.
         """
         self._record_action()
-        state = self._states[target]
-        self._states[target] = EntityState(
-            target, state.hp, state.max_hp,
-            state.shield, state.spiky, state.self_heal, state.damage_blocked,
-            state.keep_shields, state.stone_hp, state.fled, dodge=True, regen=state.regen
-        )
+        self._update_state(target, dodge=True)
 
     def apply_heal_regen(self, target: Entity, amount: int):
         """Apply heal with Regen keyword.
@@ -1249,11 +1175,7 @@ class FightLog:
         # Apply/add regen buff
         new_regen = state.regen + amount
 
-        self._states[target] = EntityState(
-            target, new_hp, state.max_hp,
-            state.shield, state.spiky, state.self_heal, state.damage_blocked,
-            state.keep_shields, state.stone_hp, state.fled, state.dodge, new_regen
-        )
+        self._update_state(target, hp=new_hp, regen=new_regen)
 
     def get_total_mana(self) -> int:
         """Get the current total mana in the fight."""
@@ -1459,12 +1381,7 @@ class FightLog:
         # Add new petrified sides
         new_petrified = existing + sides_to_petrify
 
-        self._states[target] = EntityState(
-            target, state.hp, state.max_hp,
-            state.shield, state.spiky, state.self_heal, state.damage_blocked,
-            state.keep_shields, state.stone_hp, state.fled, state.dodge, state.regen,
-            new_petrified
-        )
+        self._update_state(target, petrified_sides=new_petrified)
 
     def apply_cleanse_petrify(self, target: Entity, amount: int):
         """Remove petrification from target's die sides.
@@ -1481,12 +1398,7 @@ class FightLog:
             if petrified:
                 petrified.pop()
 
-        self._states[target] = EntityState(
-            target, state.hp, state.max_hp,
-            state.shield, state.spiky, state.self_heal, state.damage_blocked,
-            state.keep_shields, state.stone_hp, state.fled, state.dodge, state.regen,
-            petrified
-        )
+        self._update_state(target, petrified_sides=petrified)
 
     def mark_die_used(self, entity: Entity, max_uses: int = 1):
         """Mark entity's die as used (or partially used for multi-use keywords).
@@ -1501,12 +1413,7 @@ class FightLog:
         times = state.times_used_this_turn + 1
         is_used = times >= max_uses
 
-        self._states[entity] = EntityState(
-            entity, state.hp, state.max_hp,
-            state.shield, state.spiky, state.self_heal, state.damage_blocked,
-            state.keep_shields, state.stone_hp, state.fled, state.dodge, state.regen,
-            list(state.petrified_sides), is_used, times
-        )
+        self._update_state(entity, used_die=is_used, times_used_this_turn=times)
 
     def recharge_die(self, entity: Entity):
         """Recharge entity's die - allows it to be used again.
@@ -1515,14 +1422,7 @@ class FightLog:
         and RAMPAGE keyword (when attack kills an enemy).
         """
         self._record_action()
-        state = self._states[entity]
-
-        self._states[entity] = EntityState(
-            entity, state.hp, state.max_hp,
-            state.shield, state.spiky, state.self_heal, state.damage_blocked,
-            state.keep_shields, state.stone_hp, state.fled, state.dodge, state.regen,
-            list(state.petrified_sides), False, 0  # Reset used_die and times_used
-        )
+        self._update_state(entity, used_die=False, times_used_this_turn=0)
 
     def apply_heal_rescue(self, source: Entity, target: Entity, amount: int):
         """Apply heal with RESCUE keyword.
