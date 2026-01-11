@@ -63,6 +63,12 @@ After ALL keywords implemented → human runs funnel sieve verification (see bel
 4. Commit: `Implement <keyword> keyword` or `Implement <x>, <y>, <z> keywords`
 5. Report: keywords implemented, keywords skipped (and why), remaining count
 
+**Error recovery:**
+- If tests fail → fix implementation, don't add to `implemented` until green
+- If keyword doesn't fit patterns → add to `blocked` with reason, continue with others
+- If unsure about Java behavior → add to `blocked` with reason "needs_clarification", ask user
+- Never leave partial implementations uncommitted
+
 ## Existing Implementations
 
 These keywords are already implemented and tested. They stay where they are:
@@ -113,13 +119,37 @@ if side.has_keyword(Keyword.CRUEL):
 # Add new conditional keywords here following this pattern
 ```
 
-### Meta Keywords
+### Meta Keywords (copycat, pair, echo)
 
-Add to `EntityState._process_meta_keywords()` - these modify the Side before value calculation.
+Add to `EntityState._process_meta_keywords()` at line ~175 in fight.py.
 
-### Post-Effect Keywords
+**Method signature:**
+```python
+def _process_meta_keywords(self, side_state: "SideState", fight_log: "FightLog" = None):
+```
 
-Add to `FightLog.use_die()` after the main effect is applied.
+**Variables:** `side_state.calculated_effect` (has `.keywords`, `.value`, `.calculated_value`)
+
+**Pattern:** These modify the Side itself before value calculation. Complex - grep for existing examples.
+
+### Post-Effect Keywords (growth, singleUse, manaGain)
+
+Add to `FightLog.use_die()` after line ~1255 in fight.py (after main effect, before return).
+
+**Pattern:**
+```python
+# After the effect is applied, check for post-effect keywords
+original_side = die.get_side(side_index)
+if original_side.has_keyword(Keyword.GROWTH):
+    original_side.apply_growth()  # +1 to base value
+```
+
+### Non-Conditional Keywords
+
+If a keyword doesn't fit the conditional pattern (x2 multiplier based on condition):
+1. Check the Pipeline table to identify correct stage
+2. If stage lacks documentation here → add to `blocked` with reason "needs_pattern_documentation"
+3. Report to user: "Keyword X needs implementation pattern for Y stage"
 
 ## Test Patterns
 
@@ -147,6 +177,9 @@ def make_monster(name: str, hp: int = 4) -> Entity:
 ```python
 def test_pristine_full_hp(self):
     """Pristine deals x2 damage when source is at full HP."""
+    from src.dice import Die, Side, Keyword
+    from src.effects import EffectType
+
     hero = make_hero("Fighter", hp=5)
     monster = make_monster("Goblin", hp=10)
     fight = FightLog([hero], [monster])
@@ -169,6 +202,9 @@ def test_pristine_full_hp(self):
 ```python
 def test_pristine_no_bonus_when_damaged(self):
     """Pristine deals normal damage when source is below full HP."""
+    from src.dice import Die, Side, Keyword
+    from src.effects import EffectType
+
     hero = make_hero("Fighter", hp=5)
     monster = make_monster("Goblin", hp=10)
     fight = FightLog([hero], [monster])
@@ -260,10 +296,10 @@ if side.has_keyword(Keyword.ANTI_ENGAGE):
     if target_state.hp != target_state.max_hp:  # NOT full HP
         value *= 2
 
-# halveEngage → HALVE_ENGAGE: same condition, different multiplier
+# halveEngage → HALVE_ENGAGE: same condition, x0.5 (rounded down per Java)
 if side.has_keyword(Keyword.HALVE_ENGAGE):
     if target_state.hp == target_state.max_hp:
-        value //= 2  # integer division
+        value //= 2  # integer division (Java: "x0.5 rounded down")
 
 # swapEngage → SWAP_ENGAGE: check SOURCE instead of TARGET
 if side.has_keyword(Keyword.SWAP_ENGAGE):
@@ -337,6 +373,17 @@ uv run pytest -k "keyword_name"     # Filter by name
 | `FightLog.java` | Combat state, die resolution, effect application |
 | `EntState.java` | Entity state snapshots (HP, shields, etc.) |
 | `conditionalBonus/*.java` | How keywords modify values |
+
+**How to read Keyword.java:**
+```java
+// Format: name(color, "rules text", ConditionType, isSourceCheck)
+engage(Colours.yellow, "with full hp", StateConditionType.FullHP, false),
+//                                                                ^^^^^ false = check TARGET
+pristine(Colours.light, "have full hp", StateConditionType.FullHP, true),
+//                                                                 ^^^^ true = check SOURCE
+```
+
+Look for `StateConditionType` to understand the condition, and the boolean to know if it checks source or target.
 
 ## Funnel Sieve Verification
 
