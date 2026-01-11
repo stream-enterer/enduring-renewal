@@ -1,12 +1,20 @@
 {
   "current": {
     "file": "TestItem",
-    "method": "testSteelHeart",
+    "method": "testPipeAndStudsWithHealShield",
     "status": "analyzing",
     "hypothesis": null,
     "verified": null
   },
   "completed": [
+    {
+      "file": "TestItem",
+      "method": "testSteelHeart",
+      "hypothesis": "OnRescue trigger: fires when hero transitions from dying (future HP<=0) to surviving (future HP>0). Faint Halo uses OnRescue to grant +1 max HP when wearer is rescued.",
+      "verified": "Confirmed.",
+      "test": "tests/test_item.py::test_steel_heart",
+      "timestamp": "2025-01-10T16:20:00Z"
+    },
     {
       "file": "TestStrangeScenarios",
       "method": "multiTargetStickiness",

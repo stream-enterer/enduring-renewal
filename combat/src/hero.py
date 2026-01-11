@@ -5,7 +5,7 @@ from typing import Optional
 
 from .entity import Entity, EntityType, Team, EntitySize
 from .dice import Die, Side, create_fighter_die
-from .item import Item
+from .item import Item, TriggerType, ItemTrigger
 
 
 @dataclass
@@ -59,6 +59,13 @@ class Hero:
         for item in self._items:
             side = item.modify_side(side)
         return side
+
+    def get_triggers(self, trigger_type: TriggerType) -> list[ItemTrigger]:
+        """Get all triggers of a specific type from all items."""
+        triggers = []
+        for item in self._items:
+            triggers.extend(item.get_triggers(trigger_type))
+        return triggers
 
     def __hash__(self):
         return hash(self.entity)

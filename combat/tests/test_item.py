@@ -41,3 +41,46 @@ def test_gauntlet():
     monster_state = fight.get_state(monster, Temporality.FUTURE)
     assert monster_state.hp == monster_state.max_hp - 2, \
         f"Monster should be damaged for 2, hp={monster_state.hp}, max={monster_state.max_hp}"
+
+
+def test_steel_heart():
+    """Faint Halo grants +1 max HP when wearer is rescued.
+
+    From TestItem.testSteelHeart - OnRescue trigger fires when hero
+    transitions from dying (future HP <= 0) to surviving.
+    """
+    fight, hero, monster = setup_fight_with_hero()
+
+    # Register hero for trigger system
+    fight.register_hero(hero)
+
+    # Add Faint Halo item
+    hero.add_item(item_by_name("Faint Halo"))
+
+    initial_max_hp = hero.hero_type.hp  # Fighter has 6 HP
+
+    # Shield self while not dying - max HP shouldn't increase
+    fight.apply_shield(hero.entity, amount=1)
+    hero_state = fight.get_state(hero.entity, Temporality.PRESENT)
+    assert hero_state.max_hp == initial_max_hp, \
+        "Max HP shouldn't increase from just shielding"
+
+    # Take lethal pending damage (more than current HP + shield)
+    fight.apply_damage(monster, hero.entity, amount=initial_max_hp + 1, is_pending=True)
+
+    # Should be dying in future state
+    future_state = fight.get_state(hero.entity, Temporality.FUTURE)
+    assert future_state.hp <= 0, "Should be dying"
+
+    # Max HP should still be initial even while dying
+    present_state = fight.get_state(hero.entity, Temporality.PRESENT)
+    assert present_state.max_hp == initial_max_hp, \
+        "Max HP shouldn't change while dying"
+
+    # Shield self again - this should rescue (shield blocks pending damage)
+    fight.apply_shield(hero.entity, amount=1)
+
+    # Now max HP should have increased by 1 due to rescue trigger
+    present_state = fight.get_state(hero.entity, Temporality.PRESENT)
+    assert present_state.max_hp == initial_max_hp + 1, \
+        f"Max HP should increase when rescued, got {present_state.max_hp}"

@@ -2,10 +2,13 @@
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from copy import deepcopy
 
 from .entity import Entity, Team, FIELD_CAPACITY
+
+if TYPE_CHECKING:
+    from .hero import Hero
 
 
 class Temporality(Enum):
@@ -69,6 +72,9 @@ class FightLog:
         # Undo stack
         self._history: list[Action] = []
 
+        # Hero registry for trigger system (Entity -> Hero mapping)
+        self._hero_registry: dict[Entity, "Hero"] = {}
+
     def _get_field_usage(self) -> int:
         """Calculate current field usage from present (alive) monsters."""
         usage = 0
@@ -116,6 +122,31 @@ class FightLog:
             pending_before=list(self._pending)
         ))
 
+    def register_hero(self, hero: "Hero"):
+        """Register a Hero object for trigger system."""
+        self._hero_registry[hero.entity] = hero
+
+    def _check_and_fire_rescue(self, target: Entity, was_dying: bool):
+        """Check if target was rescued and fire triggers if so.
+
+        A rescue occurs when target transitions from dying (future HP <= 0)
+        to surviving (future HP > 0).
+        """
+        if not was_dying:
+            return  # Can't be rescued if wasn't dying
+
+        future_state = self.get_state(target, Temporality.FUTURE)
+        if future_state.is_dead:
+            return  # Still dying, no rescue
+
+        # Rescue occurred! Fire ON_RESCUE triggers
+        hero = self._hero_registry.get(target)
+        if hero:
+            from .item import TriggerType
+            for trigger in hero.get_triggers(TriggerType.ON_RESCUE):
+                if trigger.target_self:
+                    trigger.effect.apply(self, target)
+
     def get_state(self, entity: Entity, temporality: Temporality) -> EntityState:
         """Get entity state at given temporality."""
         base = self._states[entity]
@@ -123,14 +154,19 @@ class FightLog:
         if temporality == Temporality.PRESENT:
             return base
 
-        # FUTURE: apply pending damage
+        # FUTURE: apply pending damage (shield blocks pending damage)
         future_hp = base.hp
+        shield_remaining = base.shield
         for pending in self._pending:
             if pending.target == entity:
                 # Only apply if source is alive
                 source_state = self._states[pending.source]
                 if not source_state.is_dead:
-                    future_hp -= pending.amount
+                    # Shield blocks pending damage
+                    blocked = min(shield_remaining, pending.amount)
+                    actual_damage = pending.amount - blocked
+                    shield_remaining -= blocked
+                    future_hp -= actual_damage
 
         return EntityState(entity, future_hp, base.max_hp, base.shield, base.spiky, base.self_heal, base.damage_blocked)
 
@@ -289,13 +325,22 @@ class FightLog:
         )
 
     def apply_shield(self, target: Entity, amount: int):
-        """Apply shield to target. Shield blocks incoming damage."""
+        """Apply shield to target. Shield blocks incoming damage.
+
+        Also checks for rescue (dying -> surviving transition) and fires triggers.
+        """
+        # Check if target was dying before shield
+        was_dying = self.get_state(target, Temporality.FUTURE).is_dead
+
         self._record_action()
         state = self._states[target]
         self._states[target] = EntityState(
             target, state.hp, state.max_hp,
             state.shield + amount, state.spiky, state.self_heal, state.damage_blocked
         )
+
+        # Check for rescue and fire triggers
+        self._check_and_fire_rescue(target, was_dying)
 
     def apply_heal(self, target: Entity, amount: int):
         """Heal target. HP is capped at max HP."""
