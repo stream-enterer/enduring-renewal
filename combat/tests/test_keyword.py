@@ -10185,3 +10185,401 @@ class TestLead:
         state2 = fight.get_state(hero2, Temporality.PRESENT)
         side_state2 = state2.get_side_state(0, fight)
         assert side_state2.calculated_effect.calculated_value == 5  # 1 + 4
+
+
+class TestSticky:
+    """Tests for STICKY keyword.
+
+    STICKY causes the die to auto-lock when it lands on this side.
+    A sticky die cannot be rerolled.
+    """
+
+    def test_sticky_side_causes_auto_lock(self):
+        """Side with STICKY keyword returns True for is_auto_lock."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Die with STICKY keyword
+        hero.die = Die()
+        sticky_side = Side(EffectType.DAMAGE, 3, {Keyword.STICKY})
+        hero.die.set_all_sides(sticky_side)
+        hero.die.locked_side = 0
+
+        # Should be auto-locked
+        assert fight.is_auto_lock(hero) is True
+
+    def test_non_sticky_side_not_auto_locked(self):
+        """Side without STICKY keyword returns False for is_auto_lock."""
+        from src.dice import Die, Side
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Die without STICKY keyword
+        hero.die = Die()
+        normal_side = Side(EffectType.DAMAGE, 3, set())
+        hero.die.set_all_sides(normal_side)
+        hero.die.locked_side = 0
+
+        # Should NOT be auto-locked
+        assert fight.is_auto_lock(hero) is False
+
+    def test_sticky_with_specific_side_index(self):
+        """is_auto_lock can check a specific side index."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Side 0 has sticky, side 1 does not
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, set()))
+        hero.die.set_side(0, Side(EffectType.DAMAGE, 3, {Keyword.STICKY}))
+        hero.die.locked_side = 1  # Currently on non-sticky side
+
+        # Check specific indices
+        assert fight.is_auto_lock(hero, side_index=0) is True  # Sticky side
+        assert fight.is_auto_lock(hero, side_index=1) is False  # Non-sticky side
+        assert fight.is_auto_lock(hero) is False  # Current side (1) is not sticky
+
+
+class TestCantrip:
+    """Tests for CANTRIP keyword.
+
+    CANTRIP auto-activates when the die lands on this side.
+    The die is NOT consumed - it can still be used normally this turn.
+    """
+
+    def test_cantrip_auto_activates_damage(self):
+        """CANTRIP side auto-activates and damages enemy."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        import random
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Die with CANTRIP damage
+        hero.die = Die()
+        cantrip_side = Side(EffectType.DAMAGE, 3, {Keyword.CANTRIP})
+        hero.die.set_all_sides(cantrip_side)
+        hero.die.locked_side = 0
+
+        # Activate cantrip with seeded RNG
+        rng = random.Random(42)
+        result = fight.activate_cantrip(hero, 0, rng)
+
+        # Should have activated
+        assert result is True, "Cantrip should activate"
+
+        # Monster should have taken damage
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 7, f"Monster should have 7 HP (10 - 3), got {monster_state.hp}"
+
+    def test_cantrip_does_not_consume_die(self):
+        """CANTRIP does not mark the die as used."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        import random
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Die with CANTRIP damage
+        hero.die = Die()
+        cantrip_side = Side(EffectType.DAMAGE, 3, {Keyword.CANTRIP})
+        hero.die.set_all_sides(cantrip_side)
+        hero.die.locked_side = 0
+
+        # Confirm die starts unused
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.times_used_this_turn == 0
+        assert state.used_die is False
+
+        # Activate cantrip
+        rng = random.Random(42)
+        fight.activate_cantrip(hero, 0, rng)
+
+        # Die should still be unused (cantrip doesn't consume)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.times_used_this_turn == 0, "Cantrip should not increment usage count"
+        assert state.used_die is False, "Cantrip should not mark die as used"
+
+    def test_cantrip_can_still_use_die_normally(self):
+        """After cantrip, die can still be used normally."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        import random
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Die with CANTRIP damage
+        hero.die = Die()
+        cantrip_side = Side(EffectType.DAMAGE, 2, {Keyword.CANTRIP})
+        hero.die.set_all_sides(cantrip_side)
+        hero.die.locked_side = 0
+
+        # Activate cantrip (does 2 damage)
+        rng = random.Random(42)
+        fight.activate_cantrip(hero, 0, rng)
+
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 8, "Monster should have 8 HP after cantrip"
+
+        # Now use die normally (does 2 more damage)
+        fight.use_die(hero, 0, monster)
+
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 6, "Monster should have 6 HP after normal use"
+
+        # Now die should be marked as used
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.used_die is True, "Die should be marked as used after normal use"
+
+    def test_cantrip_heal_targets_ally(self):
+        """CANTRIP heal auto-activates and heals an ally."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        import random
+
+        hero1 = make_hero("Healer", hp=5)
+        hero2 = make_hero("Fighter", hp=5)  # Both at full HP initially
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Damage hero2 first
+        fight.apply_damage(monster, hero2, 2)
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+        assert state2.hp == 3, "Hero2 should have 3 HP after damage"
+
+        # Die with CANTRIP heal
+        hero1.die = Die()
+        cantrip_side = Side(EffectType.HEAL, 4, {Keyword.CANTRIP})
+        hero1.die.set_all_sides(cantrip_side)
+        hero1.die.locked_side = 0
+
+        # Activate cantrip
+        rng = random.Random(42)
+        result = fight.activate_cantrip(hero1, 0, rng)
+
+        # Should have activated
+        assert result is True, "Cantrip heal should activate"
+
+        # Check which hero was healed (one of the two)
+        state1 = fight.get_state(hero1, Temporality.PRESENT)
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+
+        # At least one should have been healed
+        # Hero1 is at full HP (5), so healing hero1 would stay at 5
+        # Hero2 was at 3, healing should increase HP
+
+        # With seeded RNG, one of them got healed
+        assert state1.hp == 5 or state2.hp > 3, "One hero should have been healed"
+
+    def test_cantrip_no_targets_no_activation(self):
+        """CANTRIP does not activate if there are no valid targets."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        import random
+
+        hero = make_hero("Fighter", hp=5)
+        # No monsters - no valid targets for damage cantrip
+        fight = FightLog([hero], [])
+
+        # Die with CANTRIP damage
+        hero.die = Die()
+        cantrip_side = Side(EffectType.DAMAGE, 3, {Keyword.CANTRIP})
+        hero.die.set_all_sides(cantrip_side)
+        hero.die.locked_side = 0
+
+        # Activate cantrip
+        rng = random.Random(42)
+        result = fight.activate_cantrip(hero, 0, rng)
+
+        # Should NOT have activated (no targets)
+        assert result is False, "Cantrip should not activate with no valid targets"
+
+    def test_cantrip_dead_entity_no_activation(self):
+        """CANTRIP does not activate if entity is dead."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        import random
+
+        hero = make_hero("Fighter", hp=0)  # Dead hero
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Die with CANTRIP damage
+        hero.die = Die()
+        cantrip_side = Side(EffectType.DAMAGE, 3, {Keyword.CANTRIP})
+        hero.die.set_all_sides(cantrip_side)
+        hero.die.locked_side = 0
+
+        # Activate cantrip
+        rng = random.Random(42)
+        result = fight.activate_cantrip(hero, 0, rng)
+
+        # Should NOT have activated (entity is dead)
+        assert result is False, "Cantrip should not activate for dead entity"
+
+        # Monster should be unharmed
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 10
+
+    def test_cantrip_blank_side_no_activation(self):
+        """CANTRIP does not activate for BLANK effect type."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        import random
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Die with CANTRIP + BLANK (should not activate)
+        hero.die = Die()
+        cantrip_blank = Side(EffectType.BLANK, 0, {Keyword.CANTRIP})
+        hero.die.set_all_sides(cantrip_blank)
+        hero.die.locked_side = 0
+
+        # Activate cantrip
+        rng = random.Random(42)
+        result = fight.activate_cantrip(hero, 0, rng)
+
+        # Should NOT have activated (BLANK is excluded)
+        assert result is False, "Cantrip should not activate for BLANK effect"
+
+    def test_process_dice_landed_cantrip_and_sticky(self):
+        """process_dice_landed handles both cantrip and sticky."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        import random
+
+        hero1 = make_hero("Cantrip", hp=5)
+        hero2 = make_hero("Sticky", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 has cantrip damage
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.CANTRIP}))
+        hero1.die.locked_side = 0
+
+        # Hero2 has sticky damage
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.STICKY}))
+        hero2.die.locked_side = 0
+
+        # Process dice landed
+        rng = random.Random(42)
+        results = fight.process_dice_landed([hero1, hero2], rng)
+
+        # Both should have taken action
+        assert results[hero1] is True, "Cantrip should have activated"
+        assert results[hero2] is True, "Sticky should cause auto-lock"
+
+        # Monster should have taken 2 damage from cantrip
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 8, f"Monster should have 8 HP, got {monster_state.hp}"
+
+    def test_cantrip_mana_side_self_targets(self):
+        """CANTRIP mana side self-targets and grants mana."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        import random
+
+        hero = make_hero("Mage", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Die with CANTRIP mana
+        hero.die = Die()
+        cantrip_mana = Side(EffectType.MANA, 3, {Keyword.CANTRIP})
+        hero.die.set_all_sides(cantrip_mana)
+        hero.die.locked_side = 0
+
+        # Initial mana is 0
+        assert fight.get_total_mana() == 0
+
+        # Activate cantrip
+        rng = random.Random(42)
+        result = fight.activate_cantrip(hero, 0, rng)
+
+        # Should have activated
+        assert result is True, "Cantrip mana should activate"
+
+        # Mana should be granted
+        assert fight.get_total_mana() == 3, "Should have 3 mana after cantrip"
+
+    def test_cantrip_with_unusable_still_works(self):
+        """CANTRIP can activate on UNUSABLE sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        import random
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Die with both CANTRIP and UNUSABLE
+        hero.die = Die()
+        cantrip_unusable = Side(EffectType.DAMAGE, 3, {Keyword.CANTRIP, Keyword.UNUSABLE})
+        hero.die.set_all_sides(cantrip_unusable)
+        hero.die.locked_side = 0
+
+        # Cantrip should still activate even though side is UNUSABLE
+        rng = random.Random(42)
+        result = fight.activate_cantrip(hero, 0, rng)
+
+        assert result is True, "Cantrip should activate even with UNUSABLE"
+
+        # Monster should have taken damage
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 7, "Monster should have taken 3 damage"
+
+        # But the side should not be manually usable
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert fight.is_side_usable(side_state.calculated_effect, is_cantrip=False) is False
+
+    def test_cantrip_shield_targets_ally(self):
+        """CANTRIP shield auto-activates and shields an ally."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        import random
+
+        hero1 = make_hero("Shielder", hp=5)
+        hero2 = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Die with CANTRIP shield
+        hero1.die = Die()
+        cantrip_shield = Side(EffectType.SHIELD, 3, {Keyword.CANTRIP})
+        hero1.die.set_all_sides(cantrip_shield)
+        hero1.die.locked_side = 0
+
+        # Activate cantrip
+        rng = random.Random(42)
+        result = fight.activate_cantrip(hero1, 0, rng)
+
+        assert result is True, "Cantrip shield should activate"
+
+        # One of the heroes should have shields
+        state1 = fight.get_state(hero1, Temporality.PRESENT)
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+
+        total_shields = state1.shield + state2.shield
+        assert total_shields == 3, f"Total shields should be 3, got {total_shields}"

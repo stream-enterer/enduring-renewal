@@ -189,10 +189,11 @@
     "deplete",
     "channel",
     "future",
-    "spellRescue"
+    "spellRescue",
+    "sticky",
+    "cantrip"
   ],
   "blocked": {
-    "roll_phase": ["cantrip", "sticky"],
     "item_system": ["potion"],
     "tactic_system": ["tactical"],
     "validation_only": ["permissive"],

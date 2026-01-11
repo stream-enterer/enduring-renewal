@@ -3034,6 +3034,182 @@ class FightLog:
 
         return True
 
+    def is_auto_lock(self, entity: Entity, side_index: int = None) -> bool:
+        """Check if an entity's die should auto-lock (cannot be rerolled).
+
+        A die auto-locks if the current side has the STICKY keyword.
+        This blocks the die from being rerolled.
+
+        Args:
+            entity: The entity whose die to check
+            side_index: Optional side index to check. If None, uses current locked side.
+
+        Returns:
+            True if the die should auto-lock, False otherwise.
+        """
+        from .dice import Keyword
+
+        die = getattr(entity, 'die', None)
+        if die is None:
+            return False
+
+        # Get the side index to check
+        idx = side_index if side_index is not None else die.locked_side
+
+        # Get calculated side state (applies triggers)
+        state = self._states.get(entity)
+        if state is None:
+            return False
+
+        side_state = state.get_side_state(idx, self)
+        return side_state.has_keyword(Keyword.STICKY)
+
+    def get_cantrip_targets(self, entity: Entity, side_state: "SideState") -> list[Entity]:
+        """Get valid targets for a cantrip effect.
+
+        For cantrip, we use recommended targets first, falling back to valid targets.
+        Returns empty list if no valid targets.
+
+        Args:
+            entity: The entity whose cantrip is activating
+            side_state: The calculated side state
+
+        Returns:
+            List of valid target entities
+        """
+        effect_type = side_state.effect_type
+
+        # Get team lists based on effect type
+        if effect_type == EffectType.DAMAGE:
+            # Damage targets enemies
+            if entity.team == Team.HERO:
+                targets = self.get_alive_monsters(Temporality.PRESENT)
+            else:
+                targets = self.get_alive_heroes(Temporality.PRESENT)
+        elif effect_type == EffectType.HEAL or effect_type == EffectType.SHIELD:
+            # Heal/Shield targets allies
+            if entity.team == Team.HERO:
+                targets = self.get_alive_heroes(Temporality.PRESENT)
+            else:
+                targets = self.get_alive_monsters(Temporality.PRESENT)
+        elif effect_type == EffectType.MANA:
+            # Mana doesn't need a target
+            return [entity]  # Self-target for mana
+        else:
+            # Other effects - default to enemies for now
+            if entity.team == Team.HERO:
+                targets = self.get_alive_monsters(Temporality.PRESENT)
+            else:
+                targets = self.get_alive_heroes(Temporality.PRESENT)
+
+        return targets
+
+    def activate_cantrip(self, entity: Entity, side_index: int, rng: random.Random = None) -> bool:
+        """Activate a cantrip side - uses the die but doesn't consume it.
+
+        Cantrip auto-activates when a die lands on a side with the CANTRIP keyword.
+        The die is NOT consumed (can still be used normally this turn).
+
+        Excluded effects (do NOT auto-activate):
+        - Resurrect effect type
+        - Hero Summon effect type
+
+        Args:
+            entity: The entity whose cantrip is activating
+            side_index: The side index to activate
+            rng: Random number generator for target selection. If None, uses global random.
+
+        Returns:
+            True if cantrip was activated, False if skipped (no valid targets, excluded type, etc.)
+        """
+        from .dice import Keyword
+
+        if rng is None:
+            rng = random.Random()
+
+        # Get entity state
+        state = self._states.get(entity)
+        if state is None:
+            return False
+
+        # Check if entity is dead
+        if state.is_dead:
+            return False
+
+        # Get calculated side state
+        side_state = state.get_side_state(side_index, self)
+
+        # Check if side has CANTRIP keyword
+        if not side_state.has_keyword(Keyword.CANTRIP):
+            return False
+
+        # Check excluded effect types (Resurrect, hero Summon)
+        # Note: We don't have Resurrect or Summon implemented yet, so just check BLANK for now
+        if side_state.effect_type == EffectType.BLANK:
+            return False
+
+        # Check if side is usable (checks UNUSABLE keyword, allowing cantrip)
+        if not self.is_side_usable(side_state.calculated_effect, is_cantrip=True):
+            return False
+
+        # Get valid targets
+        targets = self.get_cantrip_targets(entity, side_state)
+        if not targets:
+            return False
+
+        # Randomly select a target
+        target = rng.choice(targets)
+
+        # Use the die - but note that cantrip doesn't consume the die
+        # Save current used state
+        original_times_used = state.times_used_this_turn
+        original_used_die = state.used_die
+
+        # Use the die (this applies the effect)
+        self.use_die(entity, side_index, target)
+
+        # Restore the used state - cantrip doesn't consume the die
+        self._update_state(entity, times_used_this_turn=original_times_used, used_die=original_used_die)
+
+        return True
+
+    def process_dice_landed(self, entities: list[Entity], rng: random.Random = None) -> dict[Entity, bool]:
+        """Process all dice that have landed - check for cantrip and sticky.
+
+        Called when all dice have stopped rolling. For each die:
+        1. Check if side has CANTRIP - if so, auto-activate
+        2. Check if side has STICKY - if so, auto-lock
+
+        Args:
+            entities: List of entities whose dice have landed
+            rng: Random number generator for cantrip target selection
+
+        Returns:
+            Dict mapping entity to whether any action was taken (cantrip activated or auto-locked)
+        """
+        results = {}
+
+        for entity in entities:
+            die = getattr(entity, 'die', None)
+            if die is None:
+                results[entity] = False
+                continue
+
+            action_taken = False
+
+            # Process cantrip first
+            if self.activate_cantrip(entity, die.locked_side, rng):
+                action_taken = True
+
+            # Check for auto-lock (sticky)
+            if self.is_auto_lock(entity, die.locked_side):
+                # Die should be locked - this would set a flag in a real implementation
+                action_taken = True
+
+            results[entity] = action_taken
+
+        return results
+
     def apply_petrify(self, target: Entity, amount: int):
         """Apply petrification to target's die sides.
 

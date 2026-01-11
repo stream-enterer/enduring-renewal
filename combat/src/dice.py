@@ -241,6 +241,9 @@ class Keyword(Enum):
     CHANNEL = auto()       # Spell costs -1 mana each time it is cast (minimum 1)
     SPELL_RESCUE = auto()  # Spell cost is refunded if it saves a hero
     FUTURE = auto()        # Spell effect is delayed until start of next turn
+    # Roll phase keywords
+    STICKY = auto()        # Die auto-locks when landing on this side (cannot be rerolled)
+    CANTRIP = auto()       # Die auto-activates on roll, doesn't consume die
 
 
 # Map from inflict keyword to the keyword it inflicts
