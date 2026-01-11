@@ -2,12 +2,12 @@
   "phase": 2,
   "infrastructure": {
     "current": {
-      "component": "pair_keyword",
-      "status": "not_started",
-      "target_test": "TestComplexEff.pair",
+      "component": null,
+      "status": "complete",
+      "target_test": null,
       "design": null,
-      "unblocks": ["pair"],
-      "notes": "Pair keyword grants double mana on second consecutive use. Need to track last used effect type and check if current matches. manaPair(N) grants N mana on first use, 2N on second consecutive use."
+      "unblocks": [],
+      "notes": "All targeted blocked tests now unblocked. Remaining blocked tests require more complex infrastructure (ModifierLib, Poison Personal, save/load)."
     },
     "completed": [
       {
@@ -58,6 +58,13 @@
         "tests_added": ["TestCopycat (3 tests)"],
         "tests_unblocked": ["TestKeyword.testComboCruel", "TestKeyword.testComboCruelWand", "TestComplexEff.copycatManagain"],
         "summary": "Added COPYCAT and CRUEL keywords. Track most recent die effect in FightLog._most_recent_die_effect. get_side_state() accepts optional fight_log for meta-keyword processing. _process_meta_keywords() copies keywords from recent die for COPYCAT. use_die() grants mana for all effect types if MANA keyword present."
+      },
+      {
+        "component": "pair_keyword",
+        "timestamp": "2026-01-10",
+        "tests_added": ["TestPair (4 tests)"],
+        "tests_unblocked": ["TestComplexEff.pair"],
+        "summary": "Added PAIR keyword and MANA effect type. Pair doubles effect (x2) if previous die had same calculated value. Comparison uses current pre-pair value vs previous final value. Added mana_pair() helper. Processed in _process_meta_keywords() after copycat."
       }
     ],
     "order": [
@@ -67,7 +74,8 @@
       "mana",
       "triggers",
       "engage_keyword",
-      "copycat_keyword"
+      "copycat_keyword",
+      "pair_keyword"
     ]
   },
   "phase1_summary": {
@@ -77,12 +85,11 @@
     "python_tests": 77
   },
   "phase2_summary": {
-    "tests_added": 37,
-    "total_python_tests": 114,
-    "components_completed": 7
+    "tests_added": 41,
+    "total_python_tests": 118,
+    "components_completed": 8
   },
   "blocked": [
-    {"test": "TestComplexEff.pair", "needs": "pair_keyword", "reason": "mana + pair keyword"},
     {"test": "TestTriggerOrdering.testTriggerHPOrdering", "needs": "modifiers", "reason": "ModifierLib"},
     {"test": "TestTriggerOrdering.testCreakyJointsSword", "needs": "items_modifiers", "reason": "getSideState with items + modifiers"},
     {"test": "TestCleanse.all", "needs": "poison_personal", "reason": "Poison as Personal trigger, cleanse tracking"},
@@ -92,7 +99,7 @@
     "TestStrangeScenarios: multiTargetStickiness, targetingEfficienct, painShouldKill, maxHpFiddles, maxHpLimit, revengeSpiky, painDrainNiceness, numberLimit",
     "TestBasicEff: basicSanityTest, attackEnemy, attackHero, basicBlock, basicHeal, reinforcements",
     "TestItem: testGauntlet, testSteelHeart, testPipeAndStudsWithHealShield, testBonusIncomingWithHealShields",
-    "TestComplexEff: pain, doubleTaunt, keepShield, stoneskin, resurrect, fortitudeHeal, goblinFlee, petrify (via TestPetrify), copycatManagain",
+    "TestComplexEff: pain, doubleTaunt, keepShield, stoneskin, resurrect, fortitudeHeal, goblinFlee, petrify (via TestPetrify), copycatManagain, pair",
     "TestKeyword: bloodlust, poison, precise, fierce, weaken, drain, lifestealVsInvincible, regen, pain, growth, rescue, rampageHeroKill, precisePlusMagic, testComboCruel, testComboCruelWand",
     "TestKeywordSpell: engage, cruel",
     "TestTriggerOrdering: testBuffReplacedSides, testBrainGrips (via TestTriggers)"

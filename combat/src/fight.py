@@ -128,6 +128,7 @@ class EntityState:
 
         Meta-keywords:
         - COPYCAT: Copy keywords from the most recently used die side
+        - PAIR: x2 value if previous die had same calculated value
         """
         from .dice import Keyword
 
@@ -140,6 +141,18 @@ class EntityState:
                 # Copy all keywords from the recent die effect
                 for kw in recent.calculated_effect.keywords:
                     calculated.keywords.add(kw)
+
+        # PAIR: x2 if previous die had same calculated value
+        # Checks current value (after triggers, before pair bonus) vs previous die's final value
+        if Keyword.PAIR in calculated.keywords and fight_log is not None:
+            recent = fight_log.get_most_recent_die_effect()
+            if recent is not None:
+                # Compare current calculated value with previous die's final calculated value
+                current_value = calculated.calculated_value
+                prev_value = recent.calculated_effect.calculated_value
+                if current_value == prev_value:
+                    # Double the base value (not growth_bonus)
+                    calculated.value *= 2
 
     def get_total_petrification(self) -> int:
         """Count the number of petrified sides.
@@ -1164,6 +1177,10 @@ class FightLog:
             # If has MANA keyword (e.g., from copycat), also grant mana
             if calculated_side.has_keyword(Keyword.MANA):
                 self.add_mana(value)
+
+        elif calculated_side.effect_type == EffectType.MANA:
+            # Pure mana effect - just grant mana, no other action
+            self.add_mana(value)
 
         # Store this side state as the most recently used (for copycat)
         self._most_recent_die_effect = side_state

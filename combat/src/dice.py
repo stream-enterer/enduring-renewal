@@ -19,6 +19,7 @@ class Keyword(Enum):
     SINGLE_USE = auto()  # One use per turn (wands)
     COPYCAT = auto()     # Meta-keyword: copies keywords from most recently used die
     CRUEL = auto()       # x2 effect vs targets at half HP or less
+    PAIR = auto()        # x2 effect if previous die had same calculated value
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
@@ -182,4 +183,22 @@ def wand_self_heal(value: int) -> Side:
         effect_type=EffectType.HEAL,
         value=value,
         keywords={Keyword.SINGLE_USE}
+    )
+
+
+def mana_pair(value: int) -> Side:
+    """Create a mana side with PAIR keyword.
+
+    Grants mana equal to value. If previous die had the same calculated value,
+    the effect is doubled (x2).
+
+    Behavior:
+    - First use: grants N mana
+    - Second consecutive use (same value): grants 2N mana
+    - After pairing, the final value becomes 2N, so next die needs 2N to pair
+    """
+    return Side(
+        effect_type=EffectType.MANA,
+        value=value,
+        keywords={Keyword.MANA, Keyword.PAIR}
     )

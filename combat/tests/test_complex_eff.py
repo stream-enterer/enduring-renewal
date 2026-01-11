@@ -753,3 +753,132 @@ class TestPetrify:
         fight.undo()
         state = fight.get_state(hero, Temporality.PRESENT)
         assert state.get_total_petrification() == 0, "Should have 0 petrified after undo"
+
+
+class TestPair:
+    """Tests for the PAIR keyword.
+
+    PAIR doubles the effect value (x2) if the previous die had the same
+    calculated value. The comparison is between the current die's value
+    (after triggers, before pair bonus) and the previous die's final
+    calculated value (including its pair bonus if any).
+
+    Java source: TestComplexEff.pair()
+    """
+
+    def test_pair_first_use_no_bonus(self):
+        """First use of pair gives base value - no previous die to pair with.
+
+        Java: rollHit(f, h, null, ESB.manaPair.val(1));
+              assertEquals("Should have 1 mana", 1, f.getSnapshot(Present).getTotalMana());
+        """
+        from src.dice import Die, mana_pair
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Set up hero's die with manaPair(1) on side 0
+        hero.die = Die([mana_pair(1) for _ in range(6)])
+
+        # First use: no previous die, no pair bonus
+        fight.use_die(hero, 0, monster)  # target doesn't matter for mana
+
+        assert fight.get_total_mana() == 1, "First manaPair(1) should grant 1 mana"
+
+    def test_pair_second_consecutive_doubles(self):
+        """Second consecutive use of same value pairs and doubles.
+
+        Java: rollHit(f, h, null, ESB.manaPair.val(1));  // 1 mana total
+              rollHit(f, h, null, ESB.manaPair.val(1));  // 3 mana total
+        """
+        from src.dice import Die, mana_pair
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Set up hero's die with manaPair(1) on all sides
+        hero.die = Die([mana_pair(1) for _ in range(6)])
+
+        # First use: value=1, no pair → 1 mana
+        fight.use_die(hero, 0, monster)
+        fight.recharge_die(hero)  # Recharge to use again
+
+        # Second use: value=1, prev final=1 → paired! 1*2=2 mana
+        fight.use_die(hero, 1, monster)
+
+        assert fight.get_total_mana() == 3, "Should have 1 + 2 = 3 mana after two manaPair(1)"
+
+    def test_pair_chains_based_on_final_value(self):
+        """Pair chains based on final calculated value.
+
+        After pair doubles the value, that doubled value becomes
+        what the next die compares against.
+
+        Java: rollHit manaPair(1) → 1 mana
+              rollHit manaPair(1) → 3 mana (paired, +2)
+              rollHit manaPair(2) → 7 mana (value=2, prev final=2, paired! +4)
+              rollHit manaPair(2) → 9 mana (value=2, prev final=4, NOT paired, +2)
+        """
+        from src.dice import Die, mana_pair
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Set up hero's die: first two sides manaPair(1), rest manaPair(2)
+        hero.die = Die([
+            mana_pair(1), mana_pair(1),
+            mana_pair(2), mana_pair(2),
+            mana_pair(2), mana_pair(2)
+        ])
+
+        # Use 1: manaPair(1), no prev → 1 mana
+        fight.use_die(hero, 0, monster)
+        fight.recharge_die(hero)
+        assert fight.get_total_mana() == 1, "After 1st die: 1 mana"
+
+        # Use 2: manaPair(1), prev final=1 → paired! 1*2=2 mana
+        fight.use_die(hero, 1, monster)
+        fight.recharge_die(hero)
+        assert fight.get_total_mana() == 3, "After 2nd die: 3 mana"
+
+        # Use 3: manaPair(2), prev final=2 → paired! 2*2=4 mana
+        fight.use_die(hero, 2, monster)
+        fight.recharge_die(hero)
+        assert fight.get_total_mana() == 7, "After 3rd die: 7 mana"
+
+        # Use 4: manaPair(2), prev final=4 → NOT paired (2 != 4), 2 mana
+        fight.use_die(hero, 3, monster)
+        assert fight.get_total_mana() == 9, "After 4th die: 9 mana"
+
+    def test_pair_different_value_breaks_chain(self):
+        """Using a different value breaks the pair chain.
+
+        Java logic: pair compares current value with previous final value.
+        """
+        from src.dice import Die, mana_pair
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die([mana_pair(1), mana_pair(3), mana_pair(1)] + [mana_pair(1) for _ in range(3)])
+
+        # Use manaPair(1) → 1 mana
+        fight.use_die(hero, 0, monster)
+        fight.recharge_die(hero)
+
+        # Use manaPair(3) → prev=1, not equal, no pair → 3 mana
+        fight.use_die(hero, 1, monster)
+        fight.recharge_die(hero)
+        assert fight.get_total_mana() == 4, "manaPair(1) + manaPair(3) = 4 mana (no pair)"
+
+        # Use manaPair(1) → prev=3, not equal, no pair → 1 mana
+        fight.use_die(hero, 2, monster)
+        assert fight.get_total_mana() == 5, "...+ manaPair(1) = 5 mana (still no pair)"

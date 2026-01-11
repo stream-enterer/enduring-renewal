@@ -10,6 +10,7 @@ class EffectType(Enum):
     SHIELD = auto()
     HEAL_SHIELD = auto()  # Combined heal+shield effect
     BLANK = auto()  # Empty/petrified sides - no effect
+    MANA = auto()  # Grants mana to the player
 
     def contains(self, other: "EffectType") -> bool:
         """Check if this effect type contains the other type.
