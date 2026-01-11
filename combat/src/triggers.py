@@ -425,3 +425,133 @@ class Cleansed(Personal):
     def get_cleanse_amt(self) -> int:
         """Return how much cleanse budget this trigger provides."""
         return self.amount
+
+
+class Regen(Personal):
+    """Regen trigger - heals at end of turn, merges with other regen.
+
+    Regen:
+    - Heals = regen stacks at end of each turn (capped at max HP)
+    - Persists until removed
+    - Multiple regen applications merge into one trigger (values add)
+    """
+
+    def __init__(self, value: int):
+        self.value = value
+
+    def get_regen(self) -> int:
+        """Return regen amount this trigger provides per turn."""
+        return self.value
+
+    def can_merge(self, other: "Personal") -> bool:
+        """Can merge with other Regen triggers."""
+        return isinstance(other, Regen)
+
+    def merge(self, other: "Personal"):
+        """Add the other regen's value to this one."""
+        if isinstance(other, Regen):
+            self.value += other.value
+
+    def copy(self) -> "Regen":
+        """Create a copy (for undo support)."""
+        return Regen(self.value)
+
+
+# ============================================================================
+# Buff system triggers (Weaken, Boost, Vulnerable, Smith)
+# ============================================================================
+
+class Weaken(Personal):
+    """Weaken trigger - reduces all side values by N.
+
+    Weaken:
+    - Reduces the calculated value of all sides by the weaken amount
+    - Is cleansable via CleanseType.WEAKEN
+    - Multiple weaken applications merge into one trigger (values add)
+    """
+
+    def __init__(self, amount: int):
+        self.amount = amount
+
+    def affect_side(self, side_state: "SideState", owner: "EntityState", trigger_index: int):
+        """Reduce the side's value by the weaken amount."""
+        side_state.add_value(-self.amount)
+
+    def get_cleanse_type(self) -> CleanseType:
+        """Weaken is cleansable."""
+        return CleanseType.WEAKEN
+
+    def can_merge(self, other: "Personal") -> bool:
+        """Can merge with other Weaken triggers."""
+        return isinstance(other, Weaken)
+
+    def merge(self, other: "Personal"):
+        """Add the other weaken's amount to this one."""
+        if isinstance(other, Weaken):
+            self.amount += other.amount
+
+    def cleanse_by(self, amount: int) -> tuple[int, bool]:
+        """Reduce weaken by amount. Returns (used, fully_cleansed)."""
+        used = min(amount, self.amount)
+        self.amount -= used
+        return (used, self.amount <= 0)
+
+    def copy(self) -> "Weaken":
+        """Create a copy (for undo support)."""
+        return Weaken(self.amount)
+
+
+class Vulnerable(Personal):
+    """Vulnerable trigger - increases incoming damage from dice/spells by N.
+
+    Vulnerable:
+    - Increases damage taken from dice and spells by the vulnerable amount
+    - Does NOT affect damage from poison, pain, or other sources
+    - Multiple vulnerable applications merge into one trigger (values add)
+    """
+
+    def __init__(self, bonus: int):
+        self.bonus = bonus
+
+    def get_vulnerable_bonus(self) -> int:
+        """Return how much extra damage this entity takes."""
+        return self.bonus
+
+    def get_priority(self) -> float:
+        """Vulnerable runs early to modify damage."""
+        return -32.0
+
+    def can_merge(self, other: "Personal") -> bool:
+        """Can merge with other Vulnerable triggers."""
+        return isinstance(other, Vulnerable)
+
+    def merge(self, other: "Personal"):
+        """Add the other vulnerable's bonus to this one."""
+        if isinstance(other, Vulnerable):
+            self.bonus += other.bonus
+
+    def copy(self) -> "Vulnerable":
+        """Create a copy (for undo support)."""
+        return Vulnerable(self.bonus)
+
+
+# ============================================================================
+# TypeCondition for smith keyword
+# ============================================================================
+
+class TypeCondition(AffectSideCondition):
+    """Condition that matches sides with specific effect types."""
+
+    def __init__(self, *effect_types: "EffectType"):
+        from .effects import EffectType
+        self.effect_types = effect_types
+
+    def valid_for(self, side_state: "SideState", owner: "EntityState", trigger_index: int) -> bool:
+        """Check if the side's effect type matches any of the specified types."""
+        for effect_type in self.effect_types:
+            if side_state.effect_type == effect_type:
+                return True
+            # Also check if the effect type contains the side's type
+            if effect_type.contains(side_state.effect_type):
+                return True
+        return False

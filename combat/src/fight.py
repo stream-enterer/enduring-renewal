@@ -1362,9 +1362,12 @@ class FightLog:
                 # Descend hits only below
                 damage_targets.extend(self._get_adjacent_entities(target, above=0, below=1))
 
-            # Apply damage to all targets
+            # Apply damage to all targets (with vulnerable bonus)
             for dmg_target in damage_targets:
-                self.apply_damage(entity, dmg_target, value)
+                # Vulnerable bonus: extra damage from dice/spells
+                vuln_bonus = self.get_vulnerable_bonus(dmg_target)
+                final_damage = value + vuln_bonus
+                self.apply_damage(entity, dmg_target, final_damage)
 
             # If has MANA keyword (e.g., from copycat), also grant mana
             if calculated_side.has_keyword(Keyword.MANA):
@@ -1449,6 +1452,56 @@ class FightLog:
         # SELF_PETRIFY: petrify myself (one side)
         if calculated_side.has_keyword(Keyword.SELF_PETRIFY):
             self.apply_petrify(entity, 1)
+
+        # === STATUS EFFECT KEYWORDS (apply status effects) ===
+        # POISON: apply N poison to target (damage at end of turn)
+        if calculated_side.has_keyword(Keyword.POISON):
+            self.apply_poison(target, value)
+
+        # REGEN: apply N regen to target (heal at end of turn)
+        if calculated_side.has_keyword(Keyword.REGEN):
+            self.apply_regen(target, value)
+
+        # CLEANSE: remove N points of negative effects from target
+        if calculated_side.has_keyword(Keyword.CLEANSE):
+            self.apply_cleanse(target, value)
+
+        # SELF_POISON: apply N poison to myself
+        if calculated_side.has_keyword(Keyword.SELF_POISON):
+            self.apply_poison(entity, value)
+
+        # SELF_REGEN: apply N regen to myself
+        if calculated_side.has_keyword(Keyword.SELF_REGEN):
+            self.apply_regen(entity, value)
+
+        # SELF_CLEANSE: remove N points of negative effects from myself
+        if calculated_side.has_keyword(Keyword.SELF_CLEANSE):
+            self.apply_cleanse(entity, value)
+
+        # === BUFF KEYWORDS (apply temporary modifiers) ===
+        # WEAKEN: target gets -N to all pips for one turn
+        if calculated_side.has_keyword(Keyword.WEAKEN):
+            self.apply_weaken(target, value)
+
+        # BOOST: target gets +N to all pips for one turn
+        if calculated_side.has_keyword(Keyword.BOOST):
+            self.apply_boost(target, value)
+
+        # VULNERABLE: target takes +N damage from dice/spells for one turn
+        if calculated_side.has_keyword(Keyword.VULNERABLE):
+            self.apply_vulnerable(target, value)
+
+        # SMITH: target gets +N to damage and shield sides for one turn
+        if calculated_side.has_keyword(Keyword.SMITH):
+            self.apply_smith(target, value)
+
+        # PERMA_BOOST: target gets +N to all pips for the fight
+        if calculated_side.has_keyword(Keyword.PERMA_BOOST):
+            self.apply_perma_boost(target, value)
+
+        # SELF_VULNERABLE: apply N vulnerable to myself
+        if calculated_side.has_keyword(Keyword.SELF_VULNERABLE):
+            self.apply_vulnerable(entity, value)
 
         # === COST KEYWORDS (applied after main effect) ===
         # PAIN: I take N damage (N = pip value)
@@ -1610,6 +1663,26 @@ class FightLog:
         # DEFY: +N where N = pending damage to source
         if side.has_keyword(Keyword.DEFY):
             value += self._get_pending_damage_to(source_entity)
+
+        # PLAGUE: +N where N = total poison on all characters
+        if side.has_keyword(Keyword.PLAGUE):
+            value += self.get_total_poison_all()
+
+        # ACIDIC: +N where N = poison on me
+        if side.has_keyword(Keyword.ACIDIC):
+            value += self.get_poison_on_entity(source_entity)
+
+        # BUFFED: +N where N = number of buffs on me
+        if side.has_keyword(Keyword.BUFFED):
+            value += self.get_buff_count(source_entity)
+
+        # AFFECTED: +N where N = number of triggers affecting me
+        if side.has_keyword(Keyword.AFFECTED):
+            value += self.get_trigger_count(source_entity)
+
+        # SKILL: +N where N = my level/tier
+        if side.has_keyword(Keyword.SKILL):
+            value += self.get_entity_tier(source_entity)
 
         # x2 multiplier keywords (applied after +N bonuses)
         # Note: with TREBLE keyword, these become x3 instead of x2 (mult variable)
@@ -2160,6 +2233,251 @@ class FightLog:
                 petrified.pop()
 
         self._update_state(target, petrified_sides=petrified)
+
+    def apply_poison(self, target: Entity, amount: int):
+        """Apply poison to target. Stacks with existing poison.
+
+        Poison deals damage equal to stacks at end of each turn (direct, bypasses shields).
+        Poison can be removed by cleanse effects.
+        """
+        from .triggers import Poison, Buff
+
+        self._record_action()
+
+        state = self._states[target]
+
+        # Check for poison immunity
+        for personal in state.get_active_personals():
+            if hasattr(personal, 'poison_specific_immunity') and personal.poison_specific_immunity():
+                return  # Immune to poison
+
+        # Add poison buff (will merge with existing poison)
+        new_buffs = list(state.buffs)
+        buff = Buff(personal=Poison(amount))
+        state_copy = replace(state, buffs=new_buffs)
+        state_copy.add_buff(buff)
+        self._states[target] = state_copy
+
+    def apply_regen(self, target: Entity, amount: int):
+        """Apply regen to target. Stacks with existing regen.
+
+        Regen heals amount at end of each turn (capped at max HP).
+        """
+        from .triggers import Regen, Buff
+
+        self._record_action()
+
+        state = self._states[target]
+
+        # Check for healing immunity
+        for personal in state.get_active_personals():
+            if hasattr(personal, 'immune_to_healing') and personal.immune_to_healing():
+                return  # Immune to healing
+
+        # Add regen buff (will merge with existing regen)
+        new_buffs = list(state.buffs)
+        buff = Buff(personal=Regen(amount))
+        state_copy = replace(state, buffs=new_buffs)
+        state_copy.add_buff(buff)
+        self._states[target] = state_copy
+
+    def apply_cleanse(self, target: Entity, amount: int):
+        """Apply cleanse to target, removing negative effects.
+
+        Cleanse removes points of negative effects (poison, weaken, petrify, inflict).
+        The cleanse budget is tracked per cleanse type.
+        """
+        from .triggers import Cleansed, Buff, CleanseType
+
+        self._record_action()
+
+        state = self._states[target]
+
+        # Add cleansed buff to provide cleanse budget
+        new_buffs = list(state.buffs)
+        buff = Buff(personal=Cleansed(amount), turns_remaining=1)
+        state_copy = replace(state, buffs=new_buffs)
+        state_copy.add_buff(buff)
+
+        # Now cleanse existing debuffs using the budget
+        # Iterate in reverse to safely remove
+        for i in range(len(state_copy.buffs) - 1, -1, -1):
+            b = state_copy.buffs[i]
+            fully_cleansed = state_copy._attempt_cleanse_new_buff(b)
+            if fully_cleansed:
+                state_copy.buffs.pop(i)
+
+        self._states[target] = state_copy
+
+    # =========================================================================
+    # Buff system methods (weaken, boost, vulnerable, smith, permaBoost)
+    # =========================================================================
+
+    def apply_weaken(self, target: Entity, amount: int):
+        """Apply weaken to target. Stacks with existing weaken.
+
+        Weaken reduces all side values by N for one turn.
+        Weaken can be removed by cleanse effects.
+        """
+        from .triggers import Weaken, Buff
+
+        self._record_action()
+
+        state = self._states[target]
+
+        # Add weaken buff (will merge with existing weaken)
+        new_buffs = list(state.buffs)
+        buff = Buff(personal=Weaken(amount), turns_remaining=1)
+        state_copy = replace(state, buffs=new_buffs)
+        state_copy.add_buff(buff)
+        self._states[target] = state_copy
+
+    def apply_boost(self, target: Entity, amount: int):
+        """Apply boost to target. Stacks with existing boost.
+
+        Boost increases all side values by N for one turn.
+        """
+        from .triggers import AffectSides, FlatBonus, Buff
+
+        self._record_action()
+
+        state = self._states[target]
+
+        # Add boost buff (AffectSides with FlatBonus)
+        new_buffs = list(state.buffs)
+        buff = Buff(personal=AffectSides(effects=FlatBonus(amount)), turns_remaining=1)
+        state_copy = replace(state, buffs=new_buffs)
+        state_copy.add_buff(buff)
+        self._states[target] = state_copy
+
+    def apply_vulnerable(self, target: Entity, amount: int):
+        """Apply vulnerable to target. Stacks with existing vulnerable.
+
+        Vulnerable increases damage taken from dice/spells by N for one turn.
+        Does NOT affect damage from poison, pain, or other sources.
+        """
+        from .triggers import Vulnerable, Buff
+
+        self._record_action()
+
+        state = self._states[target]
+
+        # Add vulnerable buff (will merge with existing vulnerable)
+        new_buffs = list(state.buffs)
+        buff = Buff(personal=Vulnerable(amount), turns_remaining=1)
+        state_copy = replace(state, buffs=new_buffs)
+        state_copy.add_buff(buff)
+        self._states[target] = state_copy
+
+    def apply_smith(self, target: Entity, amount: int):
+        """Apply smith to target.
+
+        Smith increases damage and shield side values by N for one turn.
+        Only affects sides with EffectType.DAMAGE or EffectType.SHIELD.
+        """
+        from .triggers import AffectSides, FlatBonus, TypeCondition, Buff
+        from .effects import EffectType
+
+        self._record_action()
+
+        state = self._states[target]
+
+        # Add smith buff (AffectSides with TypeCondition and FlatBonus)
+        new_buffs = list(state.buffs)
+        buff = Buff(
+            personal=AffectSides(
+                conditions=TypeCondition(EffectType.DAMAGE, EffectType.SHIELD),
+                effects=FlatBonus(amount)
+            ),
+            turns_remaining=1
+        )
+        state_copy = replace(state, buffs=new_buffs)
+        state_copy.add_buff(buff)
+        self._states[target] = state_copy
+
+    def apply_perma_boost(self, target: Entity, amount: int):
+        """Apply permanent boost to target. Stacks with existing boost.
+
+        PermaBoost increases all side values by N for the entire fight.
+        """
+        from .triggers import AffectSides, FlatBonus, Buff
+
+        self._record_action()
+
+        state = self._states[target]
+
+        # Add permaBoost buff (AffectSides with FlatBonus, no turn limit)
+        new_buffs = list(state.buffs)
+        buff = Buff(personal=AffectSides(effects=FlatBonus(amount)), turns_remaining=None)
+        state_copy = replace(state, buffs=new_buffs)
+        state_copy.add_buff(buff)
+        self._states[target] = state_copy
+
+    def get_vulnerable_bonus(self, target: Entity) -> int:
+        """Get total vulnerable bonus on an entity.
+
+        Returns how much extra damage this entity takes from dice/spells.
+        """
+        state = self._states.get(target)
+        if state is None:
+            return 0
+
+        total = 0
+        for buff in state.buffs:
+            if hasattr(buff.personal, 'get_vulnerable_bonus'):
+                total += buff.personal.get_vulnerable_bonus()
+        return total
+
+    def get_buff_count(self, entity: Entity) -> int:
+        """Get number of buffs on an entity (for buffed keyword)."""
+        state = self._states.get(entity)
+        if state is None:
+            return 0
+        return len(state.buffs)
+
+    def get_trigger_count(self, entity: Entity) -> int:
+        """Get number of triggers affecting an entity (for affected keyword)."""
+        state = self._states.get(entity)
+        if state is None:
+            return 0
+        return len(state.get_active_personals())
+
+    def get_entity_tier(self, entity: Entity) -> int:
+        """Get entity's tier/level (for skill keyword)."""
+        # TODO: Implement proper tier tracking when hero system is added
+        # For now, return 1 as default tier
+        return getattr(entity.entity_type, 'tier', 1)
+
+    def get_side_state(self, entity: Entity, side_index: int) -> SideState:
+        """Get the calculated state for a side of an entity's die.
+
+        This applies all active triggers (buffs, items, etc.) to the side.
+
+        Args:
+            entity: The entity whose die to check
+            side_index: The side index (0-5)
+
+        Returns:
+            SideState with the calculated effect after all triggers applied.
+        """
+        state = self._states.get(entity)
+        if state is None:
+            raise ValueError(f"Entity {entity} not found in fight")
+        return state.get_side_state(side_index, fight_log=self)
+
+    def get_total_poison_all(self) -> int:
+        """Get total poison on all characters (for plague keyword)."""
+        total = 0
+        for entity, state in self._states.items():
+            total += state.get_poison_damage_taken()
+        return total
+
+    def get_poison_on_entity(self, entity: Entity) -> int:
+        """Get poison on a specific entity (for acidic keyword)."""
+        state = self._states.get(entity)
+        if state is None:
+            return 0
+        return state.get_poison_damage_taken()
 
     def mark_die_used(self, entity: Entity, max_uses: int = 1):
         """Mark entity's die as used (or partially used for multi-use keywords).

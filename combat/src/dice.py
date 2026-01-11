@@ -147,6 +147,29 @@ class Keyword(Enum):
     # Pip delta modifiers - modify value based on delta from base
     REV_DIFF = auto()      # Inverted pip delta: adds -2 * (calculated - base)
     DOUB_DIFF = auto()     # Doubled pip delta: adds (calculated - base)
+    # Status effect keywords - apply status effects to targets
+    POISON = auto()        # Apply N poison to target (damage at end of turn)
+    REGEN = auto()         # Apply N regen to target (heal at end of turn)
+    CLEANSE = auto()       # Remove N points of negative effects from target
+    SELF_POISON = auto()   # Apply N poison to myself
+    SELF_REGEN = auto()    # Apply N regen to myself
+    SELF_CLEANSE = auto()  # Remove N points of negative effects from myself
+    # Status effect conditional bonuses
+    PLAGUE = auto()        # +N pips where N = total poison on all characters
+    ACIDIC = auto()        # +N pips where N = poison on me
+    # Buff system keywords - apply temporary modifiers to targets
+    WEAKEN = auto()        # Target gets -N to all pips for one turn
+    BOOST = auto()         # Target gets +N to all pips for one turn
+    VULNERABLE = auto()    # Target takes +N damage from dice/spells for one turn
+    SMITH = auto()         # Target gets +N to damage and shield sides for one turn
+    PERMA_BOOST = auto()   # Target gets +N to all pips for the fight
+    SELF_VULNERABLE = auto()  # Apply vulnerable to myself
+    # Buff-related conditional bonuses
+    BUFFED = auto()        # +N pips where N = number of buffs on me
+    AFFECTED = auto()      # +N pips where N = number of triggers affecting me
+    SKILL = auto()         # +N pips where N = my level/tier
+    # Meta keyword - copy to allies
+    DUPLICATE = auto()     # Copy this side onto all allied sides for one turn
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom

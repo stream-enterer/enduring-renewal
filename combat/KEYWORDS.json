@@ -116,12 +116,28 @@
     "selfRepel",
     "revDiff",
     "doubDiff",
-    "unusable"
+    "unusable",
+    "poison",
+    "regen",
+    "cleanse",
+    "selfPoison",
+    "selfRegen",
+    "selfCleanse",
+    "plague",
+    "acidic",
+    "weaken",
+    "boost",
+    "vulnerable",
+    "smith",
+    "permaBoost",
+    "selfVulnerable",
+    "buffed",
+    "affected",
+    "skill"
   ],
   "blocked": {
     "effect_types": ["heal", "shield", "damage"],
-    "status_effect_system": ["poison", "regen", "cleanse", "selfPoison", "selfRegen", "selfCleanse", "plague", "acidic"],
-    "buff_system": ["weaken", "boost", "vulnerable", "smith", "permaBoost", "selfVulnerable", "duplicate", "buffed", "affected", "skill"],
+    "meta_copy_buff": ["duplicate"],
     "turn_tracking": ["patient", "era", "minusEra"],
     "turn_start_processing": ["shifter", "lucky", "critical", "fluctuate", "fumble"],
     "target_tracking": ["focus", "duel"],
@@ -142,7 +158,7 @@
     "not_implementable": ["removed"],
     "depends_on_duel": ["halveDuel", "duegue"],
     "depends_on_focus": ["underocus"],
-    "depends_on_skill": ["trill"]
+    "combined_skill": ["trill"]
   },
   "all": [
     "heal", "shield", "damage", "manaGain",
