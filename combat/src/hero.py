@@ -6,6 +6,7 @@ from typing import Optional
 from .entity import Entity, EntityType, Team, EntitySize
 from .dice import Die, Side, create_fighter_die
 from .item import Item, TriggerType, ItemTrigger
+from .effects import EffectType
 
 
 @dataclass
@@ -66,6 +67,13 @@ class Hero:
         for item in self._items:
             triggers.extend(item.get_triggers(trigger_type))
         return triggers
+
+    def get_incoming_bonus(self, effect_type: EffectType) -> int:
+        """Get total incoming bonus for an effect type from all items."""
+        total = 0
+        for item in self._items:
+            total += item.get_incoming_bonus(effect_type)
+        return total
 
     def __hash__(self):
         return hash(self.entity)

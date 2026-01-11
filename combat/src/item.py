@@ -79,11 +79,27 @@ class FlatBonus(SideModifier):
 
 
 @dataclass
+class IncomingEffBonus:
+    """Bonus to effects RECEIVED by the item wearer.
+
+    Unlike SideModifier which modifies die sides before rolling,
+    this modifies the effect value when it's applied to the entity.
+    """
+    effect_type: EffectType
+    bonus: int
+
+    def applies_to(self, effect_type: EffectType) -> bool:
+        """Check if this bonus applies to the given effect type."""
+        return effect_type.contains(self.effect_type)
+
+
+@dataclass
 class Item:
     """An item that can be equipped to a hero."""
     name: str
     modifiers: list[SideModifier] = field(default_factory=list)
     triggers: list[ItemTrigger] = field(default_factory=list)
+    incoming_bonuses: list[IncomingEffBonus] = field(default_factory=list)
 
     def modify_side(self, side: Side) -> Side:
         """Apply all modifiers to a side and return the modified version."""
@@ -96,6 +112,14 @@ class Item:
         """Get all triggers of a specific type."""
         return [t for t in self.triggers if t.trigger_type == trigger_type]
 
+    def get_incoming_bonus(self, effect_type: EffectType) -> int:
+        """Get total incoming bonus for an effect type."""
+        total = 0
+        for bonus in self.incoming_bonuses:
+            if bonus.applies_to(effect_type):
+                total += bonus.bonus
+        return total
+
 
 # Item library
 GAUNTLET = Item("Gauntlet", modifiers=[FlatBonus(EffectType.DAMAGE, 1)])
@@ -105,6 +129,8 @@ FAINT_HALO = Item(
 )
 DRAGON_PIPE = Item("Dragon Pipe", modifiers=[FlatBonus(EffectType.HEAL, 1)])
 METAL_STUDS = Item("Metal Studs", modifiers=[FlatBonus(EffectType.SHIELD, 1)])
+GARNET = Item("Garnet", incoming_bonuses=[IncomingEffBonus(EffectType.HEAL, 1)])
+IRON_PENDANT = Item("Iron Pendant", incoming_bonuses=[IncomingEffBonus(EffectType.SHIELD, 1)])
 
 
 def item_by_name(name: str) -> Item:
@@ -114,5 +140,7 @@ def item_by_name(name: str) -> Item:
         "Faint Halo": FAINT_HALO,
         "Dragon Pipe": DRAGON_PIPE,
         "Metal Studs": METAL_STUDS,
+        "Garnet": GARNET,
+        "Iron Pendant": IRON_PENDANT,
     }
     return items[name]

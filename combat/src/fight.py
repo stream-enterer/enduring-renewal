@@ -126,6 +126,13 @@ class FightLog:
         """Register a Hero object for trigger system."""
         self._hero_registry[hero.entity] = hero
 
+    def _get_incoming_bonus(self, target: Entity, effect_type) -> int:
+        """Get incoming effect bonus for target from their items."""
+        hero = self._hero_registry.get(target)
+        if hero:
+            return hero.get_incoming_bonus(effect_type)
+        return 0
+
     def _check_and_fire_rescue(self, target: Entity, was_dying: bool):
         """Check if target was rescued and fire triggers if so.
 
@@ -328,25 +335,41 @@ class FightLog:
         """Apply shield to target. Shield blocks incoming damage.
 
         Also checks for rescue (dying -> surviving transition) and fires triggers.
+        Applies incoming shield bonus from target's items.
         """
+        from .effects import EffectType
+
         # Check if target was dying before shield
         was_dying = self.get_state(target, Temporality.FUTURE).is_dead
+
+        # Add incoming shield bonus
+        bonus = self._get_incoming_bonus(target, EffectType.SHIELD)
+        total_shield = amount + bonus
 
         self._record_action()
         state = self._states[target]
         self._states[target] = EntityState(
             target, state.hp, state.max_hp,
-            state.shield + amount, state.spiky, state.self_heal, state.damage_blocked
+            state.shield + total_shield, state.spiky, state.self_heal, state.damage_blocked
         )
 
         # Check for rescue and fire triggers
         self._check_and_fire_rescue(target, was_dying)
 
     def apply_heal(self, target: Entity, amount: int):
-        """Heal target. HP is capped at max HP."""
+        """Heal target. HP is capped at max HP.
+
+        Applies incoming heal bonus from target's items.
+        """
+        from .effects import EffectType
+
+        # Add incoming heal bonus
+        bonus = self._get_incoming_bonus(target, EffectType.HEAL)
+        total_heal = amount + bonus
+
         self._record_action()
         state = self._states[target]
-        new_hp = min(state.hp + amount, state.max_hp)
+        new_hp = min(state.hp + total_heal, state.max_hp)
         self._states[target] = EntityState(
             target, new_hp, state.max_hp,
             state.shield, state.spiky, state.self_heal, state.damage_blocked
@@ -357,16 +380,25 @@ class FightLog:
 
         Combined effect: heals first (capped at max HP), then adds shield.
         Also checks for rescue triggers.
+        Applies incoming bonuses from target's items.
         """
+        from .effects import EffectType
+
         # Check if target was dying before
         was_dying = self.get_state(target, Temporality.FUTURE).is_dead
 
+        # Add incoming bonuses
+        heal_bonus = self._get_incoming_bonus(target, EffectType.HEAL)
+        shield_bonus = self._get_incoming_bonus(target, EffectType.SHIELD)
+        total_heal = heal_amount + heal_bonus
+        total_shield = shield_amount + shield_bonus
+
         self._record_action()
         state = self._states[target]
-        new_hp = min(state.hp + heal_amount, state.max_hp)
+        new_hp = min(state.hp + total_heal, state.max_hp)
         self._states[target] = EntityState(
             target, new_hp, state.max_hp,
-            state.shield + shield_amount, state.spiky, state.self_heal, state.damage_blocked
+            state.shield + total_shield, state.spiky, state.self_heal, state.damage_blocked
         )
 
         # Check for rescue and fire triggers

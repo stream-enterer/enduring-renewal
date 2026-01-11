@@ -1,12 +1,20 @@
 {
   "current": {
-    "file": "TestItem",
-    "method": "testBonusIncomingWithHealShields",
-    "status": "analyzing",
+    "file": "TestComplexEff",
+    "method": null,
+    "status": "not_started",
     "hypothesis": null,
     "verified": null
   },
   "completed": [
+    {
+      "file": "TestItem",
+      "method": "testBonusIncomingWithHealShields",
+      "hypothesis": "IncomingEffBonus modifies effects RECEIVED by the entity. Garnet adds +1 incoming heal, Iron Pendant adds +1 incoming shield.",
+      "verified": "Confirmed.",
+      "test": "tests/test_item.py::test_bonus_incoming_with_heal_shields",
+      "timestamp": "2025-01-10T17:00:00Z"
+    },
     {
       "file": "TestItem",
       "method": "testPipeAndStudsWithHealShield",
@@ -150,6 +158,12 @@
       "method": "ironHelmDiedLastTurn",
       "reason": "Has @Skip in original. Tests save/load serialization, not combat mechanics.",
       "timestamp": "2025-01-09T06:35:00Z"
+    },
+    {
+      "file": "TestItem",
+      "method": "noPotionsCopiable",
+      "reason": "Content validation test - verifies potions cannot be copied by CopyAlliedItems. Not combat mechanics.",
+      "timestamp": "2025-01-10T17:00:00Z"
     }
   ]
 }

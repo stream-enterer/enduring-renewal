@@ -130,3 +130,38 @@ def test_pipe_and_studs_with_heal_shield():
     # Warrior should have 3 shields
     assert hero_state.shield == 3, \
         f"Warrior should have 3 shields, got {hero_state.shield}"
+
+
+def test_bonus_incoming_with_heal_shields():
+    """Garnet and Iron Pendant add incoming effect bonuses.
+
+    From TestItem.testBonusIncomingWithHealShields - IncomingEffBonus items
+    modify effects RECEIVED by the entity, not die sides.
+
+    healShield(1) + Garnet (+1 incoming heal) + Iron Pendant (+1 incoming shield)
+    = heal(2) + shield(2) because bonuses apply when effect is received.
+    """
+    fight, hero, monster = setup_fight_with_hero()
+
+    # Register hero for incoming bonus system
+    fight.register_hero(hero)
+
+    # Add Garnet (+1 incoming heal) and Iron Pendant (+1 incoming shield)
+    hero.add_item(item_by_name("Garnet"))
+    hero.add_item(item_by_name("Iron Pendant"))
+
+    # Fighter has 5 HP, take 4 damage -> 1 HP
+    fight.apply_damage(monster, hero.entity, amount=4, is_pending=False)
+    hero_state = fight.get_state(hero.entity, Temporality.PRESENT)
+    assert hero_state.hp == 1, f"Warrior should be on 1hp, got {hero_state.hp}"
+
+    # Apply healShield(1) - with incoming bonuses becomes heal(2) + shield(2)
+    fight.apply_heal_shield(hero.entity, heal_amount=1, shield_amount=1)
+
+    # Warrior should be on 3 HP (1 + 2 heal)
+    hero_state = fight.get_state(hero.entity, Temporality.PRESENT)
+    assert hero_state.hp == 3, f"Warrior should be on 3hp, got {hero_state.hp}"
+
+    # Warrior should have 2 shields
+    assert hero_state.shield == 2, \
+        f"Warrior should have 2 shields, got {hero_state.shield}"
