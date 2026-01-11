@@ -220,3 +220,154 @@ Entity types:
 - Name tests after what they verify: `test_shield_blocks_before_damage`
 - When uncertain about behavior, verify in the real game first
 - Don't guess. Test.
+
+---
+
+# Phase 2: Infrastructure
+
+Phase 1 (test-following) is complete. We extracted 36 combat behaviors from the original test suite and have 77 passing Python tests.
+
+**16 tests remain blocked** because they require infrastructure we haven't built:
+- Die/Sides system (getSideState, turnInto, getCalculatedEffect)
+- Mana system (getTotalMana, shieldMana)
+- Trigger system (getActivePersonals, addTrigger)
+
+Phase 2 uses the **same methodology** (spec-as-test, verify before implement) but the source changes:
+- Phase 1: Test methods → told us what behaviors to implement
+- Phase 2: Blocked tests → tell us what infrastructure to build
+
+## Infrastructure Components
+
+Based on analysis of blocked tests and decompiled source, we need:
+
+### 1. Die/Sides System (unblocks ~12 tests)
+
+**What it is**: Each entity has a Die with 6 Sides. Each Side has a base effect that can be modified by triggers/items.
+
+**Key concepts**:
+- `Die` - Has 6 `EntSide` objects, tracks which side is "up" (lockedSide)
+- `EntSide` - Base effect + texture + keywords
+- `EntSideState` - Calculated effect after applying all triggers/bonuses
+- `getSideState(index)` - Returns the calculated state for a side
+- `getCalculatedEffect()` - The final effect after all modifiers
+- `turnInto(side, newEffect)` - Replace a side's effect (for growth, petrify, etc.)
+- `isUsed()` - Whether the die has been used this turn
+
+**Key source files**:
+- `decompiled/gameplay/content/ent/die/Die.java`
+- `decompiled/gameplay/content/ent/die/side/EntSide.java`
+- `decompiled/gameplay/fightLog/EntSideState.java`
+
+### 2. Mana System (unblocks ~3 tests)
+
+**What it is**: Resource pool for casting spells. Some effects grant mana, others consume it.
+
+**Key concepts**:
+- `getTotalMana()` - Current mana pool
+- `shieldMana(N)` - Grants N shields AND N mana
+- Mana persists across turns (unlike shields by default)
+
+### 3. Trigger System (unblocks ~6 tests)
+
+**What it is**: Personal triggers that modify sides or respond to events.
+
+**Key concepts**:
+- `Personal` - A trigger attached to an entity
+- `getActivePersonals()` - List of active triggers
+- `addTrigger(trigger)` - Add a new trigger
+- `AffectSides` - Trigger that modifies die sides (add keywords, flat bonus, etc.)
+
+## Infrastructure Workflow
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ 1. IDENTIFY                                    [agent]   │
+│    Pick a blocked test                                   │
+│    Read what infrastructure it needs                     │
+│    Research decompiled Java classes                      │
+│    Status: researching                                   │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│ 2. DESIGN                                      [agent]   │
+│    Propose minimal Python implementation                 │
+│    Write failing test based on blocked test behavior     │
+│    Status: designing                                     │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│ 3. VERIFY                                      [HUMAN]   │
+│    Human reviews design, tests in game if needed         │
+│    Confirms approach or suggests changes                 │
+│    Status: verifying                                     │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│ 4. IMPLEMENT                                   [agent]   │
+│    Build infrastructure                                  │
+│    Run tests until green                                 │
+│    Status: implementing                                  │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│ 5. UNBLOCK                                     [agent]   │
+│    Move blocked tests to ready                           │
+│    Commit infrastructure + tests                         │
+│    Status: complete                                      │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Recommended Order
+
+Build infrastructure in dependency order, maximizing unblocked tests:
+
+1. **Die + Side basics** - Die class, Side class, entity.sides array
+2. **EntSideState** - getSideState(), getCalculatedEffect()
+3. **Side mutation** - turnInto(), side replacement
+4. **Used state** - isUsed(), marking sides as used
+5. **Mana** - mana pool, shieldMana
+6. **Triggers** - Personal, AffectSides, addTrigger
+
+## PROGRESS Format for Phase 2
+
+```json
+{
+  "phase": 2,
+  "infrastructure": {
+    "current": {
+      "component": "die_sides",
+      "status": "implementing",
+      "design": "Add Die class with sides array, EntSideState for calculated effects",
+      "unblocks": ["TestKeyword.growth", "TestTriggerOrdering.testBuffReplacedSides"]
+    },
+    "completed": [
+      {
+        "component": "die_sides",
+        "tests_added": ["tests/test_die.py::TestDieSides"],
+        "tests_unblocked": ["TestKeyword.growth"],
+        "timestamp": "2025-01-11T..."
+      }
+    ]
+  },
+  "blocked": [...],
+  "completed": [...],
+  "skipped": [...]
+}
+```
+
+## Key Differences from Phase 1
+
+| Aspect | Phase 1 | Phase 2 |
+|--------|---------|---------|
+| Source of truth | Original test methods | Blocked tests + decompiled source |
+| Granularity | One test method at a time | One infrastructure component at a time |
+| Verification | "Does X behave like Y in game?" | "Does this design enable the blocked tests?" |
+| Success metric | Test passes | Previously-blocked tests pass |
+
+## Starting Phase 2
+
+To begin Phase 2:
+1. Update PROGRESS to phase 2 format
+2. Pick first infrastructure component (recommend: die_sides)
+3. Identify simplest blocked test that needs it
+4. Follow the infrastructure workflow
