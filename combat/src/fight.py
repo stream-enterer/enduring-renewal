@@ -3523,13 +3523,19 @@ class FightLog:
         Vitality increases max HP but does NOT increase current HP.
         This creates "empty" HP slots that can be healed into.
         This lasts for the entire fight.
+
+        Per EntState.java:1208, max HP is always floored at 1.
+        Per EntState.java:268-269, current HP is capped at max HP.
         """
         self._record_action()
 
         state = self._states[target]
         # Increase max HP only, leave current HP unchanged
-        new_max_hp = state.max_hp + amount
-        self._update_state(target, max_hp=new_max_hp)
+        # Floor at 1 per EntState.java:1208
+        new_max_hp = max(1, state.max_hp + amount)
+        # Cap HP at new max HP per EntState.java:268-269 (checkHpLimits)
+        new_hp = min(state.hp, new_max_hp)
+        self._update_state(target, hp=new_hp, max_hp=new_max_hp)
 
     def apply_wither(self, target: Entity, amount: int):
         """Apply wither to target - decrease max HP by N.
