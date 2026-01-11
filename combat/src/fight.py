@@ -821,3 +821,25 @@ class FightLog:
                 reduction = min(remaining_reduction, pending.amount)
                 pending.amount -= reduction
                 remaining_reduction -= reduction
+
+    def apply_drain_damage(self, source: Entity, target: Entity, amount: int):
+        """Apply damage with Drain/SelfHeal keyword.
+
+        Drain deals damage to target AND heals the attacker by the same amount.
+        Example: drain(1) deals 1 damage to target and heals user by 1.
+
+        Note: This is different from the selfHeal buff (which negates pain).
+        This is an attack keyword that provides lifesteal.
+        """
+        # Deal damage to target
+        self.apply_damage(source, target, amount, is_pending=False)
+
+        # Heal the attacker
+        source_state = self._states[source]
+        new_hp = min(source_state.hp + amount, source_state.max_hp)
+        self._states[source] = EntityState(
+            source, new_hp, source_state.max_hp,
+            source_state.shield, source_state.spiky, source_state.self_heal,
+            source_state.damage_blocked, source_state.keep_shields,
+            source_state.stone_hp, source_state.fled
+        )

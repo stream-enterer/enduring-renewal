@@ -567,3 +567,87 @@ class TestWeaken:
         # Hero's future should show 2 damage (only monster 1's pending remains)
         future = fight.get_state(hero, Temporality.FUTURE)
         assert future.hp == 3, "Only monster 0's pending should be reduced"
+
+
+class TestDrain:
+    """Tests for Drain/SelfHeal keyword.
+
+    Drain deals damage to target AND heals the attacker by the same amount.
+    Example: drain(1) deals 1 damage to target and heals user by 1.
+
+    Note: This is different from the selfHeal buff (which negates pain).
+    This is an attack keyword that provides lifesteal.
+
+    Verified: Confirmed.
+    """
+
+    def test_drain_deals_damage(self):
+        """Drain deals damage to the target."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        fight.apply_drain_damage(hero, monster, 2)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 2, "Drain should deal damage to target"
+
+    def test_drain_heals_attacker(self):
+        """Drain heals the attacker by the damage amount."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Damage hero first
+        fight.apply_damage(monster, hero, 3, is_pending=False)
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.hp == 2, "Hero should be at 2 HP"
+
+        # Hero uses drain on monster
+        fight.apply_drain_damage(hero, monster, 1)
+
+        # Hero should be healed by 1
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.hp == 3, "Drain should heal attacker by 1"
+
+    def test_drain_full_scenario(self):
+        """Full drain test matching original Java test.
+
+        Setup: 1 Fighter hero (5 HP) vs 1 Goblin monster (4 HP)
+        - Monster damages hero for 3 (immediate)
+        - Hero at maxHp - 3 = 2 HP
+        - Hero uses dmgSelfHeal(1) on monster
+        - Hero at maxHp - 2 = 3 HP (healed 1)
+
+        Verified: Confirmed.
+        """
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+        hero_max = 5
+
+        # Monster damages hero for 3 (immediate)
+        fight.apply_damage(monster, hero, 3, is_pending=False)
+        future = fight.get_state(hero, Temporality.FUTURE)
+        assert future.hp == hero_max - 3, "should be damaged for 3"
+
+        # Hero uses drain(1) on monster
+        fight.apply_drain_damage(hero, monster, 1)
+        future = fight.get_state(hero, Temporality.FUTURE)
+        assert future.hp == hero_max - 2, "should be damaged for 2 (healed 1)"
+
+    def test_drain_heal_capped_at_max(self):
+        """Drain heal is capped at max HP."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Hero at full HP uses drain
+        fight.apply_drain_damage(hero, monster, 2)
+
+        # Hero should still be at max HP (not over)
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.hp == 5, "Drain heal should be capped at max HP"
