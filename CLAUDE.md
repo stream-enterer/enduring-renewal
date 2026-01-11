@@ -52,6 +52,10 @@ After ALL keywords implemented → human runs funnel sieve verification (see bel
 3. For each keyword:
    - **Read Java source first** - `Keyword.java` and `conditionalBonus/` are authoritative. Patterns in this doc are examples, not specs.
    - Add enum value to `src/dice.py` (SCREAMING_SNAKE_CASE: `antiEngage` → `ANTI_ENGAGE`)
+     ```python
+     # In dice.py, add to class Keyword(Enum): around line 10
+     ANTI_ENGAGE = auto()  # x2 if target NOT at full HP
+     ```
    - Write failing test in `tests/test_keyword.py`
    - Implement in appropriate location (see Pipeline section)
    - Run `uv run pytest` - must pass
@@ -76,11 +80,27 @@ These keywords are already implemented and tested. They stay where they are:
 
 ### Conditional Keywords (most common)
 
-Add to `FightLog._apply_conditional_keyword_bonuses()` as an if statement:
+Add to `FightLog._apply_conditional_keyword_bonuses()` at line ~1267 in fight.py.
 
+**Method signature (available variables):**
+```python
+def _apply_conditional_keyword_bonuses(
+    self, value: int, side: "Side", source_state: EntityState,
+    target_state: EntityState, source_entity: Entity, target_entity: Entity
+) -> int:
+```
+
+**Variables you can use:**
+- `value` - current damage/heal value (multiply this)
+- `side` - the Side being used (check `side.has_keyword(...)`)
+- `source_state` - EntityState of attacker (hp, max_hp, shield, is_dead, etc.)
+- `target_state` - EntityState of target
+- `source_entity` / `target_entity` - Entity objects (for identity checks)
+
+**Pattern:**
 ```python
 # In fight.py:_apply_conditional_keyword_bonuses()
-# Pattern: if has_keyword → check condition → multiply value
+# Add after existing keywords, before "return value"
 
 if side.has_keyword(Keyword.ENGAGE):
     if target_state.hp == target_state.max_hp:
@@ -116,6 +136,11 @@ def make_monster(name: str, hp: int = 4) -> Entity:
 **Note:** These are duplicated per test file (minor DRY violation, acceptable for test isolation).
 
 **Where to add tests:** Add a new `class Test<Keyword>:` to `tests/test_keyword.py` (one class per keyword).
+
+**Common FightLog setup methods:**
+- `fight.apply_damage(source, target, amount, is_pending=False)` - deal damage
+- `fight.apply_shield(target, amount)` - grant shields
+- `fight.get_state(entity, Temporality.PRESENT)` - get current EntityState
 
 ### Pattern 1: Full Integration Test (preferred)
 
