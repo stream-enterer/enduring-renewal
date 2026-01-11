@@ -49,6 +49,34 @@ class Keyword(Enum):
     VIGIL = auto()       # +N pips where N = defeated allies
     GUILT = auto()       # If this is lethal, I die
     EVIL = auto()        # If this saves a hero, I die
+    # Variant keywords - anti* (inverted condition)
+    ANTI_ENGAGE = auto()     # x2 if target NOT at full HP
+    ANTI_PRISTINE = auto()   # x2 if source NOT at full HP
+    ANTI_DEATHWISH = auto()  # x2 if source NOT at 1HP
+    # Variant keywords - swap* (swap source/target)
+    SWAP_ENGAGE = auto()     # x2 if SOURCE at full HP
+    SWAP_CRUEL = auto()      # x2 if SOURCE at or below half HP
+    SWAP_DEATHWISH = auto()  # x2 if TARGET at 1HP
+    SWAP_TERMINAL = auto()   # x2 if TARGET at exactly 1HP (same as swapDeathwish, see Java)
+    # Variant keywords - halve* (x0.5 instead of x2)
+    HALVE_ENGAGE = auto()    # x0.5 if target at full HP
+    HALVE_DEATHWISH = auto() # x0.5 if source at 1HP
+    # Pair family
+    TRIO = auto()   # x3 if previous 2 dice had same calculated value
+    QUIN = auto()   # x5 if previous 4 dice had same calculated value
+    SEPT = auto()   # x7 if previous 6 dice had same calculated value
+    # Combined keywords - TC4X (both conditions = x4)
+    ENGINE = auto()   # engage + pristine: x4 if target full HP AND source full HP
+    PRISWISH = auto() # pristine + deathwish: x4 if source full HP AND source at 1HP
+    # Combined keywords - XOR
+    PAXIN = auto()    # pair XOR chain: x2 if exactly one condition met
+    # Combined keywords - ConditionBonus (condition + pip bonus)
+    ENGARGED = auto()   # engage + charged: x2 if target full HP, +N mana pips
+    CRUESH = auto()     # cruel + flesh: x2 if target at or below half HP, +N HP pips
+    PRISTEEL = auto()   # pristine + steel: x2 if source full HP, +N shield pips
+    DEATHLUST = auto()  # deathwish + bloodlust: x2 if source at 1HP, +N damaged enemy pips
+    # Minus variants
+    MINUS_FLESH = auto()  # -N pips where N = my current HP
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom

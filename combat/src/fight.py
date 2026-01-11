@@ -204,6 +204,30 @@ class EntityState:
                     # Double the base value (not growth_bonus)
                     calculated.value *= 2
 
+        # TRIO: x3 if previous 2 dice had same calculated value
+        if Keyword.TRIO in calculated.keywords and fight_log is not None:
+            current_value = calculated.calculated_value
+            previous_effects = fight_log.get_last_n_die_effects(2)
+            if len(previous_effects) >= 2:
+                if all(eff.calculated_effect.calculated_value == current_value for eff in previous_effects):
+                    calculated.value *= 3
+
+        # QUIN: x5 if previous 4 dice had same calculated value
+        if Keyword.QUIN in calculated.keywords and fight_log is not None:
+            current_value = calculated.calculated_value
+            previous_effects = fight_log.get_last_n_die_effects(4)
+            if len(previous_effects) >= 4:
+                if all(eff.calculated_effect.calculated_value == current_value for eff in previous_effects):
+                    calculated.value *= 5
+
+        # SEPT: x7 if previous 6 dice had same calculated value
+        if Keyword.SEPT in calculated.keywords and fight_log is not None:
+            current_value = calculated.calculated_value
+            previous_effects = fight_log.get_last_n_die_effects(6)
+            if len(previous_effects) >= 6:
+                if all(eff.calculated_effect.calculated_value == current_value for eff in previous_effects):
+                    calculated.value *= 7
+
     def get_total_petrification(self) -> int:
         """Count the number of petrified sides.
 
@@ -317,6 +341,9 @@ class FightLog:
 
         # Most recently used die effect (for copycat keyword)
         self._most_recent_die_effect: Optional[SideState] = None
+
+        # History of die effects (for trio/quin/sept keywords)
+        self._die_effect_history: list[SideState] = []
 
     def _update_state(self, entity: Entity, **kwargs) -> EntityState:
         """Update entity state with specific fields while preserving all others.
@@ -1290,6 +1317,7 @@ class FightLog:
 
         # Store this side state as the most recently used (for copycat)
         self._most_recent_die_effect = side_state
+        self._die_effect_history.append(side_state)
 
         # Mark die as used
         self.mark_die_used(entity)
@@ -1302,6 +1330,16 @@ class FightLog:
     def get_most_recent_die_effect(self) -> Optional[SideState]:
         """Get the most recently used die's side state (for copycat keyword)."""
         return self._most_recent_die_effect
+
+    def get_last_n_die_effects(self, n: int) -> list[SideState]:
+        """Get the last N die effects (for trio/quin/sept).
+
+        Returns a list of the last N die effects, most recent first.
+        If fewer than N effects exist, returns all available effects.
+        """
+        if n <= 0:
+            return []
+        return list(reversed(self._die_effect_history[-n:]))
 
     def _apply_conditional_keyword_bonuses(
         self, value: int, side: "Side", source_state: EntityState,
@@ -1488,6 +1526,135 @@ class FightLog:
             if previous is not None:
                 if previous.calculated_effect.calculated_value > side.calculated_value:
                     value *= 2
+
+        # === ANTI* VARIANTS (inverted condition) ===
+        # ANTI_ENGAGE: x2 if target NOT at full HP
+        if side.has_keyword(Keyword.ANTI_ENGAGE):
+            if target_state.hp != target_state.max_hp:
+                value *= 2
+
+        # ANTI_PRISTINE: x2 if source NOT at full HP
+        if side.has_keyword(Keyword.ANTI_PRISTINE):
+            if source_state.hp != source_state.max_hp:
+                value *= 2
+
+        # ANTI_DEATHWISH: x2 if source NOT at 1HP (not dying)
+        if side.has_keyword(Keyword.ANTI_DEATHWISH):
+            future_state = self.get_state(source_entity, Temporality.FUTURE)
+            if future_state.hp > 0:
+                value *= 2
+
+        # === SWAP* VARIANTS (swap source/target check) ===
+        # SWAP_ENGAGE: x2 if SOURCE at full HP (instead of target)
+        if side.has_keyword(Keyword.SWAP_ENGAGE):
+            if source_state.hp == source_state.max_hp:
+                value *= 2
+
+        # SWAP_CRUEL: x2 if SOURCE at or below half HP (instead of target)
+        if side.has_keyword(Keyword.SWAP_CRUEL):
+            if source_state.hp <= source_state.max_hp // 2:
+                value *= 2
+
+        # SWAP_DEATHWISH: x2 if TARGET at 1HP (instead of source)
+        if side.has_keyword(Keyword.SWAP_DEATHWISH):
+            future_state = self.get_state(target_entity, Temporality.FUTURE)
+            if future_state.hp <= 0:
+                value *= 2
+
+        # SWAP_TERMINAL: x2 if TARGET at exactly 1HP (same check as swapDeathwish in Java)
+        if side.has_keyword(Keyword.SWAP_TERMINAL):
+            if target_state.hp == 1:
+                value *= 2
+
+        # === HALVE* VARIANTS (x0.5 instead of x2) ===
+        # HALVE_ENGAGE: x0.5 if target at full HP
+        if side.has_keyword(Keyword.HALVE_ENGAGE):
+            if target_state.hp == target_state.max_hp:
+                value //= 2
+
+        # HALVE_DEATHWISH: x0.5 if source dying
+        if side.has_keyword(Keyword.HALVE_DEATHWISH):
+            future_state = self.get_state(source_entity, Temporality.FUTURE)
+            if future_state.hp <= 0:
+                value //= 2
+
+        # === COMBINED KEYWORDS (TC4X - both conditions = x4) ===
+        # ENGINE: engage + pristine = x4 if target full HP AND source full HP
+        if side.has_keyword(Keyword.ENGINE):
+            engage_met = target_state.hp == target_state.max_hp
+            pristine_met = source_state.hp == source_state.max_hp
+            if engage_met and pristine_met:
+                value *= 4
+
+        # PRISWISH: pristine + deathwish = x4 if source full HP AND source dying
+        # (Only possible if max_hp == 1)
+        if side.has_keyword(Keyword.PRISWISH):
+            pristine_met = source_state.hp == source_state.max_hp
+            future_state = self.get_state(source_entity, Temporality.FUTURE)
+            deathwish_met = future_state.hp <= 0
+            if pristine_met and deathwish_met:
+                value *= 4
+
+        # === COMBINED KEYWORDS (XOR) ===
+        # PAXIN: pair XOR chain = x2 if exactly one condition met
+        if side.has_keyword(Keyword.PAXIN):
+            # Check pair condition
+            pair_met = False
+            recent = self.get_most_recent_die_effect()
+            if recent is not None:
+                current_value = side.calculated_value
+                prev_value = recent.calculated_effect.calculated_value
+                pair_met = current_value == prev_value
+
+            # Check chain condition
+            chain_met = False
+            if recent is not None:
+                prev_keywords = recent.calculated_effect.keywords
+                current_keywords = side.keywords - {Keyword.PAXIN}
+                chain_met = bool(current_keywords & prev_keywords)
+
+            # XOR: exactly one must be true
+            if pair_met != chain_met:
+                value *= 2
+
+        # === COMBINED KEYWORDS (ConditionBonus - condition + pip bonus) ===
+        # ENGARGED: engage + charged = x2 if target full HP, already has +N mana from charged
+        if side.has_keyword(Keyword.ENGARGED):
+            # +N mana pips (charged component)
+            value += self.get_total_mana()
+            # x2 if target full HP (engage component)
+            if target_state.hp == target_state.max_hp:
+                value *= 2
+
+        # CRUESH: cruel + flesh = x2 if target at half HP or less, already has +N HP
+        if side.has_keyword(Keyword.CRUESH):
+            # +N HP pips (flesh component)
+            value += source_state.hp
+            # x2 if target at half HP or less (cruel component)
+            if target_state.hp <= target_state.max_hp // 2:
+                value *= 2
+
+        # PRISTEEL: pristine + steel = x2 if source full HP, already has +N shields
+        if side.has_keyword(Keyword.PRISTEEL):
+            # +N shield pips (steel component)
+            value += source_state.shield
+            # x2 if source full HP (pristine component)
+            if source_state.hp == source_state.max_hp:
+                value *= 2
+
+        # DEATHLUST: deathwish + bloodlust = x2 if source dying, +N damaged enemies
+        if side.has_keyword(Keyword.DEATHLUST):
+            # +N damaged enemies (bloodlust component)
+            value += self.count_damaged_enemies()
+            # x2 if source dying (deathwish component)
+            future_state = self.get_state(source_entity, Temporality.FUTURE)
+            if future_state.hp <= 0:
+                value *= 2
+
+        # === MINUS VARIANTS ===
+        # MINUS_FLESH: -N pips where N = my current HP
+        if side.has_keyword(Keyword.MINUS_FLESH):
+            value -= source_state.hp
 
         return value
 
