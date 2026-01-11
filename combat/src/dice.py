@@ -206,6 +206,11 @@ class Keyword(Enum):
     # Entity summoning keywords
     BONED = auto()         # Summon 1 Bones
     HYPER_BONED = auto()   # Summon N Bones (N = pip value)
+    # Side replacement keywords
+    STASIS = auto()        # This side cannot change (blocks all trigger processing)
+    ENDURING = auto()      # When replaced, keeps keywords (loses pips/effect)
+    DOGMA = auto()         # When replaced, only pips change (keeps keywords/effect type)
+    RESILIENT = auto()     # When replaced, keeps pips (loses keywords/effect)
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom

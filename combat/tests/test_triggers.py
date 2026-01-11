@@ -351,3 +351,332 @@ class TestSpecificSidesTypes:
             side_state = state.get_side_state(i)
             original = hero.die.get_side(i).calculated_value
             assert side_state.value == original + 10, f"Side {i} should have +10"
+
+
+class TestStasis:
+    """Tests for STASIS keyword - blocks all side modifications."""
+
+    def test_stasis_blocks_flat_bonus(self):
+        """Side with STASIS blocks FlatBonus trigger."""
+        fight, hero, monster = setup_fight_with_die()
+
+        # Set side 0 to have STASIS
+        hero.die.set_side(0, Side(EffectType.DAMAGE, 2, {Keyword.STASIS}))
+
+        # Try to add +10 to all sides
+        fight.add_trigger(hero, AffectSides([], [FlatBonus(10)]))
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+
+        # Side 0 should be unchanged (stasis blocked the bonus)
+        side_state_0 = state.get_side_state(0)
+        assert side_state_0.value == 2, f"Stasis side should be unchanged, got {side_state_0.value}"
+
+        # Other sides should get +10
+        side_state_1 = state.get_side_state(1)
+        original_1 = hero.die.get_side(1).calculated_value
+        assert side_state_1.value == original_1 + 10, f"Non-stasis side should get +10"
+
+    def test_stasis_blocks_add_keyword(self):
+        """Side with STASIS blocks AddKeyword trigger."""
+        fight, hero, monster = setup_fight_with_die()
+
+        # Set side 0 to have STASIS
+        hero.die.set_side(0, Side(EffectType.DAMAGE, 2, {Keyword.STASIS}))
+
+        # Try to add ENGAGE to all sides
+        fight.add_trigger(hero, AffectSides([], [AddKeyword(Keyword.ENGAGE)]))
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+
+        # Side 0 should NOT have ENGAGE (only STASIS)
+        side_state_0 = state.get_side_state(0)
+        assert not side_state_0.has_keyword(Keyword.ENGAGE), "Stasis side should not get ENGAGE"
+        assert side_state_0.has_keyword(Keyword.STASIS), "Stasis side should still have STASIS"
+
+        # Other sides SHOULD have ENGAGE
+        side_state_1 = state.get_side_state(1)
+        assert side_state_1.has_keyword(Keyword.ENGAGE), "Non-stasis side should get ENGAGE"
+
+    def test_stasis_blocks_replacement(self):
+        """Side with STASIS blocks ReplaceWith trigger."""
+        fight, hero, monster = setup_fight_with_die()
+
+        # Set side 5 (rightmost) to have STASIS
+        hero.die.set_side(5, Side(EffectType.DAMAGE, 2, {Keyword.STASIS}))
+
+        # Try to replace rightmost with arrow(5)
+        fight.add_trigger(hero, AffectSides(
+            SpecificSidesCondition(SpecificSidesType.RIGHTMOST),
+            ReplaceWith(arrow(5))
+        ))
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(5)
+
+        # Should still be original 2 damage with STASIS, not arrow(5)
+        assert side_state.value == 2, f"Stasis side should be unchanged, got {side_state.value}"
+        assert side_state.has_keyword(Keyword.STASIS), "Should still have STASIS"
+        assert not side_state.has_keyword(Keyword.RANGED), "Should NOT have RANGED from arrow"
+
+    def test_stasis_blocks_subsequent_triggers(self):
+        """If a trigger adds STASIS, subsequent triggers are blocked."""
+        fight, hero, monster = setup_fight_with_die()
+
+        # First trigger: Add STASIS to side 0
+        fight.add_trigger(hero, AffectSides(
+            SpecificSidesCondition(SpecificSidesType.TOP),
+            AddKeyword(Keyword.STASIS)
+        ))
+
+        # Second trigger: Try to add +10 to all sides (should be blocked for side 0)
+        fight.add_trigger(hero, AffectSides([], [FlatBonus(10)]))
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+
+        # Side 0 got STASIS from first trigger, so second trigger blocked
+        side_state_0 = state.get_side_state(0)
+        original_0 = hero.die.get_side(0).calculated_value
+        assert side_state_0.value == original_0, f"Stasis side should not get bonus"
+        assert side_state_0.has_keyword(Keyword.STASIS), "Should have STASIS"
+
+        # Other sides should get +10
+        side_state_1 = state.get_side_state(1)
+        original_1 = hero.die.get_side(1).calculated_value
+        assert side_state_1.value == original_1 + 10, f"Non-stasis side should get +10"
+
+
+class TestEnduring:
+    """Tests for ENDURING keyword - when replaced, keeps keywords."""
+
+    def test_enduring_keeps_keywords_on_replace(self):
+        """Side with ENDURING keeps its keywords when replaced."""
+        fight, hero, monster = setup_fight_with_die()
+
+        # Set side 5 (rightmost) to have ENDURING and ENGAGE
+        hero.die.set_side(5, Side(EffectType.DAMAGE, 2, {Keyword.ENDURING, Keyword.ENGAGE}))
+
+        # Replace rightmost with arrow(5) which has RANGED
+        fight.add_trigger(hero, AffectSides(
+            SpecificSidesCondition(SpecificSidesType.RIGHTMOST),
+            ReplaceWith(arrow(5))
+        ))
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(5)
+
+        # Value should be from the new side (5)
+        assert side_state.value == 5, f"Value should be from arrow, got {side_state.value}"
+
+        # Effect type should be from the new side (DAMAGE)
+        assert side_state.effect_type == EffectType.DAMAGE, "Effect type should be DAMAGE"
+
+        # Should have BOTH original keywords AND new side's keywords
+        assert side_state.has_keyword(Keyword.ENDURING), "Should keep ENDURING"
+        assert side_state.has_keyword(Keyword.ENGAGE), "Should keep ENGAGE"
+        assert side_state.has_keyword(Keyword.RANGED), "Should get RANGED from arrow"
+
+    def test_enduring_with_heal_to_damage(self):
+        """ENDURING side changing from heal to damage keeps keywords."""
+        fight, hero, monster = setup_fight_with_die()
+
+        # Set side 0 to be heal with ENDURING and RESCUE
+        hero.die.set_side(0, Side(EffectType.HEAL, 3, {Keyword.ENDURING, Keyword.RESCUE}))
+
+        # Replace with damage
+        fight.add_trigger(hero, AffectSides(
+            SpecificSidesCondition(SpecificSidesType.TOP),
+            ReplaceWith(Side(EffectType.DAMAGE, 2, set()))
+        ))
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0)
+
+        # Effect type changes, value changes
+        assert side_state.effect_type == EffectType.DAMAGE, "Effect type should change"
+        assert side_state.value == 2, "Value should change"
+
+        # But keywords are preserved
+        assert side_state.has_keyword(Keyword.ENDURING), "Should keep ENDURING"
+        assert side_state.has_keyword(Keyword.RESCUE), "Should keep RESCUE"
+
+
+class TestDogma:
+    """Tests for DOGMA keyword - when replaced, only pips change."""
+
+    def test_dogma_only_changes_pips(self):
+        """Side with DOGMA only has its pips changed on replace."""
+        fight, hero, monster = setup_fight_with_die()
+
+        # Set side 5 (rightmost) to be damage with DOGMA and ENGAGE
+        hero.die.set_side(5, Side(EffectType.DAMAGE, 2, {Keyword.DOGMA, Keyword.ENGAGE}))
+
+        # Replace rightmost with heal(5)
+        fight.add_trigger(hero, AffectSides(
+            SpecificSidesCondition(SpecificSidesType.RIGHTMOST),
+            ReplaceWith(Side(EffectType.HEAL, 5, {Keyword.RESCUE}))
+        ))
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(5)
+
+        # Only pips should change to 5
+        assert side_state.value == 5, f"Pips should change to 5, got {side_state.value}"
+
+        # Effect type should stay DAMAGE (not change to HEAL)
+        assert side_state.effect_type == EffectType.DAMAGE, "Effect type should stay DAMAGE"
+
+        # Keywords should stay (DOGMA, ENGAGE), not get RESCUE from new side
+        assert side_state.has_keyword(Keyword.DOGMA), "Should keep DOGMA"
+        assert side_state.has_keyword(Keyword.ENGAGE), "Should keep ENGAGE"
+        assert not side_state.has_keyword(Keyword.RESCUE), "Should NOT get RESCUE"
+
+    def test_dogma_with_zero_value_replacement(self):
+        """DOGMA side can be set to 0 pips."""
+        fight, hero, monster = setup_fight_with_die()
+
+        # Set side 0 to be damage with DOGMA
+        hero.die.set_side(0, Side(EffectType.DAMAGE, 5, {Keyword.DOGMA}))
+
+        # Replace with blank (0 value)
+        fight.add_trigger(hero, AffectSides(
+            SpecificSidesCondition(SpecificSidesType.TOP),
+            ReplaceWith(Side(EffectType.BLANK, 0, set()))
+        ))
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0)
+
+        # Pips should be 0
+        assert side_state.value == 0, f"Pips should be 0, got {side_state.value}"
+
+        # Effect type should stay DAMAGE
+        assert side_state.effect_type == EffectType.DAMAGE, "Effect type should stay DAMAGE"
+
+        # DOGMA keyword should be preserved
+        assert side_state.has_keyword(Keyword.DOGMA), "Should keep DOGMA"
+
+
+class TestResilient:
+    """Tests for RESILIENT keyword - when replaced, keeps pips."""
+
+    def test_resilient_keeps_pips(self):
+        """Side with RESILIENT keeps its pip value when replaced."""
+        fight, hero, monster = setup_fight_with_die()
+
+        # Set side 5 (rightmost) to be damage 10 with RESILIENT
+        hero.die.set_side(5, Side(EffectType.DAMAGE, 10, {Keyword.RESILIENT}))
+
+        # Replace rightmost with arrow(1)
+        fight.add_trigger(hero, AffectSides(
+            SpecificSidesCondition(SpecificSidesType.RIGHTMOST),
+            ReplaceWith(arrow(1))
+        ))
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(5)
+
+        # Pips should stay at 10 (from original)
+        assert side_state.value == 10, f"Pips should stay at 10, got {side_state.value}"
+
+        # Effect type changes to new side's type
+        assert side_state.effect_type == EffectType.DAMAGE, "Effect type should be DAMAGE"
+
+        # Gets new side's keywords BUT also keeps RESILIENT
+        assert side_state.has_keyword(Keyword.RANGED), "Should get RANGED from arrow"
+        assert side_state.has_keyword(Keyword.RESILIENT), "Should keep RESILIENT"
+
+    def test_resilient_loses_other_keywords(self):
+        """RESILIENT side loses other keywords (except RESILIENT) when replaced."""
+        fight, hero, monster = setup_fight_with_die()
+
+        # Set side 0 to be damage with RESILIENT and ENGAGE
+        hero.die.set_side(0, Side(EffectType.DAMAGE, 5, {Keyword.RESILIENT, Keyword.ENGAGE}))
+
+        # Replace with heal that has RESCUE
+        fight.add_trigger(hero, AffectSides(
+            SpecificSidesCondition(SpecificSidesType.TOP),
+            ReplaceWith(Side(EffectType.HEAL, 2, {Keyword.RESCUE}))
+        ))
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0)
+
+        # Pips stay at 5
+        assert side_state.value == 5, f"Pips should stay at 5, got {side_state.value}"
+
+        # Effect type changes to HEAL
+        assert side_state.effect_type == EffectType.HEAL, "Effect type should change to HEAL"
+
+        # Loses ENGAGE, gets RESCUE, keeps RESILIENT
+        assert not side_state.has_keyword(Keyword.ENGAGE), "Should lose ENGAGE"
+        assert side_state.has_keyword(Keyword.RESCUE), "Should get RESCUE"
+        assert side_state.has_keyword(Keyword.RESILIENT), "Should keep RESILIENT"
+
+
+class TestCombinedReplacementKeywords:
+    """Test combinations of enduring/dogma/resilient keywords."""
+
+    def test_dogma_with_resilient_resilient_wins(self):
+        """When DOGMA + RESILIENT both present, RESILIENT restores pips after DOGMA.
+
+        Processing order in Java:
+        1. DOGMA: changes pips to new value, keeps keywords and effect type
+        2. RESILIENT: restores original pips
+
+        So RESILIENT "wins" for pips, but DOGMA still prevents effect type change.
+        """
+        fight, hero, monster = setup_fight_with_die()
+
+        # Set side 0 to have DOGMA and RESILIENT
+        hero.die.set_side(0, Side(EffectType.SHIELD, 3, {Keyword.DOGMA, Keyword.RESILIENT}))
+
+        # Replace with damage 10
+        fight.add_trigger(hero, AffectSides(
+            SpecificSidesCondition(SpecificSidesType.TOP),
+            ReplaceWith(Side(EffectType.DAMAGE, 10, {Keyword.ENGAGE}))
+        ))
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0)
+
+        # RESILIENT restores original pips after DOGMA
+        assert side_state.value == 3, f"Pips should be restored to 3 by RESILIENT, got {side_state.value}"
+
+        # Effect type stays SHIELD (from DOGMA blocking replacement)
+        assert side_state.effect_type == EffectType.SHIELD, "Effect type should stay SHIELD (from DOGMA)"
+
+        # Original keywords preserved (DOGMA blocked replacement)
+        assert side_state.has_keyword(Keyword.DOGMA), "Should keep DOGMA"
+        assert side_state.has_keyword(Keyword.RESILIENT), "Should keep RESILIENT"
+
+        # Should NOT get ENGAGE (dogma blocked the replacement)
+        assert not side_state.has_keyword(Keyword.ENGAGE), "Should NOT get ENGAGE"
+
+    def test_enduring_and_resilient_together(self):
+        """ENDURING + RESILIENT: keeps keywords AND pips, gets new effect type."""
+        fight, hero, monster = setup_fight_with_die()
+
+        # Set side 0 to have ENDURING, RESILIENT, and ENGAGE
+        hero.die.set_side(0, Side(EffectType.DAMAGE, 5, {Keyword.ENDURING, Keyword.RESILIENT, Keyword.ENGAGE}))
+
+        # Replace with heal 2 that has RESCUE
+        fight.add_trigger(hero, AffectSides(
+            SpecificSidesCondition(SpecificSidesType.TOP),
+            ReplaceWith(Side(EffectType.HEAL, 2, {Keyword.RESCUE}))
+        ))
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0)
+
+        # Pips stay at 5 (RESILIENT)
+        assert side_state.value == 5, f"Pips should stay at 5, got {side_state.value}"
+
+        # Effect type changes to HEAL (normal replacement)
+        assert side_state.effect_type == EffectType.HEAL, "Effect type should change to HEAL"
+
+        # Keeps original keywords (ENDURING) + gets new keywords (RESCUE) + keeps RESILIENT
+        assert side_state.has_keyword(Keyword.ENDURING), "Should keep ENDURING"
+        assert side_state.has_keyword(Keyword.RESILIENT), "Should keep RESILIENT"
+        assert side_state.has_keyword(Keyword.ENGAGE), "Should keep ENGAGE (from enduring)"
+        assert side_state.has_keyword(Keyword.RESCUE), "Should get RESCUE"

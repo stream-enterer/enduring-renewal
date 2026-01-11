@@ -13,15 +13,16 @@
 | `max_hp_modification` | vitality, wither | 2 |
 | `entity_summoning` | boned, hyperBoned | 2 |
 | `side_modification` | hypnotise | 1 |
+| `side_replacement` | stasis, enduring, dogma, resilient | 4 |
 
-**Total implemented: 38 keywords**
+**Total implemented: 42 keywords**
 
 ### Dependency Graph
 
 ```
 Buff System Tree (depends on buff_system ✅):
     ├─► #1 side_modification (hypnotise)           [1 kw] ✅
-    ├─► #2 side_replacement (stasis, enduring...)  [4 kw]
+    ├─► #2 side_replacement (stasis, enduring...)  [4 kw] ✅
     ├─► #3 side_injection (inflict*)               [9 kw]
     ├─► #4 meta_copy_advanced (share, spy...)      [5 kw]
     ├─► #5 meta_copy_buff (duplicate)              [1 kw]
@@ -103,11 +104,8 @@ Independent Systems (no prerequisites):
 
 <!-- Format: "Next: #N (name)" or "COMPLETE - Only permanently blocked remain" -->
 
-**Next: #2 (side_replacement)**
-- Implement stasis, enduring, dogma, resilient keywords
-- Hook into side replacement pipeline
-- stasis: Blocks all changes to this side
-- enduring: When replaced, keeps keywords (loses pips/effect)
-- dogma: When replaced, keeps everything except pips
-- resilient: When replaced, keeps pips (loses keywords/effect)
-- Estimated: 4 keywords unblocked
+**Next: #3 (side_injection)**
+- Implement 9 inflict* keywords: inflictSelfShield, inflictBoned, inflictExert, inflictPain, inflictDeath, inflictSingleUse, inflictNothing, inflictInflictNothing, inflictInflictDeath
+- Java: Inflicted.java:1-88, Keyword.java:342-350,678-679
+- Requires: Inflicted trigger class that adds keyword to all target's sides via Buff
+- Estimated: 9 keywords unblocked

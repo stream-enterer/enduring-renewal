@@ -159,12 +159,15 @@
     "wither",
     "boned",
     "hyperBoned",
-    "hypnotise"
+    "hypnotise",
+    "stasis",
+    "enduring",
+    "dogma",
+    "resilient"
   ],
   "blocked": {
     "meta_copy_buff": ["duplicate"],
     "roll_phase": ["cantrip", "sticky"],
-    "side_replacement": ["stasis", "enduring", "dogma", "resilient"],
     "trait_system": ["dispel"],
     "meta_copy_advanced": ["share", "spy", "dejavu", "annul", "possessed"],
     "spell_tracking": ["singleCast", "cooldown", "deplete", "channel", "spellRescue", "future"],

@@ -168,12 +168,17 @@ class EntityState:
         )
 
         # Apply all triggers
+        # STASIS: If the calculated effect has stasis, stop processing triggers
         personals = self.get_active_personals()
         for i, personal in enumerate(personals):
+            if side_state.has_keyword(Keyword.STASIS):
+                break  # Stasis blocks all further trigger processing
             personal.affect_side(side_state, self, i)
 
         # Process meta-keywords (like copycat) after triggers
-        self._process_meta_keywords(side_state, fight_log)
+        # STASIS also blocks meta-keyword processing
+        if not side_state.has_keyword(Keyword.STASIS):
+            self._process_meta_keywords(side_state, fight_log)
 
         return side_state
 
@@ -418,8 +423,37 @@ class SideState:
         self.calculated_effect.growth_bonus = 0  # Clear growth bonus too
 
     def replace_with(self, new_side: "Side"):
-        """Replace the calculated effect with a new side entirely."""
-        self.calculated_effect = new_side.copy()
+        """Replace the calculated effect with a new side entirely.
+
+        Handles special keywords:
+        - DOGMA: Only pips change, keeps keywords and effect type
+        - ENDURING: After replacement, restores original keywords
+        - RESILIENT: After replacement, restores original pips and keeps resilient
+        """
+        from .dice import Keyword
+
+        # Save original state
+        original_keywords = set(self.calculated_effect.keywords)
+        original_value = self.calculated_effect.calculated_value
+
+        # DOGMA: Only change the pip value, keep everything else
+        if Keyword.DOGMA in original_keywords:
+            new_value = new_side.calculated_value if new_side.value != -999 else 0
+            self.calculated_effect.value = new_value
+            self.calculated_effect.growth_bonus = 0
+        else:
+            # Normal replacement
+            self.calculated_effect = new_side.copy()
+
+        # ENDURING: Restore original keywords after replacement
+        if Keyword.ENDURING in original_keywords:
+            self.calculated_effect.keywords.update(original_keywords)
+
+        # RESILIENT: Restore original pip value and keep resilient keyword
+        if Keyword.RESILIENT in original_keywords:
+            self.calculated_effect.value = original_value
+            self.calculated_effect.growth_bonus = 0
+            self.calculated_effect.keywords.add(Keyword.RESILIENT)
 
     def get_calculated_effect(self) -> "Side":
         """Get the calculated effect (for Java-style API compatibility)."""
