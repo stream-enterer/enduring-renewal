@@ -23,6 +23,9 @@ class Keyword(Enum):
     PRISTINE = auto()    # x2 effect if I have full HP
     DEATHWISH = auto()   # x2 effect if I am dying this turn
     ARMOURED = auto()    # x2 effect if I have shields
+    MOXIE = auto()       # x2 effect if I have least HP of all
+    BULLY = auto()       # x2 effect if I have most HP of all
+    REBORN = auto()      # x2 effect if I died this fight
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom

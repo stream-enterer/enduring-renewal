@@ -14,12 +14,15 @@
     "pair",
     "pristine",
     "deathwish",
-    "armoured"
+    "armoured",
+    "moxie",
+    "bully",
+    "reborn"
   ],
   "current_tier": 1,
   "current_batch": [],
   "summary": {
-    "done": 14,
+    "done": 17,
     "target": 191
   },
   "deferred": [

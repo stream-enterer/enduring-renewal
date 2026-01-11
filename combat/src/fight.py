@@ -37,6 +37,7 @@ class EntityState:
     times_used_this_turn: int = 0  # How many times die has been used this turn
     buffs: list = field(default_factory=list)  # Active buffs with Personal triggers
     cleansed_map: dict = field(default_factory=dict)  # CleanseType -> amount cleansed this turn
+    deaths_this_fight: int = 0  # Number of times entity has died this fight (for reborn keyword)
 
     @property
     def is_dead(self) -> bool:
@@ -348,6 +349,7 @@ class FightLog:
             times_used_this_turn=kwargs.get('times_used_this_turn', old.times_used_this_turn),
             buffs=kwargs.get('buffs', list(old.buffs)),
             cleansed_map=kwargs.get('cleansed_map', dict(old.cleansed_map)),
+            deaths_this_fight=kwargs.get('deaths_this_fight', old.deaths_this_fight),
         )
         self._states[entity] = new
         return new
@@ -421,7 +423,8 @@ class FightLog:
                 e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked,
                 s.keep_shields, s.stone_hp, s.fled, s.dodge, s.regen,
                 list(s.petrified_sides), s.used_die, s.times_used_this_turn, copied_buffs,
-                dict(s.cleansed_map)  # Copy cleansed_map for undo support
+                dict(s.cleansed_map),  # Copy cleansed_map for undo support
+                s.deaths_this_fight  # Preserve death count
             )
         return result
 
@@ -500,7 +503,7 @@ class FightLog:
             # Regen heals, capped at max HP
             future_hp = min(future_hp + health_delta, base.max_hp)
 
-        return EntityState(entity, future_hp, base.max_hp, base.shield, base.spiky, base.self_heal, base.damage_blocked, base.keep_shields, base.stone_hp, base.fled, base.dodge, base.regen, list(base.petrified_sides), base.used_die, base.times_used_this_turn, list(base.buffs), dict(base.cleansed_map))
+        return EntityState(entity, future_hp, base.max_hp, base.shield, base.spiky, base.self_heal, base.damage_blocked, base.keep_shields, base.stone_hp, base.fled, base.dodge, base.regen, list(base.petrified_sides), base.used_die, base.times_used_this_turn, list(base.buffs), dict(base.cleansed_map), base.deaths_this_fight)
 
     def apply_damage(self, source: Entity, target: Entity, amount: int, is_pending: bool = False):
         """Apply damage to target. If is_pending, damage goes to future state.
@@ -530,10 +533,14 @@ class FightLog:
             actual_damage = effective_amount - blocked
             new_shield = state.shield - blocked
             new_hp = state.hp - actual_damage
+            # Track if this damage kills the target (for reborn keyword)
+            was_alive = state.hp > 0
+            new_deaths = state.deaths_this_fight + (1 if was_alive and new_hp <= 0 else 0)
             self._states[target] = EntityState(
                 target, new_hp, state.max_hp,
                 new_shield, state.spiky, state.self_heal, state.damage_blocked + blocked,
-                state.keep_shields, state.stone_hp, state.fled, state.dodge
+                state.keep_shields, state.stone_hp, state.fled, state.dodge,
+                deaths_this_fight=new_deaths
             )
             # Check if target died and triggers flee
             if new_hp <= 0 and target.team == Team.MONSTER:
@@ -947,6 +954,10 @@ class FightLog:
                 # Poison deals direct damage (bypasses shield)
                 new_hp = state.hp + health_delta
 
+            # Track if poison kills the entity (for reborn keyword)
+            was_alive = state.hp > 0
+            new_deaths = state.deaths_this_fight + (1 if was_alive and new_hp <= 0 else 0)
+
             # Preserve buffs, reset cleansed_map for new turn
             self._states[entity] = EntityState(
                 entity, new_hp, state.max_hp,
@@ -954,18 +965,32 @@ class FightLog:
                 state.keep_shields, state.stone_hp, state.fled, state.dodge, state.regen,
                 list(state.petrified_sides), False, 0,  # Reset used_die
                 list(state.buffs),  # Preserve buffs (poison persists)
-                {}  # Reset cleansed_map for new turn
+                {},  # Reset cleansed_map for new turn
+                new_deaths  # Preserve/update death count
             )
 
     def apply_kill(self, target: Entity):
-        """Instantly kill an entity (set HP to 0)."""
+        """Instantly kill an entity (set HP to 0).
+
+        Increments death counter for reborn keyword.
+        """
         self._record_action()
         state = self._states[target]
         self._states[target] = EntityState(
             target, 0, state.max_hp,
             state.shield, state.spiky, state.self_heal, state.damage_blocked,
-            state.keep_shields, state.stone_hp
+            state.keep_shields, state.stone_hp,
+            deaths_this_fight=state.deaths_this_fight + 1  # Record the death
         )
+
+    def record_death(self, target: Entity):
+        """Record that an entity has died (for reborn keyword).
+
+        Call this after HP goes to 0 or below.
+        """
+        state = self._states[target]
+        if state.hp <= 0:
+            self._update_state(target, deaths_this_fight=state.deaths_this_fight + 1)
 
     def apply_resurrect(self, amount: int):
         """Resurrect up to N dead heroes with full HP.
@@ -973,6 +998,7 @@ class FightLog:
         Resurrects dead heroes in order (by position).
         Capped at number of dead heroes.
         Resurrected heroes come back with full HP.
+        Death count is preserved (for reborn keyword).
         """
         self._record_action()
 
@@ -990,7 +1016,8 @@ class FightLog:
             self._states[hero] = EntityState(
                 hero, state.max_hp, state.max_hp,  # Full HP
                 0, 0, False, 0,  # Reset buffs
-                False, 0  # Reset keep_shields and stone_hp
+                False, 0,  # Reset keep_shields and stone_hp
+                deaths_this_fight=state.deaths_this_fight  # Preserve death count
             )
 
     def get_dead_heroes(self) -> list[Entity]:
@@ -1329,6 +1356,9 @@ class FightLog:
         - PRISTINE: x2 if I have full HP
         - DEATHWISH: x2 if I am dying this turn (future HP <= 0)
         - ARMOURED: x2 if I have shields
+        - MOXIE: x2 if I have the least HP of all living entities
+        - BULLY: x2 if I have the most HP of all living entities
+        - REBORN: x2 if I died this fight
 
         Returns the modified value after applying all applicable bonuses.
         """
@@ -1360,7 +1390,42 @@ class FightLog:
             if source_state.shield > 0:
                 value *= 2
 
+        # MOXIE: x2 if I have the least HP of all living entities
+        if side.has_keyword(Keyword.MOXIE):
+            min_hp = self._get_min_hp_of_all()
+            if source_state.hp == min_hp:
+                value *= 2
+
+        # BULLY: x2 if I have the most HP of all living entities
+        if side.has_keyword(Keyword.BULLY):
+            max_hp = self._get_max_hp_of_all()
+            if source_state.hp == max_hp:
+                value *= 2
+
+        # REBORN: x2 if I died this fight
+        if side.has_keyword(Keyword.REBORN):
+            if source_state.deaths_this_fight > 0:
+                value *= 2
+
         return value
+
+    def _get_min_hp_of_all(self) -> int:
+        """Get the minimum HP among all living entities (heroes and monsters)."""
+        min_hp = 5000  # Large sentinel value like Java
+        for entity in self.heroes + self.monsters:
+            state = self._states.get(entity)
+            if state and not state.is_dead:
+                min_hp = min(min_hp, state.hp)
+        return min_hp
+
+    def _get_max_hp_of_all(self) -> int:
+        """Get the maximum HP among all living entities (heroes and monsters)."""
+        max_hp = 0
+        for entity in self.heroes + self.monsters:
+            state = self._states.get(entity)
+            if state and not state.is_dead:
+                max_hp = max(max_hp, state.hp)
+        return max_hp
 
     def apply_petrify(self, target: Entity, amount: int):
         """Apply petrification to target's die sides.

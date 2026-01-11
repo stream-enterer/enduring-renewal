@@ -1762,3 +1762,282 @@ class TestCopycat:
         assert len(side_state.calculated_effect.keywords) == 1, \
             "Copycat side should have 1 keyword when no die used yet"
         assert Keyword.COPYCAT in side_state.calculated_effect.keywords
+
+
+class TestMoxie:
+    """Tests for Moxie keyword.
+
+    Moxie deals x2 damage if the SOURCE has the least HP of ALL living entities
+    (both heroes and monsters).
+
+    Verified: x2 when source has lowest HP among all entities.
+    """
+
+    def test_moxie_doubles_when_least_hp(self):
+        """Moxie deals x2 damage when source has least HP of all."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=3)  # Will have least HP
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Hero at 3 HP, monster at 10 HP - hero has least
+        hero.die = Die()
+        moxie_side = Side(EffectType.DAMAGE, 2, {Keyword.MOXIE})
+        hero.die.set_all_sides(moxie_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6, "Moxie should deal x2 (4 damage) when source has least HP"
+
+    def test_moxie_no_bonus_when_not_least(self):
+        """Moxie deals normal damage when source doesn't have least HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)  # More HP than monster
+        monster = make_monster("Goblin", hp=5)
+
+        fight = FightLog([hero], [monster])
+
+        # Hero at 10 HP, monster at 5 HP - monster has least
+        hero.die = Die()
+        moxie_side = Side(EffectType.DAMAGE, 2, {Keyword.MOXIE})
+        hero.die.set_all_sides(moxie_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 3, "Moxie should deal normal (2 damage) when source doesn't have least HP"
+
+    def test_moxie_with_multiple_entities(self):
+        """Moxie checks against ALL entities (heroes and monsters)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        heroes = [make_hero("Fighter", hp=5), make_hero("Mage", hp=2)]
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog(heroes, [monster])
+
+        # Mage at 2 HP has the least
+        # Fighter at 5 HP uses moxie - should NOT double
+        fighter = heroes[0]
+        fighter.die = Die()
+        moxie_side = Side(EffectType.DAMAGE, 2, {Keyword.MOXIE})
+        fighter.die.set_all_sides(moxie_side)
+
+        fight.use_die(fighter, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Moxie should not double when ally has less HP"
+
+    def test_moxie_tied_least_hp(self):
+        """Moxie triggers when tied for least HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=5)  # Same HP as hero
+
+        fight = FightLog([hero], [monster])
+
+        # Both at 5 HP - tied for least
+        hero.die = Die()
+        moxie_side = Side(EffectType.DAMAGE, 2, {Keyword.MOXIE})
+        hero.die.set_all_sides(moxie_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 1, "Moxie should deal x2 when tied for least HP"
+
+
+class TestBully:
+    """Tests for Bully keyword.
+
+    Bully deals x2 damage if the SOURCE has the most HP of ALL living entities
+    (both heroes and monsters).
+
+    Verified: x2 when source has highest HP among all entities.
+    """
+
+    def test_bully_doubles_when_most_hp(self):
+        """Bully deals x2 damage when source has most HP of all."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)  # Will have most HP
+        monster = make_monster("Goblin", hp=5)
+
+        fight = FightLog([hero], [monster])
+
+        # Hero at 10 HP, monster at 5 HP - hero has most
+        hero.die = Die()
+        bully_side = Side(EffectType.DAMAGE, 2, {Keyword.BULLY})
+        hero.die.set_all_sides(bully_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 1, "Bully should deal x2 (4 damage) when source has most HP"
+
+    def test_bully_no_bonus_when_not_most(self):
+        """Bully deals normal damage when source doesn't have most HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)  # Less HP than monster
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Hero at 5 HP, monster at 10 HP - monster has most
+        hero.die = Die()
+        bully_side = Side(EffectType.DAMAGE, 2, {Keyword.BULLY})
+        hero.die.set_all_sides(bully_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Bully should deal normal (2 damage) when source doesn't have most HP"
+
+    def test_bully_with_multiple_entities(self):
+        """Bully checks against ALL entities (heroes and monsters)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        heroes = [make_hero("Fighter", hp=5), make_hero("Tank", hp=15)]
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog(heroes, [monster])
+
+        # Tank at 15 HP has the most
+        # Fighter at 5 HP uses bully - should NOT double
+        fighter = heroes[0]
+        fighter.die = Die()
+        bully_side = Side(EffectType.DAMAGE, 2, {Keyword.BULLY})
+        fighter.die.set_all_sides(bully_side)
+
+        fight.use_die(fighter, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Bully should not double when ally has more HP"
+
+    def test_bully_tied_most_hp(self):
+        """Bully triggers when tied for most HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)  # Same HP as hero
+
+        fight = FightLog([hero], [monster])
+
+        # Both at 10 HP - tied for most
+        hero.die = Die()
+        bully_side = Side(EffectType.DAMAGE, 2, {Keyword.BULLY})
+        hero.die.set_all_sides(bully_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6, "Bully should deal x2 when tied for most HP"
+
+
+class TestReborn:
+    """Tests for Reborn keyword.
+
+    Reborn deals x2 damage if the SOURCE has died during this fight
+    (and was resurrected).
+
+    Verified: x2 when source has died at least once this fight.
+    """
+
+    def test_reborn_no_bonus_without_death(self):
+        """Reborn deals normal damage when source hasn't died."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Hero hasn't died
+        hero.die = Die()
+        reborn_side = Side(EffectType.DAMAGE, 2, {Keyword.REBORN})
+        hero.die.set_all_sides(reborn_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Reborn should deal normal (2 damage) when source hasn't died"
+
+    def test_reborn_doubles_after_resurrection(self):
+        """Reborn deals x2 damage after source died and was resurrected."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Kill the hero
+        fight.apply_kill(hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.is_dead, "Hero should be dead"
+
+        # Resurrect the hero
+        fight.apply_resurrect(1)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert not state.is_dead, "Hero should be alive after resurrect"
+        assert state.deaths_this_fight == 1, "Hero should have 1 death recorded"
+
+        # Hero uses reborn damage
+        hero.die = Die()
+        reborn_side = Side(EffectType.DAMAGE, 2, {Keyword.REBORN})
+        hero.die.set_all_sides(reborn_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6, "Reborn should deal x2 (4 damage) after resurrection"
+
+    def test_reborn_tracks_death_from_damage(self):
+        """Reborn tracks deaths from regular damage."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=3)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Kill the hero with damage
+        fight.apply_damage(monster, hero, 5, is_pending=False)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.is_dead, "Hero should be dead"
+        assert state.deaths_this_fight == 1, "Death should be recorded from damage"
+
+    def test_reborn_multiple_deaths(self):
+        """Reborn tracks multiple deaths."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Kill and resurrect twice
+        fight.apply_kill(hero)
+        fight.apply_resurrect(1)
+        fight.apply_kill(hero)
+        fight.apply_resurrect(1)
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.deaths_this_fight == 2, "Hero should have 2 deaths recorded"
+
+        # Hero uses reborn damage - should still double
+        hero.die = Die()
+        reborn_side = Side(EffectType.DAMAGE, 2, {Keyword.REBORN})
+        hero.die.set_all_sides(reborn_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6, "Reborn should deal x2 with multiple deaths"
