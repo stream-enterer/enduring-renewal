@@ -1,12 +1,36 @@
 {
   "current": {
-    "file": "TestParty",
+    "file": "TestBugRepro",
     "method": null,
     "status": "not_started",
     "hypothesis": null,
     "verified": null
   },
   "blocked": [
+    {
+      "file": "TestTriggerOrdering",
+      "method": "testCreakyJointsSword",
+      "reason": "Requires die/sides system (getSideState, getCalculatedEffect), items, and modifiers. Tests creaky joints modifier + shortsword interaction.",
+      "timestamp": "2025-01-10T22:30:00Z"
+    },
+    {
+      "file": "TestTriggerOrdering",
+      "method": "testTriggerHPOrdering",
+      "reason": "Requires modifier system (ModifierLib). Tests that modifiers apply in consistent order affecting monster HP.",
+      "timestamp": "2025-01-10T22:30:00Z"
+    },
+    {
+      "file": "TestTriggerOrdering",
+      "method": "testBrainGrips",
+      "reason": "Requires die/sides system (turnInto, getSideState, addTrigger) and AffectSides with keyword manipulation.",
+      "timestamp": "2025-01-10T22:30:00Z"
+    },
+    {
+      "file": "TestTriggerOrdering",
+      "method": "testBuffReplacedSides",
+      "reason": "Requires die/sides system (roll with side index, getSideState) and AffectSides with ReplaceWith/FlatBonus.",
+      "timestamp": "2025-01-10T22:30:00Z"
+    },
     {
       "file": "TestKeyword",
       "method": "rampageHeroKill",
@@ -359,6 +383,18 @@
     }
   ],
   "skipped": [
+    {
+      "file": "TestParty",
+      "method": "noDuplicateHeroes",
+      "reason": "Party generation test - verifies no duplicate heroes in generated parties. Not combat mechanics.",
+      "timestamp": "2025-01-10T22:25:00Z"
+    },
+    {
+      "file": "TestParty",
+      "method": "partyLayoutsValid",
+      "reason": "Party generation test - verifies all party layouts produce valid heroes. Not combat mechanics.",
+      "timestamp": "2025-01-10T22:25:00Z"
+    },
     {
       "file": "TestKeyword",
       "method": "noLightKeywordsWithoutIcon",
