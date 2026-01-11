@@ -455,6 +455,192 @@ class TestCruel:
         assert state.hp == -1, "Should deal 2 damage (well below half HP)"
 
 
+class TestPristine:
+    """Tests for Pristine keyword.
+
+    Pristine deals x2 damage if the SOURCE (attacker) has full HP.
+    This is a self-check, not a target-check like engage/cruel.
+
+    Verified: x2 when source is at full HP.
+    """
+
+    def test_pristine_doubles_at_full_hp(self):
+        """Pristine deals x2 damage when source has full HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)  # Full HP
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Hero at full HP, uses pristine damage
+        hero.die = Die()
+        pristine_side = Side(EffectType.DAMAGE, 2, {Keyword.PRISTINE})
+        hero.die.set_all_sides(pristine_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6, "Pristine should deal x2 (4 damage) when at full HP"
+
+    def test_pristine_no_bonus_when_damaged(self):
+        """Pristine deals normal damage when source is below full HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Damage the hero first
+        fight.apply_damage(monster, hero, 1, is_pending=False)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 4, "Hero should be damaged"
+
+        # Hero NOT at full HP, uses pristine damage
+        hero.die = Die()
+        pristine_side = Side(EffectType.DAMAGE, 2, {Keyword.PRISTINE})
+        hero.die.set_all_sides(pristine_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Pristine should deal normal (2 damage) when not at full HP"
+
+
+class TestDeathwish:
+    """Tests for Deathwish keyword.
+
+    Deathwish deals x2 damage if the SOURCE (attacker) is dying this turn.
+    "Dying" means the source will be dead in the FUTURE temporality.
+
+    Verified: x2 when source is going to die this turn.
+    """
+
+    def test_deathwish_doubles_when_dying(self):
+        """Deathwish deals x2 damage when source is dying this turn."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Monster deals lethal pending damage to hero
+        fight.apply_damage(monster, hero, 5, is_pending=True)
+        future = fight.get_state(hero, Temporality.FUTURE)
+        assert future.hp <= 0, "Hero should be dying"
+
+        # Hero uses deathwish damage while dying
+        hero.die = Die()
+        deathwish_side = Side(EffectType.DAMAGE, 2, {Keyword.DEATHWISH})
+        hero.die.set_all_sides(deathwish_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6, "Deathwish should deal x2 (4 damage) when dying"
+
+    def test_deathwish_no_bonus_when_not_dying(self):
+        """Deathwish deals normal damage when source is not dying."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Hero at full HP, not dying
+        hero.die = Die()
+        deathwish_side = Side(EffectType.DAMAGE, 2, {Keyword.DEATHWISH})
+        hero.die.set_all_sides(deathwish_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Deathwish should deal normal (2 damage) when not dying"
+
+    def test_deathwish_non_lethal_pending_no_bonus(self):
+        """Deathwish has no bonus if pending damage won't kill."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Monster deals non-lethal pending damage
+        fight.apply_damage(monster, hero, 3, is_pending=True)
+        future = fight.get_state(hero, Temporality.FUTURE)
+        assert future.hp > 0, "Hero should not be dying"
+
+        # Hero uses deathwish damage while not dying
+        hero.die = Die()
+        deathwish_side = Side(EffectType.DAMAGE, 2, {Keyword.DEATHWISH})
+        hero.die.set_all_sides(deathwish_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Deathwish should deal normal damage when not dying"
+
+
+class TestArmoured:
+    """Tests for Armoured keyword.
+
+    Armoured deals x2 damage if the SOURCE (attacker) has shields.
+
+    Verified: x2 when source has shields.
+    """
+
+    def test_armoured_doubles_with_shields(self):
+        """Armoured deals x2 damage when source has shields."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Give hero shields
+        fight.apply_shield(hero, 3)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 3, "Hero should have shields"
+
+        # Hero uses armoured damage with shields
+        hero.die = Die()
+        armoured_side = Side(EffectType.DAMAGE, 2, {Keyword.ARMOURED})
+        hero.die.set_all_sides(armoured_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6, "Armoured should deal x2 (4 damage) when source has shields"
+
+    def test_armoured_no_bonus_without_shields(self):
+        """Armoured deals normal damage when source has no shields."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Hero has no shields
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 0, "Hero should have no shields"
+
+        # Hero uses armoured damage without shields
+        hero.die = Die()
+        armoured_side = Side(EffectType.DAMAGE, 2, {Keyword.ARMOURED})
+        hero.die.set_all_sides(armoured_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Armoured should deal normal (2 damage) without shields"
+
+
 class TestWeaken:
     """Tests for Weaken keyword.
 

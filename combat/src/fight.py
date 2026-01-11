@@ -1270,9 +1270,9 @@ class FightLog:
         # Base value from calculated side
         value = calculated_side.calculated_value
 
-        # Apply conditional keyword bonuses based on target state
+        # Apply conditional keyword bonuses based on source and target state
         target_state = self._states[target]
-        value = self._apply_conditional_keyword_bonuses(value, calculated_side, target_state)
+        value = self._apply_conditional_keyword_bonuses(value, calculated_side, source_state, target_state, entity)
 
         # Apply the effect based on type
         if calculated_side.effect_type == EffectType.SHIELD:
@@ -1315,12 +1315,20 @@ class FightLog:
         """Get the most recently used die's side state (for copycat keyword)."""
         return self._most_recent_die_effect
 
-    def _apply_conditional_keyword_bonuses(self, value: int, side: "Side", target_state: EntityState) -> int:
-        """Apply conditional bonuses based on keywords and target state.
+    def _apply_conditional_keyword_bonuses(
+        self, value: int, side: "Side", source_state: EntityState,
+        target_state: EntityState, source_entity: Entity
+    ) -> int:
+        """Apply conditional bonuses based on keywords, source, and target state.
 
-        Keywords with conditional bonuses:
+        Target-check keywords (check target):
         - ENGAGE: x2 if target is at full HP (hp == max_hp)
         - CRUEL: x2 if target is at half HP or less (hp <= max_hp/2)
+
+        Source-check keywords (check self):
+        - PRISTINE: x2 if I have full HP
+        - DEATHWISH: x2 if I am dying this turn (future HP <= 0)
+        - ARMOURED: x2 if I have shields
 
         Returns the modified value after applying all applicable bonuses.
         """
@@ -1331,7 +1339,26 @@ class FightLog:
             if target_state.hp == target_state.max_hp:
                 value *= 2
 
-        # Note: Other conditional keywords (CRUEL, etc.) can be added here
+        # CRUEL: x2 vs targets at half HP or less
+        if side.has_keyword(Keyword.CRUEL):
+            if target_state.hp <= target_state.max_hp // 2:
+                value *= 2
+
+        # PRISTINE: x2 if I have full HP
+        if side.has_keyword(Keyword.PRISTINE):
+            if source_state.hp == source_state.max_hp:
+                value *= 2
+
+        # DEATHWISH: x2 if I am dying this turn
+        if side.has_keyword(Keyword.DEATHWISH):
+            future_state = self.get_state(source_entity, Temporality.FUTURE)
+            if future_state.hp <= 0:
+                value *= 2
+
+        # ARMOURED: x2 if I have shields
+        if side.has_keyword(Keyword.ARMOURED):
+            if source_state.shield > 0:
+                value *= 2
 
         return value
 

@@ -20,6 +20,9 @@ class Keyword(Enum):
     COPYCAT = auto()     # Meta-keyword: copies keywords from most recently used die
     CRUEL = auto()       # x2 effect vs targets at half HP or less
     PAIR = auto()        # x2 effect if previous die had same calculated value
+    PRISTINE = auto()    # x2 effect if I have full HP
+    DEATHWISH = auto()   # x2 effect if I am dying this turn
+    ARMOURED = auto()    # x2 effect if I have shields
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
