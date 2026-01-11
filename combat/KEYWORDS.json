@@ -112,7 +112,11 @@
     "squared",
     "onesie",
     "threesy",
-    "zeroed"
+    "zeroed",
+    "selfRepel",
+    "revDiff",
+    "doubDiff",
+    "unusable"
   ],
   "blocked": {
     "turn_tracking": ["patient", "era", "minusEra"],

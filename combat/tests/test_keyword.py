@@ -7042,3 +7042,330 @@ class TestVisibilityKeywords:
 
         squared = Side(EffectType.DAMAGE, 3, {Keyword.SQUARED})
         assert squared.get_visible_value() == 9, "SQUARED should return N^2"
+
+
+class TestRevDiff:
+    """Tests for REV_DIFF keyword.
+
+    REV_DIFF inverts the pip delta: adds -2 * (calculated - base).
+    If a trigger increases pips from 2 to 4:
+    - delta = 4 - 2 = 2
+    - revDiff bonus = 2 * -2 = -4
+    - final = 4 + (-4) = 0
+
+    This "inverts" the effect of pip modifiers.
+    """
+
+    def test_rev_diff_with_positive_delta(self):
+        """REV_DIFF inverts positive pip changes."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        from src.triggers import AffectSides, FlatBonus
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # Add a +2 flat bonus trigger to hero
+        fight.add_trigger(hero, AffectSides([], FlatBonus(2)))
+
+        # Die with base 2 damage and REV_DIFF
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.REV_DIFF}))
+
+        # Trigger adds +2: calculated = 4, base = 2, delta = 2
+        # revDiff: 4 + (-4) = 0
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 20, "REV_DIFF with positive delta should deal 0 damage"
+
+    def test_rev_diff_with_negative_delta(self):
+        """REV_DIFF inverts negative pip changes (resulting in bonus)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        from src.triggers import AffectSides, FlatBonus
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # Add a -1 flat penalty trigger to hero
+        fight.add_trigger(hero, AffectSides([], FlatBonus(-1)))
+
+        # Die with base 4 damage and REV_DIFF
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 4, {Keyword.REV_DIFF}))
+
+        # Trigger subtracts 1: calculated = 3, base = 4, delta = -1
+        # revDiff: 3 + (-1 * -2) = 3 + 2 = 5
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 15, "REV_DIFF with negative delta should deal 5 damage"
+
+    def test_rev_diff_no_delta(self):
+        """REV_DIFF with no pip change deals normal damage."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # Die with base 3 damage and REV_DIFF (no triggers to modify pips)
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.REV_DIFF}))
+
+        # No delta, so no revDiff adjustment
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 17, "REV_DIFF with no delta should deal base damage"
+
+
+class TestDoubDiff:
+    """Tests for DOUB_DIFF keyword.
+
+    DOUB_DIFF doubles the pip delta: adds (calculated - base).
+    If a trigger increases pips from 2 to 4:
+    - delta = 4 - 2 = 2
+    - doubDiff bonus = 2
+    - final = 4 + 2 = 6
+
+    This "doubles" the effect of pip modifiers.
+    """
+
+    def test_doub_diff_with_positive_delta(self):
+        """DOUB_DIFF doubles positive pip changes."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        from src.triggers import AffectSides, FlatBonus
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # Add a +2 flat bonus trigger to hero
+        fight.add_trigger(hero, AffectSides([], FlatBonus(2)))
+
+        # Die with base 2 damage and DOUB_DIFF
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.DOUB_DIFF}))
+
+        # Trigger adds +2: calculated = 4, base = 2, delta = 2
+        # doubDiff: 4 + 2 = 6
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 14, "DOUB_DIFF with positive delta should deal 6 damage"
+
+    def test_doub_diff_with_negative_delta(self):
+        """DOUB_DIFF doubles negative pip changes (resulting in penalty)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        from src.triggers import AffectSides, FlatBonus
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # Add a -1 flat penalty trigger to hero
+        fight.add_trigger(hero, AffectSides([], FlatBonus(-1)))
+
+        # Die with base 4 damage and DOUB_DIFF
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 4, {Keyword.DOUB_DIFF}))
+
+        # Trigger subtracts 1: calculated = 3, base = 4, delta = -1
+        # doubDiff: 3 + (-1) = 2
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 18, "DOUB_DIFF with negative delta should deal 2 damage"
+
+    def test_doub_diff_no_delta(self):
+        """DOUB_DIFF with no pip change deals normal damage."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # Die with base 3 damage and DOUB_DIFF (no triggers to modify pips)
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.DOUB_DIFF}))
+
+        # No delta, so no doubDiff adjustment
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 17, "DOUB_DIFF with no delta should deal base damage"
+
+
+class TestSelfRepel:
+    """Tests for SELF_REPEL keyword.
+
+    SELF_REPEL deals N damage to all enemies attacking the source (me).
+    Compare to REPEL which deals N damage to enemies attacking the target.
+    """
+
+    def test_self_repel_damages_attackers(self):
+        """SELF_REPEL deals damage to entities attacking the source."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        from src.fight import PendingDamage
+
+        hero = make_hero("Defender", hp=10)
+        monster1 = make_monster("Goblin1", hp=10)
+        monster2 = make_monster("Goblin2", hp=10)
+        fight = FightLog([hero], [monster1, monster2])
+
+        # Monster1 has pending damage targeting hero
+        fight._pending.append(PendingDamage(target=hero, amount=3, source=monster1))
+
+        # Hero uses SELF_REPEL shield on self
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.SHIELD, 2, {Keyword.SELF_REPEL}))
+        fight.use_die(hero, 0, hero)
+
+        # Monster1 attacked hero, so takes 2 damage from SELF_REPEL
+        monster1_state = fight.get_state(monster1, Temporality.PRESENT)
+        assert monster1_state.hp == 8, "Attacking monster should take SELF_REPEL damage"
+
+        # Monster2 didn't attack hero
+        monster2_state = fight.get_state(monster2, Temporality.PRESENT)
+        assert monster2_state.hp == 10, "Non-attacking monster should be unaffected"
+
+    def test_self_repel_vs_multiple_attackers(self):
+        """SELF_REPEL damages all attackers."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        from src.fight import PendingDamage
+
+        hero = make_hero("Defender", hp=10)
+        monster1 = make_monster("Goblin1", hp=10)
+        monster2 = make_monster("Goblin2", hp=10)
+        fight = FightLog([hero], [monster1, monster2])
+
+        # Both monsters have pending damage on hero
+        fight._pending.append(PendingDamage(target=hero, amount=2, source=monster1))
+        fight._pending.append(PendingDamage(target=hero, amount=3, source=monster2))
+
+        # Hero uses SELF_REPEL shield
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.SHIELD, 3, {Keyword.SELF_REPEL}))
+        fight.use_die(hero, 0, hero)
+
+        # Both monsters should take 3 damage
+        monster1_state = fight.get_state(monster1, Temporality.PRESENT)
+        assert monster1_state.hp == 7, "First attacker should take SELF_REPEL damage"
+
+        monster2_state = fight.get_state(monster2, Temporality.PRESENT)
+        assert monster2_state.hp == 7, "Second attacker should take SELF_REPEL damage"
+
+    def test_self_repel_when_shielding_ally(self):
+        """SELF_REPEL still checks source's attackers when shielding ally."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        from src.fight import PendingDamage
+
+        hero1 = make_hero("Defender", hp=10)
+        hero2 = make_hero("Ally", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Monster attacks hero1 (the source)
+        fight._pending.append(PendingDamage(target=hero1, amount=3, source=monster))
+
+        # Hero1 shields hero2 with SELF_REPEL
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.SHIELD, 2, {Keyword.SELF_REPEL}))
+        fight.use_die(hero1, 0, hero2)
+
+        # Monster attacked hero1 (source), so takes damage from SELF_REPEL
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 8, "Monster attacking source should take SELF_REPEL damage"
+
+    def test_self_repel_no_attackers(self):
+        """SELF_REPEL does nothing when no one is attacking source."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Defender", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # No pending damage on hero
+
+        # Hero uses SELF_REPEL
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.SHIELD, 2, {Keyword.SELF_REPEL}))
+        fight.use_die(hero, 0, hero)
+
+        # Monster should be unaffected
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 10, "Monster should be unaffected without pending"
+
+
+class TestUnusable:
+    """Tests for UNUSABLE keyword.
+
+    UNUSABLE prevents a side from being used manually.
+    Cantrip effects can still trigger an unusable side.
+    """
+
+    def test_unusable_side_not_usable_manually(self):
+        """UNUSABLE side cannot be used manually."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Die with UNUSABLE keyword
+        hero.die = Die()
+        unusable_side = Side(EffectType.DAMAGE, 3, {Keyword.UNUSABLE})
+        hero.die.set_all_sides(unusable_side)
+
+        # Check if side is usable (should be False)
+        result = fight.is_side_usable(unusable_side, is_cantrip=False)
+        assert result is False, "UNUSABLE side should not be usable manually"
+
+    def test_unusable_side_usable_by_cantrip(self):
+        """UNUSABLE side can be used by cantrip effect."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Die with UNUSABLE keyword
+        hero.die = Die()
+        unusable_side = Side(EffectType.DAMAGE, 3, {Keyword.UNUSABLE})
+        hero.die.set_all_sides(unusable_side)
+
+        # Check if side is usable by cantrip (should be True)
+        result = fight.is_side_usable(unusable_side, is_cantrip=True)
+        assert result is True, "UNUSABLE side should be usable by cantrip"
+
+    def test_normal_side_is_usable(self):
+        """Normal side without UNUSABLE is usable."""
+        from src.dice import Die, Side
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Die without UNUSABLE keyword
+        hero.die = Die()
+        normal_side = Side(EffectType.DAMAGE, 3)
+        hero.die.set_all_sides(normal_side)
+
+        # Check if side is usable (should be True)
+        result = fight.is_side_usable(normal_side, is_cantrip=False)
+        assert result is True, "Normal side should be usable"

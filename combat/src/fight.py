@@ -259,6 +259,20 @@ class EntityState:
                 if all(eff.calculated_effect.get_visible_value() == current_value for eff in previous_effects):
                     calculated.value *= 7
 
+        # REV_DIFF and DOUB_DIFF: Modify value based on delta from base
+        # delta = calculated - base
+        # doubDiff: adds delta (doubling the effect of any pip changes)
+        # revDiff: adds -2*delta (inverting and doubling the effect of pip changes)
+        if Keyword.REV_DIFF in calculated.keywords or Keyword.DOUB_DIFF in calculated.keywords:
+            base_value = side_state.original_side.value
+            calculated_value = calculated.calculated_value
+            delta = calculated_value - base_value
+            if delta != 0:
+                if Keyword.DOUB_DIFF in calculated.keywords:
+                    calculated.value += delta
+                else:  # REV_DIFF
+                    calculated.value += delta * -2
+
     def get_total_petrification(self) -> int:
         """Count the number of petrified sides.
 
@@ -1324,6 +1338,14 @@ class FightLog:
                     if not attacker_state.is_dead:
                         self.apply_damage(entity, attacker, value, is_pending=False)
 
+            # SELF_REPEL: N damage to all enemies attacking me (source)
+            if calculated_side.has_keyword(Keyword.SELF_REPEL):
+                attackers = self._get_entities_attacking(entity)
+                for attacker in attackers:
+                    attacker_state = self.get_state(attacker, Temporality.PRESENT)
+                    if not attacker_state.is_dead:
+                        self.apply_damage(entity, attacker, value, is_pending=False)
+
             # EVIL: If shielding saved a dying hero, I die
             if calculated_side.has_keyword(Keyword.EVIL):
                 now_surviving = not self.get_state(target, Temporality.FUTURE).is_dead
@@ -2064,6 +2086,26 @@ class FightLog:
         # PICKY: target must have exactly N HP (N = side value)
         if side.has_keyword(Keyword.PICKY):
             if target_state.hp != side.calculated_value:
+                return False
+
+        return True
+
+    def is_side_usable(self, side: "Side", is_cantrip: bool = False) -> bool:
+        """Check if a side can be used at all.
+
+        UNUSABLE: Cannot be used manually (cantrip is still allowed)
+
+        Args:
+            side: The side to check
+            is_cantrip: Whether this is being triggered by a cantrip effect
+
+        Returns True if side can be used, False otherwise.
+        """
+        from .dice import Keyword
+
+        # UNUSABLE: Cannot be used manually (cantrip still allowed)
+        if side.has_keyword(Keyword.UNUSABLE):
+            if not is_cantrip:
                 return False
 
         return True

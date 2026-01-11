@@ -124,8 +124,10 @@ class Keyword(Enum):
     GENEROUS = auto()    # Cannot target myself
     SCARED = auto()      # Target must have N or less HP (N = pips)
     PICKY = auto()       # Target must have exactly N HP (N = pips)
+    UNUSABLE = auto()    # Cannot be used manually (cantrip still allowed)
     # Self-targeting keywords
     SELF_PETRIFY = auto()  # Petrify myself
+    SELF_REPEL = auto()    # N damage to all enemies attacking me
     # Multi-target effect keywords
     CLEAVE = auto()        # Also hits both sides of the target
     DESCEND = auto()       # Also hits below the target
@@ -142,6 +144,9 @@ class Keyword(Enum):
     ONESIE = auto()        # Others see 1
     THREESY = auto()       # Others see 3
     ZEROED = auto()        # Others see 0
+    # Pip delta modifiers - modify value based on delta from base
+    REV_DIFF = auto()      # Inverted pip delta: adds -2 * (calculated - base)
+    DOUB_DIFF = auto()     # Doubled pip delta: adds (calculated - base)
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
