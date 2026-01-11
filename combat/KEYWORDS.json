@@ -146,10 +146,12 @@
     "fumble",
     "patient",
     "era",
-    "minusEra"
+    "minusEra",
+    "heal",
+    "shield",
+    "damage"
   ],
   "blocked": {
-    "effect_types": ["heal", "shield", "damage"],
     "meta_copy_buff": ["duplicate"],
     "target_tracking": ["focus", "duel"],
     "roll_phase": ["cantrip", "sticky"],

@@ -187,6 +187,10 @@ class Keyword(Enum):
     PATIENT = auto()       # x2 if I was not used last turn
     ERA = auto()           # +N pips where N = turns elapsed
     MINUS_ERA = auto()     # -N pips where N = turns elapsed
+    # Additional effect keywords - apply extra effects to target
+    HEAL = auto()          # Also heal target for N pips
+    SHIELD = auto()        # Also shield target for N pips
+    DAMAGE = auto()        # Also damage target for N pips
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom

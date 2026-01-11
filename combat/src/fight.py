@@ -1586,6 +1586,21 @@ class FightLog:
         if calculated_side.has_keyword(Keyword.SELF_PETRIFY):
             self.apply_petrify(entity, 1)
 
+        # === ADDITIONAL EFFECT KEYWORDS (apply extra effects to target) ===
+        # HEAL: also heal target for N pips (in addition to main effect)
+        if calculated_side.has_keyword(Keyword.HEAL):
+            self.apply_heal(target, value)
+
+        # SHIELD: also shield target for N pips (in addition to main effect)
+        if calculated_side.has_keyword(Keyword.SHIELD):
+            self.apply_shield(target, value)
+
+        # DAMAGE: also damage target for N pips (in addition to main effect)
+        if calculated_side.has_keyword(Keyword.DAMAGE):
+            # Apply damage from source to target
+            vuln_bonus = self.get_vulnerable_bonus(target)
+            self.apply_damage(entity, target, value + vuln_bonus)
+
         # === STATUS EFFECT KEYWORDS (apply status effects) ===
         # POISON: apply N poison to target (damage at end of turn)
         if calculated_side.has_keyword(Keyword.POISON):

@@ -7948,3 +7948,264 @@ class TestTurnTracking:
         # Now used_last_turn should be False
         state = fight.get_state(hero, Temporality.PRESENT)
         assert not state.used_last_turn, "Should not be used_last_turn after skipping"
+
+
+class TestHealKeyword:
+    """Tests for Heal keyword.
+
+    Heal: Also heal target for N pips (in addition to main effect).
+    This is an additional effect that heals the target.
+    """
+
+    def test_heal_keyword_on_damage_side(self):
+        """Damage side with heal keyword deals damage AND heals target."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Pre-damage the monster so heal has effect
+        fight.apply_damage(hero, monster, 5, is_pending=False)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 5  # 10 - 5
+
+        hero.die = Die()
+        # Damage 3 with heal keyword - damages for 3, heals for 3
+        side = Side(EffectType.DAMAGE, 3, {Keyword.HEAL})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster takes 3 damage (5-3=2) then heals 3 (2+3=5)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 5  # Net zero change
+
+    def test_heal_keyword_on_shield_side(self):
+        """Shield side with heal keyword grants shield AND heals target."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Support", hp=5)
+        hero2 = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Pre-damage Fighter
+        fight.apply_damage(monster, hero2, 2, is_pending=False)
+        fighter_state = fight.get_state(hero2, Temporality.PRESENT)
+        assert fighter_state.hp == 3
+
+        hero1.die = Die()
+        # Shield 2 with heal keyword - shields for 2, heals for 2
+        side = Side(EffectType.SHIELD, 2, {Keyword.HEAL})
+        hero1.die.set_all_sides(side)
+
+        fight.use_die(hero1, 0, hero2)
+
+        # Fighter gets 2 shield and heals 2
+        fighter_state = fight.get_state(hero2, Temporality.PRESENT)
+        assert fighter_state.hp == 5  # 3 + 2
+        assert fighter_state.shield == 2
+
+    def test_heal_keyword_standalone(self):
+        """Heal side with heal keyword heals twice (base + keyword)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Healer", hp=10)
+        hero2 = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Pre-damage Fighter significantly
+        fight.apply_damage(monster, hero2, 8, is_pending=False)
+        fighter_state = fight.get_state(hero2, Temporality.PRESENT)
+        assert fighter_state.hp == 2
+
+        hero1.die = Die()
+        # Heal 3 with heal keyword - heals 3 (base) + heals 3 (keyword) = 6 total
+        side = Side(EffectType.HEAL, 3, {Keyword.HEAL})
+        hero1.die.set_all_sides(side)
+
+        fight.use_die(hero1, 0, hero2)
+
+        # Fighter heals 6 total (capped at max HP)
+        fighter_state = fight.get_state(hero2, Temporality.PRESENT)
+        assert fighter_state.hp == 8  # 2 + 6
+
+
+class TestShieldKeyword:
+    """Tests for Shield keyword.
+
+    Shield: Also shield target for N pips (in addition to main effect).
+    This is an additional effect that shields the target.
+    """
+
+    def test_shield_keyword_on_damage_side(self):
+        """Damage side with shield keyword deals damage AND shields target."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Damage 2 with shield keyword - damages for 2, shields for 2
+        side = Side(EffectType.DAMAGE, 2, {Keyword.SHIELD})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster takes 2 damage and gains 2 shields
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 8  # 10 - 2
+        assert monster_state.shield == 2
+
+    def test_shield_keyword_on_heal_side(self):
+        """Heal side with shield keyword heals AND shields target."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Support", hp=5)
+        hero2 = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Pre-damage Fighter
+        fight.apply_damage(monster, hero2, 2, is_pending=False)
+        fighter_state = fight.get_state(hero2, Temporality.PRESENT)
+        assert fighter_state.hp == 3
+
+        hero1.die = Die()
+        # Heal 2 with shield keyword - heals for 2, shields for 2
+        side = Side(EffectType.HEAL, 2, {Keyword.SHIELD})
+        hero1.die.set_all_sides(side)
+
+        fight.use_die(hero1, 0, hero2)
+
+        # Fighter heals 2 and gets 2 shields
+        fighter_state = fight.get_state(hero2, Temporality.PRESENT)
+        assert fighter_state.hp == 5  # 3 + 2
+        assert fighter_state.shield == 2
+
+    def test_shield_keyword_stacks_with_shield_side(self):
+        """Shield side with shield keyword gives double shields."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Support", hp=5)
+        hero2 = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        hero1.die = Die()
+        # Shield 3 with shield keyword - shields 3 (base) + shields 3 (keyword) = 6 total
+        side = Side(EffectType.SHIELD, 3, {Keyword.SHIELD})
+        hero1.die.set_all_sides(side)
+
+        fight.use_die(hero1, 0, hero2)
+
+        # Fighter gets 6 total shields
+        fighter_state = fight.get_state(hero2, Temporality.PRESENT)
+        assert fighter_state.shield == 6
+
+
+class TestDamageKeyword:
+    """Tests for Damage keyword.
+
+    Damage: Also damage target for N pips (in addition to main effect).
+    This is an additional effect that damages the target.
+    """
+
+    def test_damage_keyword_on_heal_side(self):
+        """Heal side with damage keyword heals AND damages target."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Heal 2 with damage keyword - heals for 2, damages for 2
+        side = Side(EffectType.HEAL, 2, {Keyword.DAMAGE})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster heals 2 (capped at max) and takes 2 damage = net 2 damage
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 8  # 10 + 0 (already full) - 2
+
+    def test_damage_keyword_on_shield_side(self):
+        """Shield side with damage keyword shields AND damages target.
+
+        Order matters: shield applies first (base effect), then damage keyword.
+        So the damage gets blocked by the shields just applied.
+        """
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Shield 3 with damage keyword - shields for 3 (base), then damages for 3 (keyword)
+        # Damage is blocked by the shields just applied
+        side = Side(EffectType.SHIELD, 3, {Keyword.DAMAGE})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster gets 3 shields, then takes 3 damage (blocked by shields)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 10  # Damage was blocked
+        assert monster_state.shield == 0  # Shields consumed blocking damage
+        assert monster_state.damage_blocked == 3  # Verifies shield blocked damage
+
+    def test_damage_keyword_stacks_with_damage_side(self):
+        """Damage side with damage keyword deals double damage."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Damage 2 with damage keyword - damages 2 (base) + damages 2 (keyword) = 4 total
+        side = Side(EffectType.DAMAGE, 2, {Keyword.DAMAGE})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster takes 4 total damage
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 6  # 10 - 4
+
+    def test_damage_keyword_respects_vulnerable(self):
+        """Damage from damage keyword should respect vulnerable bonus."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # Apply vulnerable to monster (+2 damage from dice)
+        fight.apply_vulnerable(monster, 2)
+
+        hero.die = Die()
+        # Heal 3 with damage keyword - damages for 3 + 2 vulnerable = 5
+        side = Side(EffectType.HEAL, 3, {Keyword.DAMAGE})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster takes 5 damage (3 + 2 vulnerable)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 15  # 20 - 5
