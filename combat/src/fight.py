@@ -10,6 +10,7 @@ import random
 from .entity import Entity, Team, FIELD_CAPACITY, BONES
 from .effects import EffectType
 from .spell import Spell, SpellState, SpellEffect, QueuedSpell
+from .tactic import Tactic
 from .dice import Keyword
 
 if TYPE_CHECKING:
@@ -1424,6 +1425,82 @@ class FightLog:
     def _apply_hostile_spell(self, spell: Spell, target: Entity, value: int):
         """Apply a hostile spell effect (damage)."""
         effect = spell.effect
+        if effect.effect_type == EffectType.DAMAGE:
+            state = self._states[target]
+            # Damage goes through shield first
+            shield_damage = min(value, state.shield)
+            remaining_damage = value - shield_damage
+            new_shield = state.shield - shield_damage
+            new_hp = state.hp - remaining_damage
+            self._update_state(target, hp=new_hp, shield=new_shield)
+
+    # =========================================================================
+    # Tactic Methods
+    # =========================================================================
+
+    def is_tactic_usable(self, tactic: Tactic) -> bool:
+        """Check if a tactic can be used.
+
+        A tactic is usable if there are enough rolled, unused hero dice
+        to fulfill all its cost requirements.
+
+        Args:
+            tactic: The tactic to check
+
+        Returns:
+            True if the tactic can be used
+        """
+        return tactic.is_usable(self)
+
+    def use_tactic(self, tactic: Tactic, target: Optional[Entity] = None) -> bool:
+        """Use a tactic, consuming dice and applying its effect.
+
+        Handles:
+        - Finding and marking contributing dice as used
+        - Applying the tactic's effect to the target
+
+        Args:
+            tactic: The tactic to use
+            target: The target entity (if tactic requires one)
+
+        Returns:
+            True if tactic was used successfully, False if it couldn't be used
+        """
+        if not self.is_tactic_usable(tactic):
+            return False
+
+        self._record_action()
+
+        # Get contributing entities and mark their dice as used
+        contributors = tactic.get_contributing_entities(self)
+        for entity in contributors:
+            self.mark_die_used(entity)
+
+        # Apply the tactic effect (reuse spell effect application)
+        effect = tactic.effect
+        if effect.target_friendly:
+            if target is not None:
+                self._apply_friendly_tactic(tactic, target, effect.value)
+        else:
+            if target is not None:
+                self._apply_hostile_tactic(tactic, target, effect.value)
+
+        return True
+
+    def _apply_friendly_tactic(self, tactic: Tactic, target: Entity, value: int):
+        """Apply a friendly tactic effect (heal/shield)."""
+        effect = tactic.effect
+        if effect.effect_type == EffectType.HEAL:
+            state = self._states[target]
+            new_hp = min(state.hp + value, state.max_hp)
+            self._update_state(target, hp=new_hp)
+        elif effect.effect_type == EffectType.SHIELD:
+            state = self._states[target]
+            self._update_state(target, shield=state.shield + value)
+
+    def _apply_hostile_tactic(self, tactic: Tactic, target: Entity, value: int):
+        """Apply a hostile tactic effect (damage)."""
+        effect = tactic.effect
         if effect.effect_type == EffectType.DAMAGE:
             state = self._states[target]
             # Damage goes through shield first

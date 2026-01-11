@@ -191,11 +191,11 @@
     "future",
     "spellRescue",
     "sticky",
-    "cantrip"
+    "cantrip",
+    "tactical"
   ],
   "blocked": {
     "item_system": ["potion"],
-    "tactic_system": ["tactical"],
     "validation_only": ["permissive"],
     "not_implementable": ["removed"]
   },

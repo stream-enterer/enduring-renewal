@@ -244,6 +244,8 @@ class Keyword(Enum):
     # Roll phase keywords
     STICKY = auto()        # Die auto-locks when landing on this side (cannot be rerolled)
     CANTRIP = auto()       # Die auto-activates on roll, doesn't consume die
+    # Tactic system keywords
+    TACTICAL = auto()      # Counts twice for tactic costs
 
 
 # Map from inflict keyword to the keyword it inflicts
