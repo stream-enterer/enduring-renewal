@@ -1364,3 +1364,87 @@ class TestRampage:
         # Die should be used
         state = fight.get_state(hero, Temporality.PRESENT)
         assert state.is_used(), "dice should be used when no kill"
+
+
+class TestPrecisePlusMagic:
+    """Tests for engage keyword interaction with use_die.
+
+    This test verifies that engage keyword (x2 vs full HP targets) works
+    through the trigger/buff system when applied via use_die().
+
+    The engage keyword doubles both shield AND mana when shieldMana is used
+    on a full HP target, because both values are derived from the same base value.
+
+    Verified: From TestKeyword.precisePlusMagic in Java test.
+    """
+
+    def test_engage_doubles_shield_mana_on_full_hp(self):
+        """Engage keyword doubles shieldMana effect when target is at full HP.
+
+        Test flow:
+        1. Hero at full HP uses shieldMana(1) → shield=1, mana=1
+        2. Add engage keyword to hero's sides via buff
+        3. Hero at full HP uses shieldMana(1) again → shield=2, mana=2 (doubled)
+           Total: shield=3, mana=3
+        """
+        from src.dice import Die, shield_mana, Keyword
+        from src.triggers import Buff, AffectSides, AddKeyword
+
+        hero = make_hero("Mage", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Set up hero's die with shieldMana(1) on all sides
+        hero.die = Die()
+        hero.die.set_all_sides(shield_mana(1))
+
+        # First use - no engage, target at full HP
+        # Shield = 1, mana = 1
+        fight.use_die(hero, 0, hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 1, "hero should be shielded for 1"
+        assert fight.get_total_mana() == 1, "should have 1 mana"
+
+        # Add engage keyword to all hero's sides via buff
+        engage_buff = Buff(personal=AffectSides(effects=[AddKeyword(Keyword.ENGAGE)]))
+        state.add_buff(engage_buff)
+
+        # Second use - WITH engage, target at full HP (shields don't reduce HP)
+        # Engage doubles: shield = 2, mana = 2
+        # Total: shield = 1 + 2 = 3, mana = 1 + 2 = 3
+        fight.use_die(hero, 0, hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 3, "hero should be shielded for 2 more (total 3)"
+        assert fight.get_total_mana() == 3, "should have 3 mana"
+
+    def test_engage_no_double_when_damaged(self):
+        """Engage keyword does NOT double when target HP < max HP.
+
+        Engage only triggers vs full HP targets. Once damaged (even 1 HP),
+        the x2 multiplier no longer applies.
+        """
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        from src.triggers import Buff, AffectSides, AddKeyword
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Damage hero first
+        fight.apply_damage(monster, hero, 1, is_pending=False)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 4, "Hero should be damaged"
+
+        # Set up hero's die with shield(1) + engage
+        hero.die = Die()
+        base_side = Side(EffectType.SHIELD, 1, {Keyword.ENGAGE})
+        hero.die.set_all_sides(base_side)
+
+        # Use die - engage should NOT double (hero is damaged)
+        fight.use_die(hero, 0, hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        # Should be 1 shield, not 2
+        assert state.shield == 1, "Engage should NOT double when target is damaged"

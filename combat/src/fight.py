@@ -1082,13 +1082,15 @@ class FightLog:
         """Use a die side against a target.
 
         Executes the side's effect and applies growth if the side has the growth keyword.
-        The side's calculated_value is used (includes growth bonus from previous uses).
-        Marks the die as used after applying the effect.
+        Gets the side state (applies all buffs/triggers) and checks conditional keywords.
 
         For shieldMana effects (SHIELD type with MANA keyword):
         - Grants shield equal to calculated_value
         - Grants mana equal to calculated_value
-        - If has GROWTH keyword, increases side's value by 1 after use
+        - If has ENGAGE keyword and target at full HP, doubles the effect
+
+        For growth keyword:
+        - Increases side's base value by 1 after use
         """
         from .dice import Keyword
 
@@ -1097,29 +1099,59 @@ class FightLog:
         if die is None:
             raise ValueError(f"Entity {entity} has no die")
 
-        side = die.get_side(side_index)
-        value = side.calculated_value
+        # Get the side state (applies all buffs/triggers to get calculated effect)
+        source_state = self._states[entity]
+        side_state = source_state.get_side_state(side_index)
+        calculated_side = side_state.get_calculated_effect()
+
+        # Base value from calculated side
+        value = calculated_side.calculated_value
+
+        # Apply conditional keyword bonuses based on target state
+        target_state = self._states[target]
+        value = self._apply_conditional_keyword_bonuses(value, calculated_side, target_state)
 
         # Apply the effect based on type
-        if side.effect_type == EffectType.SHIELD:
+        if calculated_side.effect_type == EffectType.SHIELD:
             self.apply_shield(target, value)
 
-            # If has MANA keyword, also grant mana
-            if side.has_keyword(Keyword.MANA):
+            # If has MANA keyword, also grant mana (same value, with same multiplier)
+            if calculated_side.has_keyword(Keyword.MANA):
                 self.add_mana(value)
 
-        elif side.effect_type == EffectType.DAMAGE:
+        elif calculated_side.effect_type == EffectType.DAMAGE:
             self.apply_damage(entity, target, value)
 
-        elif side.effect_type == EffectType.HEAL:
+        elif calculated_side.effect_type == EffectType.HEAL:
             self.apply_heal(target, value)
 
         # Mark die as used
         self.mark_die_used(entity)
 
-        # Apply growth AFTER use
-        if side.has_keyword(Keyword.GROWTH):
-            side.apply_growth()
+        # Apply growth AFTER use (to the original side, not the calculated)
+        original_side = die.get_side(side_index)
+        if original_side.has_keyword(Keyword.GROWTH) or calculated_side.has_keyword(Keyword.GROWTH):
+            original_side.apply_growth()
+
+    def _apply_conditional_keyword_bonuses(self, value: int, side: "Side", target_state: EntityState) -> int:
+        """Apply conditional bonuses based on keywords and target state.
+
+        Keywords with conditional bonuses:
+        - ENGAGE: x2 if target is at full HP (hp == max_hp)
+        - CRUEL: x2 if target is at half HP or less (hp <= max_hp/2)
+
+        Returns the modified value after applying all applicable bonuses.
+        """
+        from .dice import Keyword
+
+        # ENGAGE: x2 vs full HP targets
+        if side.has_keyword(Keyword.ENGAGE):
+            if target_state.hp == target_state.max_hp:
+                value *= 2
+
+        # Note: Other conditional keywords (CRUEL, etc.) can be added here
+
+        return value
 
     def apply_petrify(self, target: Entity, amount: int):
         """Apply petrification to target's die sides.

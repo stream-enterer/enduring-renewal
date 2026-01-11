@@ -2,12 +2,12 @@
   "phase": 2,
   "infrastructure": {
     "current": {
-      "component": "engage_keyword",
+      "component": "copycat_keyword",
       "status": "not_started",
-      "target_test": "TestKeyword.precisePlusMagic",
+      "target_test": "TestKeyword.testComboCruel",
       "design": null,
-      "unblocks": ["precisePlusMagic"],
-      "notes": "Need engage keyword x2 logic: when applying shield/heal/damage to full HP target, double the effect. Trigger infrastructure complete - this just needs the x2 check in apply methods or use_die."
+      "unblocks": ["testComboCruel", "testComboCruelWand", "copycatManagain"],
+      "notes": "Copycat keyword copies keywords from most recently used die side. Need getMostRecentlyUsedDieCommandEffect() tracking in Snapshot, and copycat meta-keyword processing."
     },
     "completed": [
       {
@@ -44,6 +44,13 @@
         "tests_added": ["TestTriggers (14 tests)"],
         "tests_unblocked": ["TestTriggerOrdering.testBuffReplacedSides", "TestTriggerOrdering.testBrainGrips"],
         "summary": "Added trigger system: Personal base class, AffectSides with conditions (HasKeyword, SpecificSidesCondition) and effects (FlatBonus, AddKeyword, RemoveKeyword, ReplaceWith), Buff wrapper, EntityState.get_active_personals/add_buff, SideState with calculated_effect mutation, FightLog.add_trigger/turn_into helpers. Added ENGAGE, RANGED, SINGLE_USE keywords."
+      },
+      {
+        "component": "engage_keyword",
+        "timestamp": "2026-01-10",
+        "tests_added": ["TestPrecisePlusMagic (2 tests)"],
+        "tests_unblocked": ["TestKeyword.precisePlusMagic"],
+        "summary": "Added engage x2 conditional bonus logic in use_die(). Now uses get_side_state() to apply buffs/triggers, then checks ENGAGE keyword for x2 vs full HP targets. Added _apply_conditional_keyword_bonuses() helper."
       }
     ],
     "order": [
@@ -51,7 +58,8 @@
       "side_mutation",
       "used_state",
       "mana",
-      "triggers"
+      "triggers",
+      "engage_keyword"
     ]
   },
   "phase1_summary": {
@@ -61,12 +69,11 @@
     "python_tests": 77
   },
   "phase2_summary": {
-    "tests_added": 32,
-    "total_python_tests": 109,
-    "components_completed": 5
+    "tests_added": 34,
+    "total_python_tests": 111,
+    "components_completed": 6
   },
   "blocked": [
-    {"test": "TestKeyword.precisePlusMagic", "needs": "engage_keyword_logic", "reason": "engage keyword x2 logic when applying shield/mana to full HP target"},
     {"test": "TestKeyword.testComboCruel", "needs": "copycat", "reason": "turnInto, copycat keyword"},
     {"test": "TestKeyword.testComboCruelWand", "needs": "copycat", "reason": "turnInto, copycat keyword"},
     {"test": "TestComplexEff.copycatManagain", "needs": "copycat", "reason": "mana + copycat"},
@@ -81,7 +88,7 @@
     "TestBasicEff: basicSanityTest, attackEnemy, attackHero, basicBlock, basicHeal, reinforcements",
     "TestItem: testGauntlet, testSteelHeart, testPipeAndStudsWithHealShield, testBonusIncomingWithHealShields",
     "TestComplexEff: pain, doubleTaunt, keepShield, stoneskin, resurrect, fortitudeHeal, goblinFlee, petrify (via TestPetrify)",
-    "TestKeyword: bloodlust, poison, precise, fierce, weaken, drain, lifestealVsInvincible, regen, pain, growth, rescue, rampageHeroKill",
+    "TestKeyword: bloodlust, poison, precise, fierce, weaken, drain, lifestealVsInvincible, regen, pain, growth, rescue, rampageHeroKill, precisePlusMagic",
     "TestKeywordSpell: engage, cruel",
     "TestTriggerOrdering: testBuffReplacedSides, testBrainGrips (via TestTriggers)"
   ],
