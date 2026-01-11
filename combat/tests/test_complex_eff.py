@@ -129,3 +129,92 @@ class TestRedirect:
         # Fighter should still be at full HP
         fighter_future = fight.get_state(fighter, Temporality.FUTURE)
         assert fighter_future.hp == fighter_max, "Fighter should still have full HP"
+
+
+class TestKeepShields:
+    """Tests for KeepShields buff and turn transitions.
+
+    Shields normally clear at end of turn.
+    KeepShields buff prevents shield decay - shields persist across turns.
+    """
+
+    def test_shields_clear_at_turn_end(self):
+        """Shields normally disappear at the end of a turn.
+
+        Verified: Shields clear on turn transition by default.
+        """
+        hero = make_hero("Fighter", hp=5)
+        goblin = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [goblin])
+
+        # Give hero 3 shields
+        fight.apply_shield(hero, 3)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 3, "Hero should have 3 shields"
+
+        # Next turn - shields should disappear
+        fight.next_turn()
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 0, "Shields should disappear at turn end"
+
+    def test_keep_shields_prevents_decay(self):
+        """KeepShields buff prevents shields from clearing at turn end.
+
+        Verified: With KeepShields, shields persist across turns.
+        """
+        hero = make_hero("Fighter", hp=5)
+        goblin = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [goblin])
+
+        # Give hero 5 shields and KeepShields buff
+        fight.apply_shield(hero, 5)
+        fight.apply_keep_shields(hero)
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 5, "Hero should have 5 shields"
+
+        # Next turn - shields should NOT disappear
+        fight.next_turn()
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 5, "Shields should persist with KeepShields"
+
+    def test_keep_shield_full_scenario(self):
+        """Full keepShield test matching original Java test.
+
+        1. Hero gets 3 shields -> 3 shields
+        2. Next turn -> shields disappear (0)
+        3. Hero gets 5 shields -> 5 shields
+        4. Hero gets KeepShields buff
+        5. Next turn -> shields persist (5)
+
+        Verified: Confirmed.
+        """
+        hero = make_hero("Fighter", hp=5)
+        goblin = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [goblin])
+
+        # 1. Give hero 3 shields
+        fight.apply_shield(hero, 3)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 3, "Should be shielded for 3"
+
+        # 2. Next turn - shields should disappear
+        fight.next_turn()
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 0, "Shield should disappear"
+
+        # 3. Give hero 5 shields
+        fight.apply_shield(hero, 5)
+
+        # 4. Apply KeepShields buff
+        fight.apply_keep_shields(hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 5, "Should be shielded for 5"
+
+        # 5. Next turn - shields should NOT disappear
+        fight.next_turn()
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 5, "Shield should not disappear with KeepShields"

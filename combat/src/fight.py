@@ -26,6 +26,7 @@ class EntityState:
     spiky: int = 0       # Damage dealt back to attackers
     self_heal: bool = False  # If True, damage dealt heals self (negates pain)
     damage_blocked: int = 0  # Total damage blocked by shield this turn
+    keep_shields: bool = False  # If True, shields persist across turns
 
     @property
     def is_dead(self) -> bool:
@@ -113,7 +114,7 @@ class FightLog:
 
     def _snapshot_states(self) -> dict[Entity, EntityState]:
         """Deep copy current states."""
-        return {e: EntityState(e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked) for e, s in self._states.items()}
+        return {e: EntityState(e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked, s.keep_shields) for e, s in self._states.items()}
 
     def _record_action(self):
         """Record state before an action for undo."""
@@ -175,7 +176,7 @@ class FightLog:
                     shield_remaining -= blocked
                     future_hp -= actual_damage
 
-        return EntityState(entity, future_hp, base.max_hp, base.shield, base.spiky, base.self_heal, base.damage_blocked)
+        return EntityState(entity, future_hp, base.max_hp, base.shield, base.spiky, base.self_heal, base.damage_blocked, base.keep_shields)
 
     def apply_damage(self, source: Entity, target: Entity, amount: int, is_pending: bool = False):
         """Apply damage to target. If is_pending, damage goes to future state.
@@ -542,5 +543,38 @@ class FightLog:
             state = self._states[user]
             self._states[user] = EntityState(
                 user, state.hp, state.max_hp,
-                state.shield + self_shield, state.spiky, state.self_heal, state.damage_blocked
+                state.shield + self_shield, state.spiky, state.self_heal, state.damage_blocked,
+                state.keep_shields
+            )
+
+    def apply_keep_shields(self, target: Entity):
+        """Apply KeepShields buff - shields persist across turns."""
+        self._record_action()
+        state = self._states[target]
+        self._states[target] = EntityState(
+            target, state.hp, state.max_hp,
+            state.shield, state.spiky, state.self_heal, state.damage_blocked,
+            keep_shields=True
+        )
+
+    def next_turn(self):
+        """Advance to next turn - clears shields (unless keep_shields), pending damage, etc.
+
+        Turn transition:
+        - Shields are cleared unless entity has keep_shields buff
+        - Pending damage is cleared (already resolved)
+        - Other turn-based buffs may be cleared (spiky, etc.)
+        """
+        self._record_action()
+
+        # Clear pending damage
+        self._pending = []
+
+        # Process each entity's turn transition
+        for entity, state in list(self._states.items()):
+            new_shield = state.shield if state.keep_shields else 0
+            self._states[entity] = EntityState(
+                entity, state.hp, state.max_hp,
+                new_shield, state.spiky, state.self_heal, 0,  # Reset damage_blocked
+                state.keep_shields
             )
