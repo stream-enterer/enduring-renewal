@@ -9,6 +9,8 @@ Key classes:
 - AffectSides: A Personal that modifies sides based on conditions and effects
 - AffectSideCondition: Base class for conditions (HasKeyword, SpecificSides, etc.)
 - AffectSideEffect: Base class for effects (FlatBonus, AddKeyword, ReplaceWith, etc.)
+- Poison: Personal that deals damage at end of turn, supports merging
+- Cleansed: Personal that provides cleanse budget for removing debuffs
 """
 
 from abc import ABC, abstractmethod
@@ -19,6 +21,14 @@ from typing import TYPE_CHECKING, Optional
 if TYPE_CHECKING:
     from .dice import Side, Keyword
     from .fight import EntityState, SideState
+
+
+class CleanseType(Enum):
+    """Types of cleansable debuffs."""
+    POISON = auto()
+    PETRIFY = auto()
+    WEAKEN = auto()
+    INFLICT = auto()
 
 
 class SpecificSidesType(Enum):
@@ -75,6 +85,30 @@ class Personal(ABC):
     def get_regen(self) -> int:
         """Return regen amount this trigger provides per turn."""
         return 0
+
+    def get_cleanse_type(self) -> Optional[CleanseType]:
+        """Return the cleanse type if this is a cleansable debuff, else None."""
+        return None
+
+    def get_cleanse_amt(self) -> int:
+        """Return how much cleanse budget this trigger provides."""
+        return 0
+
+    def can_merge(self, other: "Personal") -> bool:
+        """Check if this personal can merge with another."""
+        return False
+
+    def merge(self, other: "Personal"):
+        """Merge another personal into this one."""
+        raise RuntimeError(f"Cannot merge {type(self).__name__} with {type(other).__name__}")
+
+    def cleanse_by(self, amount: int) -> tuple[int, bool]:
+        """Reduce this debuff by amount. Returns (used, fully_cleansed)."""
+        return (0, False)
+
+    def copy(self) -> "Personal":
+        """Create a copy of this personal (for undo support)."""
+        return self  # Default: immutable, return same instance
 
 
 class AffectSideCondition(ABC):
@@ -294,9 +328,100 @@ class Buff:
             self.turns_remaining -= 1
 
     def copy(self) -> "Buff":
-        """Create a copy of this buff."""
+        """Create a copy of this buff, deep copying mutable personals."""
+        # Deep copy the personal (for undo support with mutable personals like Poison)
+        personal_copy = self.personal.copy()
         return Buff(
-            personal=self.personal,  # Personals are typically immutable
+            personal=personal_copy,
             turns_remaining=self.turns_remaining,
             skipped_first_tick=self.skipped_first_tick
         )
+
+    def get_cleanse_type(self) -> Optional[CleanseType]:
+        """Get cleanse type if this buff is a cleansable debuff."""
+        return self.personal.get_cleanse_type()
+
+    def can_merge(self, other: "Buff") -> bool:
+        """Check if this buff can merge with another.
+
+        Merge requires:
+        - Personal supports merging
+        - Same turns_remaining
+        - Same skipped_first_tick
+        """
+        if not self.personal.can_merge(other.personal):
+            return False
+        if self.turns_remaining != other.turns_remaining:
+            return False
+        if self.skipped_first_tick != other.skipped_first_tick:
+            return False
+        return True
+
+    def merge(self, other: "Buff"):
+        """Merge another buff into this one."""
+        self.personal.merge(other.personal)
+
+    def cleanse_by(self, amount: int) -> tuple[int, bool]:
+        """Try to cleanse this buff. Returns (used, fully_cleansed)."""
+        return self.personal.cleanse_by(amount)
+
+
+# ============================================================================
+# Mergeable debuffs (Poison, Regen, etc.)
+# ============================================================================
+
+class Poison(Personal):
+    """Poison trigger - deals damage at end of turn, merges with other poison.
+
+    Poison:
+    - Deals damage = poison stacks at start of each turn (direct, bypasses shield)
+    - Persists until cleansed
+    - Multiple poison applications merge into one trigger (values add)
+    """
+
+    def __init__(self, value: int):
+        self.value = value
+
+    def get_poison_damage(self) -> int:
+        """Return poison damage this trigger deals per turn."""
+        return self.value
+
+    def get_cleanse_type(self) -> CleanseType:
+        """Poison is cleansable as POISON type."""
+        return CleanseType.POISON
+
+    def can_merge(self, other: "Personal") -> bool:
+        """Can merge with other Poison triggers."""
+        return isinstance(other, Poison)
+
+    def merge(self, other: "Personal"):
+        """Add the other poison's value to this one."""
+        if isinstance(other, Poison):
+            self.value += other.value
+
+    def cleanse_by(self, amount: int) -> tuple[int, bool]:
+        """Reduce poison by amount. Returns (used, fully_cleansed)."""
+        used = min(amount, self.value)
+        self.value -= used
+        return (used, self.value <= 0)
+
+    def copy(self) -> "Poison":
+        """Create a copy (for undo support)."""
+        return Poison(self.value)
+
+
+class Cleansed(Personal):
+    """Cleanse trigger - provides cleanse budget for removing debuffs.
+
+    When cleanse is applied:
+    1. A Cleansed trigger is added (usually with duration 1)
+    2. Existing debuffs are iterated and cleansed using this budget
+    3. The budget is tracked per CleanseType via cleansedMap
+    """
+
+    def __init__(self, amount: int):
+        self.amount = amount
+
+    def get_cleanse_amt(self) -> int:
+        """Return how much cleanse budget this trigger provides."""
+        return self.amount

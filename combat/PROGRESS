@@ -1,14 +1,7 @@
 {
   "phase": 2,
   "infrastructure": {
-    "current": {
-      "component": "poison_cleanse",
-      "status": "not_started",
-      "target_test": "TestCleanse.all",
-      "design": null,
-      "unblocks": ["TestCleanse.testPoisonCombine", "TestCleanse.testPoisonCleanse", "TestCleanse.testPoisonCleanseWithRecalculate", "TestCleanse.testPoisonPartialCleanse", "TestCleanse.testMultiPoisonPartialCleanse", "TestCleanse.testMultiPoisonPartialCleanseNextTurn"],
-      "notes": "Poison as Personal trigger: added on dmgPoison hit, multiple stacks combine into one trigger, getPoisonDamageTaken() returns total. Poison deals double damage at end of turn (2 poison = 4 damage). Cleanse (shieldCleanse) removes poison stacks. Partial cleanse supported. Needs proper undo support."
-    },
+    "current": null,
     "completed": [
       {
         "component": "die_sides",
@@ -65,6 +58,13 @@
         "tests_added": ["TestPair (4 tests)"],
         "tests_unblocked": ["TestComplexEff.pair"],
         "summary": "Added PAIR keyword and MANA effect type. Pair doubles effect (x2) if previous die had same calculated value. Comparison uses current pre-pair value vs previous final value. Added mana_pair() helper. Processed in _process_meta_keywords() after copycat."
+      },
+      {
+        "component": "poison_cleanse",
+        "timestamp": "2026-01-10",
+        "tests_added": ["TestCleanse (6 tests)"],
+        "tests_unblocked": ["TestCleanse.testPoisonCombine", "TestCleanse.testPoisonCleanse", "TestCleanse.testPoisonCleanseWithRecalculate", "TestCleanse.testPoisonPartialCleanse", "TestCleanse.testMultiPoisonPartialCleanse", "TestCleanse.testMultiPoisonPartialCleanseNextTurn"],
+        "summary": "Added Poison/Cleanse system: CleanseType enum, Poison Personal with merge support (can_merge/merge), Cleansed Personal, Buff.cleanse_by/can_merge/merge, EntityState.cleansed_map and get_total_cleanse_amt, FightLog.apply_poison/apply_cleanse/apply_shield_cleanse, poison damage at next_turn, Future state projects poison damage. Added _update_state helper to preserve buffs/cleansed_map during state updates."
       }
     ],
     "order": [
@@ -75,7 +75,8 @@
       "triggers",
       "engage_keyword",
       "copycat_keyword",
-      "pair_keyword"
+      "pair_keyword",
+      "poison_cleanse"
     ]
   },
   "phase1_summary": {
@@ -85,14 +86,13 @@
     "python_tests": 77
   },
   "phase2_summary": {
-    "tests_added": 41,
-    "total_python_tests": 118,
-    "components_completed": 8
+    "tests_added": 47,
+    "total_python_tests": 124,
+    "components_completed": 9
   },
   "blocked": [
     {"test": "TestTriggerOrdering.testTriggerHPOrdering", "needs": "modifiers", "reason": "ModifierLib"},
     {"test": "TestTriggerOrdering.testCreakyJointsSword", "needs": "items_modifiers", "reason": "getSideState with items + modifiers"},
-    {"test": "TestCleanse.all", "needs": "poison_personal", "reason": "Poison as Personal trigger, cleanse tracking"},
     {"test": "TestStates.test2hpStates", "needs": "save_load", "reason": "loadFromString"}
   ],
   "completed_tests": [
@@ -102,7 +102,8 @@
     "TestComplexEff: pain, doubleTaunt, keepShield, stoneskin, resurrect, fortitudeHeal, goblinFlee, petrify (via TestPetrify), copycatManagain, pair",
     "TestKeyword: bloodlust, poison, precise, fierce, weaken, drain, lifestealVsInvincible, regen, pain, growth, rescue, rampageHeroKill, precisePlusMagic, testComboCruel, testComboCruelWand",
     "TestKeywordSpell: engage, cruel",
-    "TestTriggerOrdering: testBuffReplacedSides, testBrainGrips (via TestTriggers)"
+    "TestTriggerOrdering: testBuffReplacedSides, testBrainGrips (via TestTriggers)",
+    "TestCleanse: testPoisonCombine, testPoisonCleanse, testPoisonCleanseWithRecalculate, testPoisonPartialCleanse, testMultiPoisonPartialCleanse, testMultiPoisonPartialCleanseNextTurn"
   ],
   "skipped_files": [
     "TestRandomBits", "TestParty", "TestBugRepro", "TestBugReproIgnored", "TestScattershot",

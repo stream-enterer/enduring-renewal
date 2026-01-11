@@ -36,6 +36,7 @@ class EntityState:
     used_die: bool = False  # If True, die has been fully used this turn
     times_used_this_turn: int = 0  # How many times die has been used this turn
     buffs: list = field(default_factory=list)  # Active buffs with Personal triggers
+    cleansed_map: dict = field(default_factory=dict)  # CleanseType -> amount cleansed this turn
 
     @property
     def is_dead(self) -> bool:
@@ -71,8 +72,55 @@ class EntityState:
         return personals
 
     def add_buff(self, buff):
-        """Add a buff to this entity state."""
+        """Add a buff to this entity state, merging if possible.
+
+        Mergeable buffs (like Poison) combine into a single trigger
+        instead of creating multiple entries.
+        """
+        # Check if we can cleanse this new debuff with existing cleanse budget
+        cleanse_type = buff.get_cleanse_type()
+        if cleanse_type is not None:
+            fully_cleansed = self._attempt_cleanse_new_buff(buff)
+            if fully_cleansed:
+                return  # Debuff was fully cleansed, don't add
+
+        # Try to merge with existing buffs
+        for existing in self.buffs:
+            if existing.can_merge(buff):
+                existing.merge(buff)
+                return  # Merged, don't add new buff
+
+        # No merge possible, add as new buff
         self.buffs.append(buff)
+
+    def _attempt_cleanse_new_buff(self, buff) -> bool:
+        """Attempt to cleanse a new debuff before it's added.
+
+        Returns True if fully cleansed (shouldn't be added).
+        """
+        total_cleanse = self.get_total_cleanse_amt()
+        if total_cleanse == 0:
+            return False
+
+        cleanse_type = buff.get_cleanse_type()
+        if cleanse_type is None:
+            return False
+
+        already_cleansed = self.cleansed_map.get(cleanse_type, 0)
+        remaining = total_cleanse - already_cleansed
+        if remaining <= 0:
+            return False
+
+        used, fully_cleansed = buff.cleanse_by(remaining)
+        self.cleansed_map[cleanse_type] = already_cleansed + used
+        return fully_cleansed
+
+    def get_total_cleanse_amt(self) -> int:
+        """Get total cleanse budget from all active personals."""
+        total = 0
+        for personal in self.get_active_personals():
+            total += personal.get_cleanse_amt()
+        return total
 
     def get_side_state(self, index: int, fight_log: "FightLog" = None) -> "SideState":
         """Get the calculated state for a side, after applying all triggers.
@@ -268,6 +316,42 @@ class FightLog:
         # Most recently used die effect (for copycat keyword)
         self._most_recent_die_effect: Optional[SideState] = None
 
+    def _update_state(self, entity: Entity, **kwargs) -> EntityState:
+        """Update entity state with specific fields while preserving all others.
+
+        This helper ensures fields like buffs and cleansed_map aren't accidentally
+        reset when updating other fields like HP or shield.
+
+        Args:
+            entity: The entity to update
+            **kwargs: Fields to update (e.g., hp=5, shield=10)
+
+        Returns:
+            The new EntityState that was stored.
+        """
+        old = self._states[entity]
+        new = EntityState(
+            entity=entity,
+            hp=kwargs.get('hp', old.hp),
+            max_hp=kwargs.get('max_hp', old.max_hp),
+            shield=kwargs.get('shield', old.shield),
+            spiky=kwargs.get('spiky', old.spiky),
+            self_heal=kwargs.get('self_heal', old.self_heal),
+            damage_blocked=kwargs.get('damage_blocked', old.damage_blocked),
+            keep_shields=kwargs.get('keep_shields', old.keep_shields),
+            stone_hp=kwargs.get('stone_hp', old.stone_hp),
+            fled=kwargs.get('fled', old.fled),
+            dodge=kwargs.get('dodge', old.dodge),
+            regen=kwargs.get('regen', old.regen),
+            petrified_sides=kwargs.get('petrified_sides', list(old.petrified_sides)),
+            used_die=kwargs.get('used_die', old.used_die),
+            times_used_this_turn=kwargs.get('times_used_this_turn', old.times_used_this_turn),
+            buffs=kwargs.get('buffs', list(old.buffs)),
+            cleansed_map=kwargs.get('cleansed_map', dict(old.cleansed_map)),
+        )
+        self._states[entity] = new
+        return new
+
     def _get_field_usage(self) -> int:
         """Calculate current field usage from present (alive) monsters."""
         usage = 0
@@ -331,12 +415,13 @@ class FightLog:
         """Deep copy current states."""
         result = {}
         for e, s in self._states.items():
-            # Copy buffs list (buffs themselves are typically immutable)
+            # Copy buffs list (buffs themselves are deep copied for mutable personals like Poison)
             copied_buffs = [b.copy() for b in s.buffs]
             result[e] = EntityState(
                 e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked,
                 s.keep_shields, s.stone_hp, s.fled, s.dodge, s.regen,
-                list(s.petrified_sides), s.used_die, s.times_used_this_turn, copied_buffs
+                list(s.petrified_sides), s.used_die, s.times_used_this_turn, copied_buffs,
+                dict(s.cleansed_map)  # Copy cleansed_map for undo support
             )
         return result
 
@@ -400,7 +485,22 @@ class FightLog:
                     shield_remaining -= blocked
                     future_hp -= actual_damage
 
-        return EntityState(entity, future_hp, base.max_hp, base.shield, base.spiky, base.self_heal, base.damage_blocked, base.keep_shields, base.stone_hp, base.fled, base.dodge, base.regen)
+        # FUTURE: project poison/regen damage for next turn
+        # Poison damage is direct (bypasses shield) and calculated from active personals
+        poison = base.get_poison_damage_taken()
+        regen = base.regen
+        for personal in base.get_active_personals():
+            regen += personal.get_regen()
+
+        health_delta = regen - poison
+        if health_delta < 0:
+            # Poison damage is direct (bypasses shield)
+            future_hp += health_delta
+        elif health_delta > 0:
+            # Regen heals, capped at max HP
+            future_hp = min(future_hp + health_delta, base.max_hp)
+
+        return EntityState(entity, future_hp, base.max_hp, base.shield, base.spiky, base.self_heal, base.damage_blocked, base.keep_shields, base.stone_hp, base.fled, base.dodge, base.regen, list(base.petrified_sides), base.used_die, base.times_used_this_turn, list(base.buffs), dict(base.cleansed_map))
 
     def apply_damage(self, source: Entity, target: Entity, amount: int, is_pending: bool = False):
         """Apply damage to target. If is_pending, damage goes to future state.
@@ -590,10 +690,7 @@ class FightLog:
 
         self._record_action()
         state = self._states[target]
-        self._states[target] = EntityState(
-            target, state.hp, state.max_hp,
-            state.shield + total_shield, state.spiky, state.self_heal, state.damage_blocked
-        )
+        self._update_state(target, shield=state.shield + total_shield)
 
         # Check for rescue and fire triggers
         self._check_and_fire_rescue(target, was_dying)
@@ -816,9 +913,11 @@ class FightLog:
         """Advance to next turn - clears shields (unless keep_shields), pending damage, etc.
 
         Turn transition:
+        - Poison damage is applied (direct, bypasses shield)
         - Regen healing is applied (capped at max HP)
         - Shields are cleared unless entity has keep_shields buff
         - Pending damage is cleared (already resolved)
+        - cleansed_map is reset for new turn
         - Other turn-based buffs may be cleared (spiky, etc.)
         """
         self._record_action()
@@ -830,13 +929,32 @@ class FightLog:
         for entity, state in list(self._states.items()):
             new_shield = state.shield if state.keep_shields else 0
 
-            # Apply regen healing (capped at max HP)
-            new_hp = min(state.hp + state.regen, state.max_hp)
+            # Calculate poison damage from active personals
+            poison = state.get_poison_damage_taken()
 
+            # Calculate regen from state and active personals
+            regen = state.regen
+            for personal in state.get_active_personals():
+                regen += personal.get_regen()
+
+            # Calculate health delta (regen - poison)
+            health_delta = regen - poison
+            new_hp = state.hp
+            if health_delta > 0:
+                # Regen heals (capped at max HP)
+                new_hp = min(state.hp + health_delta, state.max_hp)
+            elif health_delta < 0:
+                # Poison deals direct damage (bypasses shield)
+                new_hp = state.hp + health_delta
+
+            # Preserve buffs, reset cleansed_map for new turn
             self._states[entity] = EntityState(
                 entity, new_hp, state.max_hp,
                 new_shield, state.spiky, state.self_heal, 0,  # Reset damage_blocked
-                state.keep_shields, state.stone_hp, state.fled, state.dodge, state.regen
+                state.keep_shields, state.stone_hp, state.fled, state.dodge, state.regen,
+                list(state.petrified_sides), False, 0,  # Reset used_die
+                list(state.buffs),  # Preserve buffs (poison persists)
+                {}  # Reset cleansed_map for new turn
             )
 
     def apply_kill(self, target: Entity):
@@ -1404,3 +1522,96 @@ class FightLog:
             raise ValueError(f"Entity {target} has no die")
 
         die.set_all_sides(new_side)
+
+    def apply_poison(self, target: Entity, amount: int):
+        """Apply poison to target.
+
+        Poison:
+        - Creates a Poison trigger that deals damage at end of each turn
+        - Multiple poison applications merge into one trigger (values add)
+        - Poison persists until cleansed
+        """
+        from .triggers import Buff, Poison
+
+        self._record_action()
+        state = self._states[target]
+        state.add_buff(Buff(personal=Poison(amount), turns_remaining=None))
+
+    def apply_cleanse(self, target: Entity, amount: int):
+        """Apply cleanse to target.
+
+        Cleanse removes debuffs (like poison) up to the cleanse amount.
+        The cleanse budget is tracked per CleanseType via cleansed_map.
+        """
+        from .triggers import Buff, Cleansed
+
+        self._record_action()
+        state = self._states[target]
+
+        # Add cleanse trigger (duration 1 turn)
+        state.add_buff(Buff(personal=Cleansed(amount), turns_remaining=1))
+
+        # Iterate existing buffs in reverse and cleanse them
+        i = len(state.buffs) - 1
+        while i >= 0:
+            buff = state.buffs[i]
+            fully_cleansed = self._attempt_cleanse_buff(state, buff)
+            if fully_cleansed:
+                state.buffs.pop(i)
+            i -= 1
+
+    def _attempt_cleanse_buff(self, state: EntityState, buff) -> bool:
+        """Attempt to cleanse a buff using available cleanse budget.
+
+        Returns True if fully cleansed (should be removed).
+        """
+        total_cleanse = state.get_total_cleanse_amt()
+        if total_cleanse == 0:
+            return False
+
+        cleanse_type = buff.get_cleanse_type()
+        if cleanse_type is None:
+            return False
+
+        already_cleansed = state.cleansed_map.get(cleanse_type, 0)
+        remaining = total_cleanse - already_cleansed
+        if remaining <= 0:
+            return False
+
+        used, fully_cleansed = buff.cleanse_by(remaining)
+        state.cleansed_map[cleanse_type] = already_cleansed + used
+        return fully_cleansed
+
+    def apply_shield_cleanse(self, target: Entity, amount: int):
+        """Apply shield with cleanse keyword.
+
+        shieldCleanse(N) grants N shields AND cleanses N poison stacks.
+        This is how cleanse is typically delivered in the game.
+        This is a single atomic action (one undo point).
+        """
+        from .triggers import Buff, Cleansed
+        from .effects import EffectType
+
+        self._record_action()
+
+        state = self._states[target]
+
+        # Add incoming shield bonus
+        bonus = self._get_incoming_bonus(target, EffectType.SHIELD)
+        total_shield = amount + bonus
+
+        # Update shield
+        self._states[target] = self._update_state(target, shield=state.shield + total_shield)
+        state = self._states[target]
+
+        # Add cleanse trigger (duration 1 turn)
+        state.add_buff(Buff(personal=Cleansed(amount), turns_remaining=1))
+
+        # Iterate existing buffs in reverse and cleanse them
+        i = len(state.buffs) - 1
+        while i >= 0:
+            buff = state.buffs[i]
+            fully_cleansed = self._attempt_cleanse_buff(state, buff)
+            if fully_cleansed:
+                state.buffs.pop(i)
+            i -= 1
