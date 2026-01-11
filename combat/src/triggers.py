@@ -1,0 +1,302 @@
+"""Trigger system for modifying die sides based on conditions and effects.
+
+The trigger system allows buffs, items, and traits to modify die sides dynamically.
+Each trigger (Personal) can have conditions that determine which sides it affects,
+and effects that determine how those sides are modified.
+
+Key classes:
+- Personal: Base class for entity-attached triggers
+- AffectSides: A Personal that modifies sides based on conditions and effects
+- AffectSideCondition: Base class for conditions (HasKeyword, SpecificSides, etc.)
+- AffectSideEffect: Base class for effects (FlatBonus, AddKeyword, ReplaceWith, etc.)
+"""
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from enum import Enum, auto
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from .dice import Side, Keyword
+    from .fight import EntityState, SideState
+
+
+class SpecificSidesType(Enum):
+    """Predefined side index patterns for SpecificSidesCondition."""
+    LEFT = ([2],)
+    MIDDLE = ([4],)
+    TOP = ([0],)
+    BOTTOM = ([1],)
+    RIGHT = ([3],)
+    RIGHTMOST = ([5],)
+    RIGHT_TWO = ([3, 5],)
+    RIGHT_THREE = ([4, 3, 5],)
+    LEFT_TWO = ([2, 4],)
+    ROW = ([2, 4, 3, 5],)
+    COLUMN = ([0, 4, 1],)
+    ALL = ([0, 1, 2, 3, 4, 5],)
+
+    def __init__(self, indices: list[int]):
+        self.indices = indices
+
+
+class Personal(ABC):
+    """Base class for triggers attached to entities.
+
+    Personals can modify die sides (via affect_side) and respond to various
+    game events. They are collected from buffs, items, and traits.
+    """
+
+    def affect_side(self, side_state: "SideState", owner: "EntityState", trigger_index: int):
+        """Modify a side's calculated effect. Called during side state calculation.
+
+        Args:
+            side_state: The side state being calculated (mutable)
+            owner: The entity state that owns this side
+            trigger_index: Index of this trigger in the active personals list
+        """
+        pass
+
+    def get_priority(self) -> float:
+        """Priority for ordering triggers. Lower values run first.
+
+        Default priorities in Java:
+        - mimicPriority/heroPassivePriority: -11
+        - monsterPassivePriority: -9
+        - combatPriority/buff: 0
+        - passive (no buff): -10
+        """
+        return 0.0
+
+    def get_poison_damage(self) -> int:
+        """Return poison damage this trigger deals per turn."""
+        return 0
+
+    def get_regen(self) -> int:
+        """Return regen amount this trigger provides per turn."""
+        return 0
+
+
+class AffectSideCondition(ABC):
+    """Base class for conditions that determine which sides a trigger affects."""
+
+    @abstractmethod
+    def valid_for(self, side_state: "SideState", owner: "EntityState", trigger_index: int) -> bool:
+        """Check if this condition is satisfied for the given side.
+
+        Args:
+            side_state: The side state being checked
+            owner: The entity state that owns this side
+            trigger_index: Index of the trigger in the active personals list
+
+        Returns:
+            True if the condition is satisfied
+        """
+        pass
+
+    def get_index(self, side_state: "SideState", owner: "EntityState") -> int:
+        """Get the index for indexed effects (like per-side bonuses).
+
+        Returns -1 if not applicable.
+        """
+        return -1
+
+
+class AffectSideEffect(ABC):
+    """Base class for effects that modify sides when conditions are met."""
+
+    @abstractmethod
+    def affect(self, side_state: "SideState", owner: "EntityState", index: int, trigger_index: int):
+        """Apply this effect to the side state.
+
+        Args:
+            side_state: The side state to modify (mutable)
+            owner: The entity state that owns this side
+            index: Index from condition (for indexed effects), or -1
+            trigger_index: Index of the trigger in the active personals list
+        """
+        pass
+
+
+class AffectSides(Personal):
+    """Trigger that modifies sides based on conditions and effects.
+
+    When calculating a side's state, AffectSides:
+    1. Checks all conditions - if any fail, the trigger doesn't apply
+    2. If all conditions pass, applies all effects in order
+
+    Examples:
+        # Add +1 to all sides
+        AffectSides([], [FlatBonus(1)])
+
+        # Add engage keyword to all sides
+        AffectSides([], [AddKeyword(Keyword.ENGAGE)])
+
+        # Add +1 to rightmost side only
+        AffectSides([SpecificSidesCondition(SpecificSidesType.RIGHTMOST)], [FlatBonus(1)])
+
+        # Add +1 to all ranged sides
+        AffectSides([HasKeyword(Keyword.RANGED)], [FlatBonus(1)])
+    """
+
+    def __init__(
+        self,
+        conditions: list[AffectSideCondition] | AffectSideCondition | None = None,
+        effects: list[AffectSideEffect] | AffectSideEffect | None = None
+    ):
+        # Normalize to lists
+        if conditions is None:
+            self.conditions = []
+        elif isinstance(conditions, AffectSideCondition):
+            self.conditions = [conditions]
+        else:
+            self.conditions = list(conditions)
+
+        if effects is None:
+            self.effects = []
+        elif isinstance(effects, AffectSideEffect):
+            self.effects = [effects]
+        else:
+            self.effects = list(effects)
+
+    def affect_side(self, side_state: "SideState", owner: "EntityState", trigger_index: int):
+        """Check conditions and apply effects if all conditions pass."""
+        # Check all conditions
+        index = -1
+        for condition in self.conditions:
+            if not condition.valid_for(side_state, owner, trigger_index):
+                return  # Condition failed, don't apply effects
+
+            # Get index from condition if applicable
+            cond_index = condition.get_index(side_state, owner)
+            if cond_index != -1:
+                index = cond_index
+
+        # All conditions passed, apply all effects
+        for effect in self.effects:
+            effect.affect(side_state, owner, index, trigger_index)
+
+
+# ============================================================================
+# Conditions
+# ============================================================================
+
+class HasKeyword(AffectSideCondition):
+    """Condition that matches sides with any of the specified keywords."""
+
+    def __init__(self, *keywords: "Keyword"):
+        self.keywords = keywords
+
+    def valid_for(self, side_state: "SideState", owner: "EntityState", trigger_index: int) -> bool:
+        for keyword in self.keywords:
+            if side_state.has_keyword(keyword):
+                return True
+        return False
+
+
+class SpecificSidesCondition(AffectSideCondition):
+    """Condition that matches sides at specific indices."""
+
+    def __init__(self, side_type: SpecificSidesType):
+        self.side_type = side_type
+
+    def valid_for(self, side_state: "SideState", owner: "EntityState", trigger_index: int) -> bool:
+        return side_state.index in self.side_type.indices
+
+    def get_index(self, side_state: "SideState", owner: "EntityState") -> int:
+        """Return the index within the side_type's indices list."""
+        if side_state.index in self.side_type.indices:
+            return self.side_type.indices.index(side_state.index)
+        return -1
+
+
+# ============================================================================
+# Effects
+# ============================================================================
+
+class FlatBonus(AffectSideEffect):
+    """Add a flat bonus to the side's value.
+
+    Can be a single bonus (applied to all matching sides) or a list of bonuses
+    (applied by index from condition).
+    """
+
+    def __init__(self, *bonus: int):
+        self.bonuses = list(bonus) if bonus else [0]
+
+    def affect(self, side_state: "SideState", owner: "EntityState", index: int, trigger_index: int):
+        # Get the bonus for this index
+        if len(self.bonuses) == 1:
+            bonus = self.bonuses[0]
+        elif 0 <= index < len(self.bonuses):
+            bonus = self.bonuses[index]
+        else:
+            bonus = 0
+
+        # Add to the calculated value
+        side_state.add_value(bonus)
+
+
+class AddKeyword(AffectSideEffect):
+    """Add keywords to the side."""
+
+    def __init__(self, *keywords: "Keyword"):
+        self.keywords = list(keywords)
+
+    def affect(self, side_state: "SideState", owner: "EntityState", index: int, trigger_index: int):
+        for keyword in self.keywords:
+            side_state.add_keyword(keyword)
+
+
+class RemoveKeyword(AffectSideEffect):
+    """Remove keywords from the side."""
+
+    def __init__(self, *keywords: "Keyword"):
+        self.keywords = list(keywords)
+
+    def affect(self, side_state: "SideState", owner: "EntityState", index: int, trigger_index: int):
+        for keyword in self.keywords:
+            side_state.remove_keyword(keyword)
+
+
+class ReplaceWith(AffectSideEffect):
+    """Replace the side's calculated effect with a new side entirely."""
+
+    def __init__(self, new_side: "Side"):
+        self.new_side = new_side
+
+    def affect(self, side_state: "SideState", owner: "EntityState", index: int, trigger_index: int):
+        side_state.replace_with(self.new_side)
+
+
+# ============================================================================
+# Buff wrapper
+# ============================================================================
+
+@dataclass
+class Buff:
+    """A buff that wraps a Personal trigger with duration tracking.
+
+    Buffs are the primary way triggers get attached to entities during combat.
+    They can be permanent (turns=None) or temporary (turns=N).
+    """
+    personal: Personal
+    turns_remaining: Optional[int] = None  # None = permanent
+    skipped_first_tick: bool = False
+
+    def is_expired(self) -> bool:
+        """Check if this buff has expired."""
+        return self.turns_remaining is not None and self.turns_remaining <= 0
+
+    def tick(self):
+        """Advance the buff by one turn."""
+        if self.turns_remaining is not None:
+            self.turns_remaining -= 1
+
+    def copy(self) -> "Buff":
+        """Create a copy of this buff."""
+        return Buff(
+            personal=self.personal,  # Personals are typically immutable
+            turns_remaining=self.turns_remaining,
+            skipped_first_tick=self.skipped_first_tick
+        )

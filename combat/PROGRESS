@@ -2,11 +2,12 @@
   "phase": 2,
   "infrastructure": {
     "current": {
-      "component": "triggers",
+      "component": "engage_keyword",
       "status": "not_started",
       "target_test": "TestKeyword.precisePlusMagic",
-      "unblocks": ["precisePlusMagic", "testBuffReplacedSides", "testBrainGrips", "testCreakyJointsSword", "TestCleanse.all"],
-      "design": null
+      "design": null,
+      "unblocks": ["precisePlusMagic"],
+      "notes": "Need engage keyword x2 logic: when applying shield/heal/damage to full HP target, double the effect. Trigger infrastructure complete - this just needs the x2 check in apply methods or use_die."
     },
     "completed": [
       {
@@ -36,6 +37,13 @@
         "tests_added": [],
         "tests_unblocked": [],
         "summary": "Mana infrastructure already complete from die_sides phase (_total_mana, add_mana, get_total_mana, Keyword.MANA, shield_mana helper). Test precisePlusMagic reclassified as needing triggers (uses AffectSides+AddKeyword), not mana."
+      },
+      {
+        "component": "triggers",
+        "timestamp": "2026-01-10",
+        "tests_added": ["TestTriggers (14 tests)"],
+        "tests_unblocked": ["TestTriggerOrdering.testBuffReplacedSides", "TestTriggerOrdering.testBrainGrips"],
+        "summary": "Added trigger system: Personal base class, AffectSides with conditions (HasKeyword, SpecificSidesCondition) and effects (FlatBonus, AddKeyword, RemoveKeyword, ReplaceWith), Buff wrapper, EntityState.get_active_personals/add_buff, SideState with calculated_effect mutation, FightLog.add_trigger/turn_into helpers. Added ENGAGE, RANGED, SINGLE_USE keywords."
       }
     ],
     "order": [
@@ -53,21 +61,19 @@
     "python_tests": 77
   },
   "phase2_summary": {
-    "tests_added": 18,
-    "total_python_tests": 95,
-    "components_completed": 4
+    "tests_added": 32,
+    "total_python_tests": 109,
+    "components_completed": 5
   },
   "blocked": [
-    {"test": "TestKeyword.precisePlusMagic", "needs": "triggers", "reason": "AffectSides + AddKeyword to add engage keyword to sides"},
+    {"test": "TestKeyword.precisePlusMagic", "needs": "engage_keyword_logic", "reason": "engage keyword x2 logic when applying shield/mana to full HP target"},
     {"test": "TestKeyword.testComboCruel", "needs": "copycat", "reason": "turnInto, copycat keyword"},
     {"test": "TestKeyword.testComboCruelWand", "needs": "copycat", "reason": "turnInto, copycat keyword"},
     {"test": "TestComplexEff.copycatManagain", "needs": "copycat", "reason": "mana + copycat"},
     {"test": "TestComplexEff.pair", "needs": "pair_keyword", "reason": "mana + pair keyword"},
-    {"test": "TestTriggerOrdering.testBuffReplacedSides", "needs": "triggers", "reason": "getSideState, roll"},
-    {"test": "TestTriggerOrdering.testBrainGrips", "needs": "triggers", "reason": "getSideState, addTrigger"},
     {"test": "TestTriggerOrdering.testTriggerHPOrdering", "needs": "modifiers", "reason": "ModifierLib"},
-    {"test": "TestTriggerOrdering.testCreakyJointsSword", "needs": "triggers", "reason": "getSideState, items"},
-    {"test": "TestCleanse.all", "needs": "triggers", "reason": "getActivePersonals, poison tracking"},
+    {"test": "TestTriggerOrdering.testCreakyJointsSword", "needs": "items_modifiers", "reason": "getSideState with items + modifiers"},
+    {"test": "TestCleanse.all", "needs": "poison_personal", "reason": "Poison as Personal trigger, cleanse tracking"},
     {"test": "TestStates.test2hpStates", "needs": "save_load", "reason": "loadFromString"}
   ],
   "completed_tests": [
@@ -76,7 +82,8 @@
     "TestItem: testGauntlet, testSteelHeart, testPipeAndStudsWithHealShield, testBonusIncomingWithHealShields",
     "TestComplexEff: pain, doubleTaunt, keepShield, stoneskin, resurrect, fortitudeHeal, goblinFlee, petrify (via TestPetrify)",
     "TestKeyword: bloodlust, poison, precise, fierce, weaken, drain, lifestealVsInvincible, regen, pain, growth, rescue, rampageHeroKill",
-    "TestKeywordSpell: engage, cruel"
+    "TestKeywordSpell: engage, cruel",
+    "TestTriggerOrdering: testBuffReplacedSides, testBrainGrips (via TestTriggers)"
   ],
   "skipped_files": [
     "TestRandomBits", "TestParty", "TestBugRepro", "TestBugReproIgnored", "TestScattershot",

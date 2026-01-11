@@ -35,6 +35,7 @@ class EntityState:
     petrified_sides: list = field(default_factory=list)  # Side indices that are petrified (int or None for overflow)
     used_die: bool = False  # If True, die has been fully used this turn
     times_used_this_turn: int = 0  # How many times die has been used this turn
+    buffs: list = field(default_factory=list)  # Active buffs with Personal triggers
 
     @property
     def is_dead(self) -> bool:
@@ -49,11 +50,35 @@ class EntityState:
         """Entity is out of battle if dead or fled."""
         return self.hp <= 0 or self.fled
 
+    def get_active_personals(self) -> list:
+        """Get all active Personal triggers from buffs, items, traits.
+
+        Returns triggers sorted by priority (lower priority runs first).
+        Same priority preserves insertion order (FIFO).
+        """
+        from .triggers import Personal
+
+        personals = []
+
+        # Collect from buffs
+        for buff in self.buffs:
+            if buff.personal is not None:
+                personals.append(buff.personal)
+
+        # Sort by priority (stable sort preserves insertion order for same priority)
+        personals.sort(key=lambda p: p.get_priority())
+
+        return personals
+
+    def add_buff(self, buff):
+        """Add a buff to this entity state."""
+        self.buffs.append(buff)
+
     def get_side_state(self, index: int) -> "SideState":
-        """Get the calculated state for a side, after applying all buffs.
+        """Get the calculated state for a side, after applying all triggers.
 
         If the side is petrified, returns a blank petrified side.
-        Otherwise returns the original side from the entity's die.
+        Otherwise creates a mutable copy and applies all active triggers.
         """
         from .dice import Side, petrified_blank
 
@@ -64,11 +89,32 @@ class EntityState:
 
         # Check if this side is petrified
         if index in self.petrified_sides:
-            return SideState(petrified_blank(), index, is_petrified=True)
+            blank = petrified_blank()
+            return SideState(
+                original_side=blank,
+                index=index,
+                calculated_effect=blank.copy(),
+                is_petrified=True
+            )
 
-        # Return original side
+        # Get original side and create mutable copy
         original_side = die.get_side(index)
-        return SideState(original_side, index, is_petrified=False)
+        calculated = original_side.copy()
+
+        # Create side state
+        side_state = SideState(
+            original_side=original_side,
+            index=index,
+            calculated_effect=calculated,
+            is_petrified=False
+        )
+
+        # Apply all triggers
+        personals = self.get_active_personals()
+        for i, personal in enumerate(personals):
+            personal.affect_side(side_state, self, i)
+
+        return side_state
 
     def get_total_petrification(self) -> int:
         """Count the number of petrified sides.
@@ -77,23 +123,62 @@ class EntityState:
         """
         return sum(1 for s in self.petrified_sides if s is not None)
 
+    def get_poison_damage_taken(self) -> int:
+        """Get total poison damage this entity will take at end of turn.
+
+        Poison is tracked via Poison personal triggers in buffs.
+        """
+        total = 0
+        for personal in self.get_active_personals():
+            total += personal.get_poison_damage()
+        return total
+
 
 @dataclass
 class SideState:
-    """Calculated state of a die side after applying all buffs."""
-    side: "Side"  # The calculated side (may be petrified blank)
-    index: int    # Original side index
+    """Calculated state of a die side after applying all buffs and triggers.
+
+    The calculated_effect is a mutable copy of the original side that gets
+    modified by triggers during side state calculation.
+    """
+    original_side: "Side"      # The unmodified original side
+    index: int                 # Original side index
+    calculated_effect: "Side"  # Mutable copy modified by triggers
     is_petrified: bool = False  # True if this side was petrified
 
     @property
     def effect_type(self) -> EffectType:
-        """Get the effect type of this side."""
-        return self.side.effect_type
+        """Get the calculated effect type of this side."""
+        return self.calculated_effect.effect_type
 
     @property
     def value(self) -> int:
         """Get the calculated value of this side."""
-        return self.side.calculated_value
+        return self.calculated_effect.calculated_value
+
+    def has_keyword(self, keyword) -> bool:
+        """Check if this side has the given keyword."""
+        return keyword in self.calculated_effect.keywords
+
+    def add_keyword(self, keyword):
+        """Add a keyword to this side's calculated effect."""
+        self.calculated_effect.keywords.add(keyword)
+
+    def remove_keyword(self, keyword):
+        """Remove a keyword from this side's calculated effect."""
+        self.calculated_effect.keywords.discard(keyword)
+
+    def add_value(self, amount: int):
+        """Add to the calculated value."""
+        self.calculated_effect.value += amount
+
+    def replace_with(self, new_side: "Side"):
+        """Replace the calculated effect with a new side entirely."""
+        self.calculated_effect = new_side.copy()
+
+    def get_calculated_effect(self) -> "Side":
+        """Get the calculated effect (for Java-style API compatibility)."""
+        return self.calculated_effect
 
 
 @dataclass
@@ -203,7 +288,16 @@ class FightLog:
 
     def _snapshot_states(self) -> dict[Entity, EntityState]:
         """Deep copy current states."""
-        return {e: EntityState(e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked, s.keep_shields, s.stone_hp, s.fled, s.dodge, s.regen, list(s.petrified_sides), s.used_die, s.times_used_this_turn) for e, s in self._states.items()}
+        result = {}
+        for e, s in self._states.items():
+            # Copy buffs list (buffs themselves are typically immutable)
+            copied_buffs = [b.copy() for b in s.buffs]
+            result[e] = EntityState(
+                e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked,
+                s.keep_shields, s.stone_hp, s.fled, s.dodge, s.regen,
+                list(s.petrified_sides), s.used_die, s.times_used_this_turn, copied_buffs
+            )
+        return result
 
     def _record_action(self):
         """Record state before an action for undo."""
@@ -1191,3 +1285,26 @@ class FightLog:
         if killed:
             # Kill! Recharge the die
             self.recharge_die(source)
+
+    def add_trigger(self, target: Entity, personal):
+        """Add a trigger (Personal) to an entity as a permanent buff.
+
+        This is a helper method equivalent to Java's TestUtils.addTrigger.
+        """
+        from .triggers import Buff
+
+        self._record_action()
+        state = self._states[target]
+        state.add_buff(Buff(personal=personal, turns_remaining=None))
+
+    def turn_into(self, target: Entity, new_side):
+        """Replace ALL sides of target's die with copies of new_side.
+
+        This is a helper method equivalent to Java's TestUtils.turnInto.
+        Used to set up test scenarios where all sides are the same.
+        """
+        die = getattr(target, 'die', None)
+        if die is None:
+            raise ValueError(f"Entity {target} has no die")
+
+        die.set_all_sides(new_side)

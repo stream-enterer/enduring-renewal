@@ -14,6 +14,9 @@ class Keyword(Enum):
     PETRIFY = auto()     # Turns target's sides to stone (Blank)
     RESCUE = auto()      # Die recharged if heal saves a dying hero
     RAMPAGE = auto()     # Die recharged if attack kills an enemy
+    ENGAGE = auto()      # x2 effect vs full HP targets
+    RANGED = auto()      # Arrow-type attacks (can hit back row)
+    SINGLE_USE = auto()  # One use per turn (wands)
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
@@ -153,4 +156,28 @@ def damage_rampage(value: int) -> Side:
         effect_type=EffectType.DAMAGE,
         value=value,
         keywords={Keyword.RAMPAGE}
+    )
+
+
+def arrow(value: int) -> Side:
+    """Create an arrow (ranged damage) side.
+
+    Arrow sides have the RANGED keyword which allows hitting back-row targets.
+    """
+    return Side(
+        effect_type=EffectType.DAMAGE,
+        value=value,
+        keywords={Keyword.RANGED}
+    )
+
+
+def wand_self_heal(value: int) -> Side:
+    """Create a wand side with SINGLE_USE keyword.
+
+    Wand sides heal the user but can only be used once per turn.
+    """
+    return Side(
+        effect_type=EffectType.HEAL,
+        value=value,
+        keywords={Keyword.SINGLE_USE}
     )
