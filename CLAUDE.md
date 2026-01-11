@@ -57,22 +57,90 @@ These keywords are already implemented and tested. They stay where they are:
 Keywords run at different stages. **Check which stage before implementing.**
 
 ```
-Side resolution order:
-1. _process_meta_keywords()           # Modifies the Side itself
-2. _apply_conditional_keyword_bonuses()  # Modifies the calculated value
-3. use_die() post-processing          # Side effects after resolution
+Full resolution order:
+1. Targeting validation        # Can this target be selected?
+2. Roll phase                  # During dice rolling
+3. _process_meta_keywords()    # Modifies the Side itself
+4. _apply_conditional_keyword_bonuses()  # Modifies the calculated value
+5. use_die() main effect       # Apply damage/heal/shield
+6. use_die() post-processing   # Side effects after resolution
+7. Turn end                    # End-of-turn effects
 ```
 
-| Stage | Method | Example Keywords | What It Does |
-|-------|--------|------------------|--------------|
-| Meta | `_process_meta_keywords()` | copycat, pair, echo | Transforms the Side before value calculation (copy keywords, copy pips) |
-| Conditional | `_apply_conditional_keyword_bonuses()` | engage, pristine, bloodlust | Multiplies or adds to value based on game state |
-| Post-effect | `use_die()` | growth, singleUse, manaGain | Applies effects after main resolution (modify die, grant mana) |
+| Stage | When | Example Keywords | What It Does |
+|-------|------|------------------|--------------|
+| Targeting | Before use | eliminate, heavy, generous, scared, picky | Restricts valid targets |
+| Roll | During rolling | cantrip, sticky | Affects roll behavior |
+| Meta | Before value calc | copycat, pair, echo | Transforms the Side (copy keywords/pips) |
+| Conditional | Value calculation | engage, pristine, bloodlust | Multiplies (x2) or adds (+N) to value |
+| Post-effect | After resolution | growth, singleUse, manaGain | Modifies die, grants mana |
+| Turn-timing | Turn start/end | poison, regen, shifter, fluctuate | Per-turn effects |
 
 **How to identify stage:**
+- Restricts which targets are valid → Targeting
+- Affects rolling/rerolling → Roll
 - Copies/transforms the side itself → Meta
 - Multiplies value (x2) or adds pips (+N) → Conditional
 - Happens after the effect resolves → Post-effect
+- Says "each turn" or "at end of turn" → Turn-timing
+
+## Infrastructure Dependencies
+
+Some keywords need systems that may not exist yet. **Check before implementing.**
+
+| Infrastructure | Keywords That Need It | Status |
+|----------------|----------------------|--------|
+| Turn-end processing | poison, regen | Check `FightLog` for turn hooks |
+| Turn-start processing | shifter, fluctuate, lucky, critical, fumble | Check `FightLog` for turn hooks |
+| Buff/debuff system | weaken, boost, vulnerable, smith, permaBoost | Check for temporary modifier system |
+| Entity summoning | boned, hyperBoned | Check for summon capability |
+| Side injection | inflict* keywords | Check for modifying target's dice |
+| Usage tracking | doubleUse, quadUse, hyperUse, flurry | Check for per-turn usage counter |
+
+**If infrastructure is missing:** Either implement it first, or skip the keyword and note the dependency.
+
+## Variant Keywords
+
+Variants modify base keywords. **Do NOT duplicate logic - compose or reference.**
+
+| Prefix | What It Does | Java Pattern | Example |
+|--------|--------------|--------------|---------|
+| `anti*` | Inverts condition | `NotRequirement` | antiEngage = x2 if target NOT full HP |
+| `halve*` | x0.5 instead of x2 | `.halveVersion()` | halveEngage = x0.5 if target full HP |
+| `swap*` | Swaps source/target | swapped condition | swapEngage = x2 if SOURCE full HP |
+| `group*` | Applies to all allies | `groupAct` field | groupGrowth = all allies get growth |
+| `minus*` | Inverts bonus (+N → -N) | `InvertBonus` | minusFlesh = -1 per HP I have |
+
+**Combined keywords** (engarged, engine, paxin) use `KeywordCombineType` in Java:
+- `ConditionBonus`: condition from A, bonus from B (engarged = engage + charged)
+- `TC4X`: both conditions must be true → x4 (engine = engage AND pristine)
+- `XOR`: exactly one condition true → x3 (paxin = pair XOR chain)
+
+## Parameter (N) Source
+
+Keywords with "N" in their description get N from the **Side's pip value** unless noted.
+
+```
+hyperGrowth  → +N pips (N = side.pips)
+scared       → target must have N or less HP (N = side.pips)
+pain         → I take N damage (N = side.pips)
+```
+
+**Exceptions (hardcoded values):**
+- `century` → 100 HP (see `ParamCondition.OrMoreHp`)
+- `terminal` → 1 HP (see `ParamCondition.ExactlyHp`)
+- `sixth` → 6th die (not parameterized by pips)
+
+## Keyword Stacking
+
+When multiple conditional keywords apply, they **multiply independently**:
+
+```
+engage (x2) + cruel (x2) = x4 (if both conditions met)
+pristine (x2) + treble = x3 (treble upgrades x2 → x3)
+```
+
+Check `_apply_conditional_keyword_bonuses()` for actual stacking behavior. Tests verify correctness.
 
 ## Project Structure
 
