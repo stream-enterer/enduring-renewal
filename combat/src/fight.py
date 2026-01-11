@@ -6,6 +6,7 @@ from typing import Optional, TYPE_CHECKING
 from copy import deepcopy
 
 from .entity import Entity, Team, FIELD_CAPACITY
+from .effects import EffectType
 
 if TYPE_CHECKING:
     from .hero import Hero
@@ -84,6 +85,9 @@ class FightLog:
 
         # Hero registry for trigger system (Entity -> Hero mapping)
         self._hero_registry: dict[Entity, "Hero"] = {}
+
+        # Mana pool (global resource for the fight)
+        self._total_mana: int = 0
 
     def _get_field_usage(self) -> int:
         """Calculate current field usage from present (alive) monsters."""
@@ -917,3 +921,51 @@ class FightLog:
             state.shield, state.spiky, state.self_heal, state.damage_blocked,
             state.keep_shields, state.stone_hp, state.fled, state.dodge, new_regen
         )
+
+    def get_total_mana(self) -> int:
+        """Get the current total mana in the fight."""
+        return self._total_mana
+
+    def add_mana(self, amount: int):
+        """Add mana to the pool."""
+        self._record_action()
+        self._total_mana += amount
+
+    def use_die(self, entity: Entity, side_index: int, target: Entity):
+        """Use a die side against a target.
+
+        Executes the side's effect and applies growth if the side has the growth keyword.
+        The side's calculated_value is used (includes growth bonus from previous uses).
+
+        For shieldMana effects (SHIELD type with MANA keyword):
+        - Grants shield equal to calculated_value
+        - Grants mana equal to calculated_value
+        - If has GROWTH keyword, increases side's value by 1 after use
+        """
+        from .dice import Keyword
+
+        # Get the entity's die (must be set up before calling this)
+        die = getattr(entity, 'die', None)
+        if die is None:
+            raise ValueError(f"Entity {entity} has no die")
+
+        side = die.get_side(side_index)
+        value = side.calculated_value
+
+        # Apply the effect based on type
+        if side.effect_type == EffectType.SHIELD:
+            self.apply_shield(target, value)
+
+            # If has MANA keyword, also grant mana
+            if side.has_keyword(Keyword.MANA):
+                self.add_mana(value)
+
+        elif side.effect_type == EffectType.DAMAGE:
+            self.apply_damage(entity, target, value)
+
+        elif side.effect_type == EffectType.HEAL:
+            self.apply_heal(target, value)
+
+        # Apply growth AFTER use
+        if side.has_keyword(Keyword.GROWTH):
+            side.apply_growth()

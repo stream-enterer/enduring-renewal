@@ -949,3 +949,146 @@ class TestRegen:
         fight.next_turn()
         state = fight.get_state(hero, Temporality.PRESENT)
         assert state.hp == hero_max, "hero should not regen past full"
+
+
+class TestGrowth:
+    """Tests for Growth keyword.
+
+    Growth is a side keyword that increases the side's value by +1 after each use.
+    The bonus is permanent (persists for the rest of the fight).
+
+    Example: shieldMana(1) with growth
+    - First use: shield=1, mana=1 (base value)
+    - Second use: shield=2, mana=2 (growth increased value to 2)
+    - Third use: shield=3, mana=3 (growth increased value to 3)
+    - Cumulative: shield=6, mana=6
+
+    Verified: Confirmed from TestKeyword.growth in Java test.
+    """
+
+    def test_growth_basic(self):
+        """Growth increases side value by +1 after each use."""
+        from src.dice import Die, Side, Keyword, shield_mana
+
+        hero = make_hero("Mage", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Set up hero's die with shieldMana(1) + growth on all sides
+        hero.die = Die()
+        base_side = shield_mana(1)
+        base_side.keywords.add(Keyword.GROWTH)
+        hero.die.set_all_sides(base_side)
+
+        # First use: value=1, shield=1, mana=1
+        fight.use_die(hero, 0, hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 1, "shield should be 1"
+        assert fight.get_total_mana() == 1, "mana should be 1"
+
+        # Second use: value=2 (growth!), shield=1+2=3, mana=1+2=3
+        fight.use_die(hero, 0, hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 3, "shield should be 3"
+        assert fight.get_total_mana() == 3, "mana should be 3"
+
+        # Third use: value=3 (growth!), shield=3+3=6, mana=3+3=6
+        fight.use_die(hero, 0, hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 6, "shield should be 6"
+        assert fight.get_total_mana() == 6, "mana should be 6"
+
+    def test_growth_full_scenario(self):
+        """Full growth test matching original Java test (TestKeyword.growth).
+
+        Setup: 1 hero with shieldMana(1) on all sides, growth keyword added
+        - DieCommand (side 0, self target): shield=1, mana=1
+        - DieCommand (side 0, self target): shield=3, mana=3
+        - DieCommand (side 0, self target): shield=6, mana=6
+
+        Verified: Confirmed.
+        """
+        from src.dice import Die, Side, Keyword, shield_mana
+
+        hero = make_hero("Mage", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Set up hero's die with shieldMana(1)
+        hero.die = Die()
+        hero.die.set_all_sides(shield_mana(1))
+
+        # Add growth keyword to all sides (simulates AffectSides(AddKeyword(growth)))
+        hero.die.add_keyword_to_all(Keyword.GROWTH)
+
+        # First DieCommand
+        fight.use_die(hero, 0, hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 1, "shield should be 1"
+        assert fight.get_total_mana() == 1, "mana should be 1"
+
+        # Second DieCommand
+        fight.use_die(hero, 0, hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 3, "shield should be 3"
+        assert fight.get_total_mana() == 3, "mana should be 3"
+
+        # Third DieCommand
+        fight.use_die(hero, 0, hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 6, "shield should be 6"
+        assert fight.get_total_mana() == 6, "mana should be 6"
+
+    def test_growth_only_affects_used_side(self):
+        """Growth only increases the value of the side that was used."""
+        from src.dice import Die, Side, Keyword, shield_mana
+
+        hero = make_hero("Mage", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Set up hero's die with shieldMana(1) + growth on all sides
+        hero.die = Die()
+        base_side = shield_mana(1)
+        base_side.keywords.add(Keyword.GROWTH)
+        hero.die.set_all_sides(base_side)
+
+        # Use side 0 twice
+        fight.use_die(hero, 0, hero)
+        fight.use_die(hero, 0, hero)
+
+        # Side 0 should have grown twice (value = 3)
+        assert hero.die.get_side(0).calculated_value == 3, "Side 0 should be at value 3"
+
+        # Side 1 should still be at base value (not used)
+        assert hero.die.get_side(1).calculated_value == 1, "Side 1 should still be at value 1"
+
+    def test_growth_without_mana(self):
+        """Growth works on sides without the mana keyword."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Set up hero's die with shield(1) + growth (no mana)
+        hero.die = Die()
+        base_side = Side(EffectType.SHIELD, 1, {Keyword.GROWTH})
+        hero.die.set_all_sides(base_side)
+
+        # First use: shield=1
+        fight.use_die(hero, 0, hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 1, "shield should be 1"
+        assert fight.get_total_mana() == 0, "mana should be 0 (no mana keyword)"
+
+        # Second use: shield=1+2=3
+        fight.use_die(hero, 0, hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 3, "shield should be 3"
+        assert fight.get_total_mana() == 0, "mana should still be 0"
