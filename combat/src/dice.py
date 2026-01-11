@@ -134,6 +134,14 @@ class Keyword(Enum):
     MANACOST = auto()      # Costs N mana to use
     MANDATORY = auto()     # Must be used if possible
     FIERCE = auto()        # Target flees if they have N or less HP after attack
+    # Value visibility keywords - modify how pair/chain/echo see pip values
+    FAULT = auto()         # Others see -1
+    PLUS = auto()          # Others see N+1
+    DOUBLED = auto()       # Others see 2*N
+    SQUARED = auto()       # Others see N^2
+    ONESIE = auto()        # Others see 1
+    THREESY = auto()       # Others see 3
+    ZEROED = auto()        # Others see 0
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
@@ -154,6 +162,44 @@ class Side:
     def calculated_value(self) -> int:
         """Get the final value after all bonuses."""
         return self.value + self.growth_bonus
+
+    def get_visible_value(self) -> int:
+        """Get the value as seen by other keywords (pair, chain, echo).
+
+        Visibility keywords modify how other keywords see this side's pip value:
+        - FAULT: others see -1
+        - PLUS: others see N+1
+        - DOUBLED: others see 2*N
+        - SQUARED: others see N^2
+        - ONESIE: others see 1
+        - THREESY: others see 3
+        - ZEROED: others see 0
+
+        If multiple visibility keywords are present, the last one takes precedence
+        based on the order above (ZEROED wins over all).
+        """
+        base_value = self.calculated_value
+
+        # Check visibility keywords in priority order (lowest to highest priority)
+        # Later checks overwrite earlier ones
+        visible = base_value
+
+        if Keyword.FAULT in self.keywords:
+            visible = -1
+        if Keyword.PLUS in self.keywords:
+            visible = base_value + 1
+        if Keyword.DOUBLED in self.keywords:
+            visible = base_value * 2
+        if Keyword.SQUARED in self.keywords:
+            visible = base_value * base_value
+        if Keyword.ONESIE in self.keywords:
+            visible = 1
+        if Keyword.THREESY in self.keywords:
+            visible = 3
+        if Keyword.ZEROED in self.keywords:
+            visible = 0
+
+        return visible
 
     def with_bonus(self, bonus: int) -> "Side":
         """Return a new side with the bonus added to the value."""

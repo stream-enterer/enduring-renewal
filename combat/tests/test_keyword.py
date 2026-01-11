@@ -6766,3 +6766,279 @@ class TestFierce:
         # Since 8 > 2, monster should NOT flee
         monster_state = fight.get_state(monster, Temporality.PRESENT)
         assert not monster_state.is_dead and monster in fight.monsters
+
+
+class TestVisibilityKeywords:
+    """Tests for value visibility keywords.
+
+    These keywords modify how other keywords (pair, chain, echo) see pip values.
+    - FAULT: others see -1
+    - PLUS: others see N+1
+    - DOUBLED: others see 2*N
+    - SQUARED: others see N^2
+    - ONESIE: others see 1
+    - THREESY: others see 3
+    - ZEROED: others see 0
+    """
+
+    def test_zeroed_makes_pair_see_zero(self):
+        """ZEROED makes pair see 0 as the previous die's value."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # First die: 3 damage with ZEROED - others see 0
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.ZEROED}))
+        fight.use_die(hero, 0, monster)  # Does 3 damage
+
+        # Second die: 0 damage with PAIR - should trigger because visible value is 0
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 0, {Keyword.PAIR}))
+        fight.use_die(hero, 0, monster)  # PAIR sees 0, matches 0, does 0*2=0
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 20 - 3 - 0 = 17
+        assert state.hp == 17, "ZEROED should make pair see 0"
+
+    def test_zeroed_pair_doesnt_trigger_on_nonzero(self):
+        """PAIR doesn't trigger on value 3 if previous was ZEROED (visible=0)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # First die: 3 damage with ZEROED - others see 0
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.ZEROED}))
+        fight.use_die(hero, 0, monster)  # Does 3 damage
+
+        # Second die: 3 damage with PAIR - shouldn't trigger because visible is 0, not 3
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.PAIR}))
+        fight.use_die(hero, 0, monster)  # PAIR sees 0, doesn't match 3, does 3
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 20 - 3 - 3 = 14
+        assert state.hp == 14, "PAIR shouldn't trigger when visible(0) != current(3)"
+
+    def test_threesy_makes_pair_see_three(self):
+        """THREESY makes pair see 3 regardless of actual value."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # First die: 1 damage with THREESY - others see 3
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.THREESY}))
+        fight.use_die(hero, 0, monster)  # Does 1 damage
+
+        # Second die: 3 damage with PAIR - should trigger because visible is 3
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.PAIR}))
+        fight.use_die(hero, 0, monster)  # PAIR sees 3, matches 3, does 6
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 20 - 1 - 6 = 13
+        assert state.hp == 13, "THREESY should make pair see 3"
+
+    def test_onesie_makes_pair_see_one(self):
+        """ONESIE makes pair see 1 regardless of actual value."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # First die: 5 damage with ONESIE - others see 1
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 5, {Keyword.ONESIE}))
+        fight.use_die(hero, 0, monster)  # Does 5 damage
+
+        # Second die: 1 damage with PAIR - should trigger because visible is 1
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.PAIR}))
+        fight.use_die(hero, 0, monster)  # PAIR sees 1, matches 1, does 2
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 20 - 5 - 2 = 13
+        assert state.hp == 13, "ONESIE should make pair see 1"
+
+    def test_doubled_makes_pair_see_double(self):
+        """DOUBLED makes pair see 2*N as the value."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # First die: 2 damage with DOUBLED - others see 4
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.DOUBLED}))
+        fight.use_die(hero, 0, monster)  # Does 2 damage
+
+        # Second die: 4 damage with PAIR - should trigger because visible is 4
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 4, {Keyword.PAIR}))
+        fight.use_die(hero, 0, monster)  # PAIR sees 4, matches 4, does 8
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 20 - 2 - 8 = 10
+        assert state.hp == 10, "DOUBLED should make pair see 2*N"
+
+    def test_squared_makes_pair_see_squared(self):
+        """SQUARED makes pair see N^2 as the value."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=30)
+        fight = FightLog([hero], [monster])
+
+        # First die: 3 damage with SQUARED - others see 9
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.SQUARED}))
+        fight.use_die(hero, 0, monster)  # Does 3 damage
+
+        # Second die: 9 damage with PAIR - should trigger because visible is 9
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 9, {Keyword.PAIR}))
+        fight.use_die(hero, 0, monster)  # PAIR sees 9, matches 9, does 18
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 30 - 3 - 18 = 9
+        assert state.hp == 9, "SQUARED should make pair see N^2"
+
+    def test_plus_makes_pair_see_n_plus_one(self):
+        """PLUS makes pair see N+1 as the value."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # First die: 2 damage with PLUS - others see 3
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.PLUS}))
+        fight.use_die(hero, 0, monster)  # Does 2 damage
+
+        # Second die: 3 damage with PAIR - should trigger because visible is 3
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.PAIR}))
+        fight.use_die(hero, 0, monster)  # PAIR sees 3, matches 3, does 6
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 20 - 2 - 6 = 12
+        assert state.hp == 12, "PLUS should make pair see N+1"
+
+    def test_fault_makes_pair_see_negative_one(self):
+        """FAULT makes pair see -1 regardless of actual value."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # First die: 5 damage with FAULT - others see -1
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 5, {Keyword.FAULT}))
+        fight.use_die(hero, 0, monster)  # Does 5 damage
+
+        # Second die: 5 damage with PAIR - shouldn't trigger because visible is -1, not 5
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 5, {Keyword.PAIR}))
+        fight.use_die(hero, 0, monster)  # PAIR sees -1, doesn't match 5, does 5
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 20 - 5 - 5 = 10
+        assert state.hp == 10, "FAULT should make pair see -1"
+
+    def test_visibility_affects_inspired(self):
+        """INSPIRED uses visible value when comparing previous pip values."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # First die: 2 damage with DOUBLED - others see 4
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.DOUBLED}))
+        fight.use_die(hero, 0, monster)  # Does 2 damage
+
+        # Second die: 3 damage with INSPIRED - x2 if previous had MORE pips
+        # Previous visible = 4, current = 3, so 4 > 3 = INSPIRED triggers
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.INSPIRED}))
+        fight.use_die(hero, 0, monster)  # Does 6 (3*2)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 20 - 2 - 6 = 12
+        assert state.hp == 12, "INSPIRED should use visible value for comparison"
+
+    def test_visibility_affects_anti_pair(self):
+        """ANTI_PAIR uses visible value when comparing."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # First die: 3 damage with ZEROED - others see 0
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.ZEROED}))
+        fight.use_die(hero, 0, monster)  # Does 3 damage
+
+        # Second die: 3 damage with ANTI_PAIR - x2 if previous was DIFFERENT
+        # Previous visible = 0, current = 3, so 0 != 3 = ANTI_PAIR triggers
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.ANTI_PAIR}))
+        fight.use_die(hero, 0, monster)  # Does 6 (3*2)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 20 - 3 - 6 = 11
+        assert state.hp == 11, "ANTI_PAIR should use visible value"
+
+    def test_get_visible_value_direct(self):
+        """Direct test of get_visible_value method on Side."""
+        from src.dice import Side, Keyword
+        from src.effects import EffectType
+
+        # Test each visibility keyword
+        base_side = Side(EffectType.DAMAGE, 3)
+        assert base_side.get_visible_value() == 3, "Base value should be 3"
+
+        zeroed = Side(EffectType.DAMAGE, 3, {Keyword.ZEROED})
+        assert zeroed.get_visible_value() == 0, "ZEROED should return 0"
+
+        onesie = Side(EffectType.DAMAGE, 3, {Keyword.ONESIE})
+        assert onesie.get_visible_value() == 1, "ONESIE should return 1"
+
+        threesy = Side(EffectType.DAMAGE, 5, {Keyword.THREESY})
+        assert threesy.get_visible_value() == 3, "THREESY should return 3"
+
+        fault = Side(EffectType.DAMAGE, 3, {Keyword.FAULT})
+        assert fault.get_visible_value() == -1, "FAULT should return -1"
+
+        plus = Side(EffectType.DAMAGE, 3, {Keyword.PLUS})
+        assert plus.get_visible_value() == 4, "PLUS should return N+1"
+
+        doubled = Side(EffectType.DAMAGE, 3, {Keyword.DOUBLED})
+        assert doubled.get_visible_value() == 6, "DOUBLED should return 2*N"
+
+        squared = Side(EffectType.DAMAGE, 3, {Keyword.SQUARED})
+        assert squared.get_visible_value() == 9, "SQUARED should return N^2"

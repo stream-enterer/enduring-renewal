@@ -223,39 +223,40 @@ class EntityState:
                 calculated.keywords.add(Keyword.RESONATE)
 
         # PAIR: x2 if previous die had same calculated value
-        # Checks current value (after triggers, before pair bonus) vs previous die's final value
+        # Checks current value (after triggers, before pair bonus) vs previous die's visible value
+        # Visibility keywords (fault, doubled, etc.) modify how others see the previous die's value
         if Keyword.PAIR in calculated.keywords and fight_log is not None:
             recent = fight_log.get_most_recent_die_effect()
             if recent is not None:
-                # Compare current calculated value with previous die's final calculated value
+                # Compare current calculated value with previous die's visible value
                 current_value = calculated.calculated_value
-                prev_value = recent.calculated_effect.calculated_value
+                prev_value = recent.calculated_effect.get_visible_value()
                 if current_value == prev_value:
                     # Double the base value (not growth_bonus)
                     calculated.value *= 2
 
-        # TRIO: x3 if previous 2 dice had same calculated value
+        # TRIO: x3 if previous 2 dice had same calculated value (using visible values)
         if Keyword.TRIO in calculated.keywords and fight_log is not None:
             current_value = calculated.calculated_value
             previous_effects = fight_log.get_last_n_die_effects(2)
             if len(previous_effects) >= 2:
-                if all(eff.calculated_effect.calculated_value == current_value for eff in previous_effects):
+                if all(eff.calculated_effect.get_visible_value() == current_value for eff in previous_effects):
                     calculated.value *= 3
 
-        # QUIN: x5 if previous 4 dice had same calculated value
+        # QUIN: x5 if previous 4 dice had same calculated value (using visible values)
         if Keyword.QUIN in calculated.keywords and fight_log is not None:
             current_value = calculated.calculated_value
             previous_effects = fight_log.get_last_n_die_effects(4)
             if len(previous_effects) >= 4:
-                if all(eff.calculated_effect.calculated_value == current_value for eff in previous_effects):
+                if all(eff.calculated_effect.get_visible_value() == current_value for eff in previous_effects):
                     calculated.value *= 5
 
-        # SEPT: x7 if previous 6 dice had same calculated value
+        # SEPT: x7 if previous 6 dice had same calculated value (using visible values)
         if Keyword.SEPT in calculated.keywords and fight_log is not None:
             current_value = calculated.calculated_value
             previous_effects = fight_log.get_last_n_die_effects(6)
             if len(previous_effects) >= 6:
-                if all(eff.calculated_effect.calculated_value == current_value for eff in previous_effects):
+                if all(eff.calculated_effect.get_visible_value() == current_value for eff in previous_effects):
                     calculated.value *= 7
 
     def get_total_petrification(self) -> int:
@@ -1708,11 +1709,11 @@ class FightLog:
                 if current_keywords & prev_keywords:  # Set intersection
                     value *= mult
 
-        # INSPIRED: x2 if previous die had more pips than this side
+        # INSPIRED: x2 if previous die had more pips than this side (using visible value)
         if side.has_keyword(Keyword.INSPIRED):
             previous = self.get_most_recent_die_effect()
             if previous is not None:
-                if previous.calculated_effect.calculated_value > side.calculated_value:
+                if previous.calculated_effect.get_visible_value() > side.calculated_value:
                     value *= mult
 
         # FIRST: x2 if no dice used this turn (before this one)
@@ -1769,11 +1770,11 @@ class FightLog:
             if source_state.hp != target_state.hp:
                 value *= mult
 
-        # ANTI_PAIR: x2 if previous die had DIFFERENT pip value
+        # ANTI_PAIR: x2 if previous die had DIFFERENT pip value (using visible value)
         if side.has_keyword(Keyword.ANTI_PAIR):
             previous = self.get_most_recent_die_effect()
             if previous is not None:
-                if side.calculated_value != previous.calculated_effect.calculated_value:
+                if side.calculated_value != previous.calculated_effect.get_visible_value():
                     value *= mult
 
         # === SWAP* VARIANTS (swap source/target check) ===
@@ -1830,12 +1831,12 @@ class FightLog:
         # === COMBINED KEYWORDS (XOR) ===
         # PAXIN: pair XOR chain = x3 if exactly one condition met (not affected by treble)
         if side.has_keyword(Keyword.PAXIN):
-            # Check pair condition
+            # Check pair condition (using visible value for previous die)
             pair_met = False
             recent = self.get_most_recent_die_effect()
             if recent is not None:
                 current_value = side.calculated_value
-                prev_value = recent.calculated_effect.calculated_value
+                prev_value = recent.calculated_effect.get_visible_value()
                 pair_met = current_value == prev_value
 
             # Check chain condition

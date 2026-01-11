@@ -105,7 +105,14 @@
     "repel",
     "manacost",
     "mandatory",
-    "fierce"
+    "fierce",
+    "fault",
+    "plus",
+    "doubled",
+    "squared",
+    "onesie",
+    "threesy",
+    "zeroed"
   ],
   "blocked": {
     "turn_tracking": ["patient", "era", "minusEra"],
