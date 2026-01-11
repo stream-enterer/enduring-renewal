@@ -2,10 +2,10 @@
   "phase": 2,
   "infrastructure": {
     "current": {
-      "component": "side_mutation",
+      "component": "used_state",
       "status": "not_started",
-      "target_test": "TestComplexEff.petrify",
-      "unblocks": ["petrifyBug", "petrifyAboveSix"],
+      "target_test": "TestKeyword.rescue",
+      "unblocks": ["rescue", "rampageHeroKill"],
       "design": null
     },
     "completed": [
@@ -15,6 +15,13 @@
         "tests_added": ["TestGrowth (4 tests)"],
         "tests_unblocked": ["TestKeyword.growth"],
         "summary": "Added Die/Side classes with keyword support, mana system, use_die method, growth keyword"
+      },
+      {
+        "component": "side_mutation",
+        "timestamp": "2026-01-10",
+        "tests_added": ["TestPetrify (6 tests)"],
+        "tests_unblocked": ["TestComplexEff.petrifyBug", "TestComplexEff.petrifyAboveSix"],
+        "summary": "Added BLANK effect type, PETRIFY_ORDER, petrified_sides tracking, get_side_state, get_total_petrification, apply_petrify, apply_cleanse_petrify"
       }
     ],
     "order": [
@@ -32,9 +39,9 @@
     "python_tests": 77
   },
   "phase2_summary": {
-    "tests_added": 4,
-    "total_python_tests": 81,
-    "components_completed": 1
+    "tests_added": 10,
+    "total_python_tests": 87,
+    "components_completed": 2
   },
   "blocked": [
     {"test": "TestKeyword.rescue", "needs": "used_state", "reason": "isUsed() state tracking"},
@@ -42,8 +49,6 @@
     {"test": "TestKeyword.rampageHeroKill", "needs": "used_state", "reason": "turnInto, isUsed()"},
     {"test": "TestKeyword.testComboCruel", "needs": "copycat", "reason": "turnInto, copycat keyword"},
     {"test": "TestKeyword.testComboCruelWand", "needs": "copycat", "reason": "turnInto, copycat keyword"},
-    {"test": "TestComplexEff.petrifyBug", "needs": "side_mutation", "reason": "petrify removes sides"},
-    {"test": "TestComplexEff.petrifyAboveSix", "needs": "side_mutation", "reason": "petrify capped at 6"},
     {"test": "TestComplexEff.copycatManagain", "needs": "copycat", "reason": "mana + copycat"},
     {"test": "TestComplexEff.pair", "needs": "pair_keyword", "reason": "mana + pair keyword"},
     {"test": "TestTriggerOrdering.testBuffReplacedSides", "needs": "triggers", "reason": "getSideState, roll"},
@@ -57,7 +62,7 @@
     "TestStrangeScenarios: multiTargetStickiness, targetingEfficienct, painShouldKill, maxHpFiddles, maxHpLimit, revengeSpiky, painDrainNiceness, numberLimit",
     "TestBasicEff: basicSanityTest, attackEnemy, attackHero, basicBlock, basicHeal, reinforcements",
     "TestItem: testGauntlet, testSteelHeart, testPipeAndStudsWithHealShield, testBonusIncomingWithHealShields",
-    "TestComplexEff: pain, doubleTaunt, keepShield, stoneskin, resurrect, fortitudeHeal, goblinFlee",
+    "TestComplexEff: pain, doubleTaunt, keepShield, stoneskin, resurrect, fortitudeHeal, goblinFlee, petrify (via TestPetrify)",
     "TestKeyword: bloodlust, poison, precise, fierce, weaken, drain, lifestealVsInvincible, regen, pain, growth",
     "TestKeywordSpell: engage, cruel"
   ],

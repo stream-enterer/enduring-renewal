@@ -558,3 +558,198 @@ class TestGoblinFlee:
 
         # Should be victory (other goblin fled)
         assert fight.is_victory(Temporality.PRESENT), "Should be goblinflee victory"
+
+
+class TestPetrify:
+    """Tests for petrify mechanics.
+
+    Petrify turns die sides into Blank (no effect).
+    Petrification order: Top, Left, Middle, Right, Rightmost, Bottom
+    (indices: 0, 2, 4, 3, 5, 1)
+
+    Verified: User confirmed petrify order in-game.
+    """
+
+    def test_petrify_changes_side_to_blank(self):
+        """Petrify changes a Damage side to Blank.
+
+        Verified: Basilisk petrifies hero sides, confirmed in-game.
+        """
+        from src.dice import Die, Side, PETRIFY_ORDER
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Basilisk", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Set up hero's die with sword (Damage) on all sides
+        hero.die = Die([
+            Side(EffectType.DAMAGE, 1),  # Side 0 (Top)
+            Side(EffectType.DAMAGE, 1),  # Side 1 (Bottom)
+            Side(EffectType.DAMAGE, 2),  # Side 2 (Left)
+            Side(EffectType.DAMAGE, 2),  # Side 3 (Right)
+            Side(EffectType.SHIELD, 1),  # Side 4 (Middle)
+            Side(EffectType.DAMAGE, 3),  # Side 5 (Rightmost)
+        ])
+
+        # Before petrify: side 0 should be Damage
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0)
+        assert side_state.effect_type == EffectType.DAMAGE, "Side 0 should be Damage before petrify"
+
+        # Apply petrify(1) - should petrify side 0 (Top, first in PETRIFY_ORDER)
+        fight.apply_petrify(hero, 1)
+
+        # After petrify: side 0 should be Blank
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0)
+        assert side_state.effect_type == EffectType.BLANK, "Side 0 should be Blank after petrify"
+        assert side_state.is_petrified, "Side 0 should be marked as petrified"
+
+    def test_petrify_order(self):
+        """Petrify follows specific order: Top, Left, Middle, Right, Rightmost, Bottom.
+
+        Verified: User confirmed order in-game.
+        """
+        from src.dice import Die, Side, PETRIFY_ORDER
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Basilisk", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Set up hero's die
+        hero.die = Die([Side(EffectType.DAMAGE, 1) for _ in range(6)])
+
+        # Petrify one at a time and check order
+        expected_order = PETRIFY_ORDER  # [0, 2, 4, 3, 5, 1]
+
+        for i, expected_side in enumerate(expected_order):
+            fight.apply_petrify(hero, 1)
+            state = fight.get_state(hero, Temporality.PRESENT)
+
+            # Check this side is now petrified
+            side_state = state.get_side_state(expected_side)
+            assert side_state.effect_type == EffectType.BLANK, f"Side {expected_side} should be petrified after {i+1} petrify"
+
+    def test_petrify_capped_at_six(self):
+        """Petrify cannot petrify more than 6 sides (one die).
+
+        Verified: petrifyAboveSix test confirms this.
+        """
+        from src.dice import Die, Side
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Basilisk", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Set up hero's die
+        hero.die = Die([Side(EffectType.DAMAGE, 1) for _ in range(6)])
+
+        # Apply petrify(7) - should only petrify 6 sides
+        fight.apply_petrify(hero, 7)
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        total_petrified = state.get_total_petrification()
+
+        assert total_petrified == 6, f"Should only petrify 6 sides, got {total_petrified}"
+
+    def test_cleanse_removes_petrification_reverse_order(self):
+        """Cleanse removes petrification in reverse order (last petrified first).
+
+        Verified: User confirmed cleanse order in-game.
+        """
+        from src.dice import Die, Side, PETRIFY_ORDER
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Basilisk", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Set up hero's die
+        hero.die = Die([Side(EffectType.DAMAGE, 1) for _ in range(6)])
+
+        # Petrify all 6 sides
+        fight.apply_petrify(hero, 6)
+
+        # Should have 6 petrified
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.get_total_petrification() == 6, "Should have 6 petrified"
+
+        # Cleanse 4 - should remove: Bottom(1), Rightmost(5), Right(3), Middle(4)
+        # Remaining petrified: Top(0), Left(2)
+        fight.apply_cleanse_petrify(hero, 4)
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.get_total_petrification() == 2, "Should have 2 petrified after cleanse"
+
+        # Top (0) and Left (2) should still be petrified
+        assert state.get_side_state(0).effect_type == EffectType.BLANK, "Top should still be petrified"
+        assert state.get_side_state(2).effect_type == EffectType.BLANK, "Left should still be petrified"
+
+        # Middle (4), Right (3), Rightmost (5), Bottom (1) should be restored
+        assert state.get_side_state(4).effect_type == EffectType.DAMAGE, "Middle should be restored"
+        assert state.get_side_state(3).effect_type == EffectType.DAMAGE, "Right should be restored"
+        assert state.get_side_state(5).effect_type == EffectType.DAMAGE, "Rightmost should be restored"
+        assert state.get_side_state(1).effect_type == EffectType.DAMAGE, "Bottom should be restored"
+
+    def test_get_total_petrification(self):
+        """getTotalPetrification counts petrified sides correctly.
+
+        Verified: Java test uses this method.
+        """
+        from src.dice import Die, Side
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Basilisk", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Set up hero's die
+        hero.die = Die([Side(EffectType.DAMAGE, 1) for _ in range(6)])
+
+        # Initially: 0 petrified
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.get_total_petrification() == 0, "Should have 0 petrified initially"
+
+        # Petrify 3
+        fight.apply_petrify(hero, 3)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.get_total_petrification() == 3, "Should have 3 petrified"
+
+        # Cleanse 1
+        fight.apply_cleanse_petrify(hero, 1)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.get_total_petrification() == 2, "Should have 2 petrified after cleanse"
+
+    def test_undo_restores_petrification_state(self):
+        """Undo properly restores petrification state.
+
+        Verified: petrifyBug test uses undo.
+        """
+        from src.dice import Die, Side
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Basilisk", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Set up hero's die
+        hero.die = Die([Side(EffectType.DAMAGE, 1) for _ in range(6)])
+
+        # Petrify 2
+        fight.apply_petrify(hero, 2)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.get_total_petrification() == 2, "Should have 2 petrified"
+
+        # Undo
+        fight.undo()
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.get_total_petrification() == 0, "Should have 0 petrified after undo"

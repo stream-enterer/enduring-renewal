@@ -11,6 +11,12 @@ class Keyword(Enum):
     """Keywords that modify side effects."""
     GROWTH = auto()      # After use, side value increases by +1
     MANA = auto()        # Effect also grants mana equal to value
+    PETRIFY = auto()     # Turns target's sides to stone (Blank)
+
+
+# Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
+# Maps to side indices: 0, 2, 4, 3, 5, 1
+PETRIFY_ORDER = [0, 2, 4, 3, 5, 1]
 
 
 @dataclass
@@ -20,6 +26,7 @@ class Side:
     value: int
     keywords: set[Keyword] = field(default_factory=set)
     growth_bonus: int = 0  # Accumulated bonus from growth keyword
+    is_petrified: bool = False  # True if this side was petrified (for texture tracking)
 
     @property
     def calculated_value(self) -> int:
@@ -28,7 +35,7 @@ class Side:
 
     def with_bonus(self, bonus: int) -> "Side":
         """Return a new side with the bonus added to the value."""
-        return Side(self.effect_type, self.value + bonus, set(self.keywords), self.growth_bonus)
+        return Side(self.effect_type, self.value + bonus, set(self.keywords), self.growth_bonus, self.is_petrified)
 
     def copy(self) -> "Side":
         """Create a copy of this side."""
@@ -36,7 +43,8 @@ class Side:
             effect_type=self.effect_type,
             value=self.value,
             keywords=set(self.keywords),
-            growth_bonus=self.growth_bonus
+            growth_bonus=self.growth_bonus,
+            is_petrified=self.is_petrified
         )
 
     def has_keyword(self, keyword: Keyword) -> bool:
@@ -107,4 +115,15 @@ def shield_mana(value: int) -> Side:
         effect_type=EffectType.SHIELD,
         value=value,
         keywords={Keyword.MANA}
+    )
+
+
+def petrified_blank() -> Side:
+    """Create a petrified blank side - no effect, marked as petrified."""
+    return Side(
+        effect_type=EffectType.BLANK,
+        value=0,
+        keywords=set(),
+        growth_bonus=0,
+        is_petrified=True
     )

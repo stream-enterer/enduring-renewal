@@ -32,6 +32,7 @@ class EntityState:
     fled: bool = False   # If True, entity has fled the battle
     dodge: bool = False  # If True, entity is invincible (immune to damage)
     regen: int = 0       # Regen amount - heals this much HP each turn
+    petrified_sides: list = field(default_factory=list)  # Side indices that are petrified (int or None for overflow)
 
     @property
     def is_dead(self) -> bool:
@@ -41,6 +42,52 @@ class EntityState:
     def is_out_of_battle(self) -> bool:
         """Entity is out of battle if dead or fled."""
         return self.hp <= 0 or self.fled
+
+    def get_side_state(self, index: int) -> "SideState":
+        """Get the calculated state for a side, after applying all buffs.
+
+        If the side is petrified, returns a blank petrified side.
+        Otherwise returns the original side from the entity's die.
+        """
+        from .dice import Side, petrified_blank
+
+        # Check if entity has a die
+        die = getattr(self.entity, 'die', None)
+        if die is None:
+            raise ValueError(f"Entity {self.entity} has no die")
+
+        # Check if this side is petrified
+        if index in self.petrified_sides:
+            return SideState(petrified_blank(), index, is_petrified=True)
+
+        # Return original side
+        original_side = die.get_side(index)
+        return SideState(original_side, index, is_petrified=False)
+
+    def get_total_petrification(self) -> int:
+        """Count the number of petrified sides.
+
+        Only counts actual petrified sides (not None overflow markers).
+        """
+        return sum(1 for s in self.petrified_sides if s is not None)
+
+
+@dataclass
+class SideState:
+    """Calculated state of a die side after applying all buffs."""
+    side: "Side"  # The calculated side (may be petrified blank)
+    index: int    # Original side index
+    is_petrified: bool = False  # True if this side was petrified
+
+    @property
+    def effect_type(self) -> EffectType:
+        """Get the effect type of this side."""
+        return self.side.effect_type
+
+    @property
+    def value(self) -> int:
+        """Get the calculated value of this side."""
+        return self.side.calculated_value
 
 
 @dataclass
@@ -150,7 +197,7 @@ class FightLog:
 
     def _snapshot_states(self) -> dict[Entity, EntityState]:
         """Deep copy current states."""
-        return {e: EntityState(e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked, s.keep_shields, s.stone_hp, s.fled, s.dodge, s.regen) for e, s in self._states.items()}
+        return {e: EntityState(e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked, s.keep_shields, s.stone_hp, s.fled, s.dodge, s.regen, list(s.petrified_sides)) for e, s in self._states.items()}
 
     def _record_action(self):
         """Record state before an action for undo."""
@@ -969,3 +1016,64 @@ class FightLog:
         # Apply growth AFTER use
         if side.has_keyword(Keyword.GROWTH):
             side.apply_growth()
+
+    def apply_petrify(self, target: Entity, amount: int):
+        """Apply petrification to target's die sides.
+
+        Petrifies sides in order: Top, Left, Middle, Right, Rightmost, Bottom
+        (indices: 0, 2, 4, 3, 5, 1)
+
+        If trying to petrify more than 6 sides, excess is stored as None.
+        This caps effective petrification at 6 sides.
+        """
+        from .dice import PETRIFY_ORDER
+
+        self._record_action()
+
+        state = self._states[target]
+        existing = list(state.petrified_sides)
+
+        # Find sides to petrify
+        sides_to_petrify = []
+        for i in range(len(PETRIFY_ORDER)):
+            if len(sides_to_petrify) >= amount:
+                break
+            side_index = PETRIFY_ORDER[i]
+            if side_index not in existing:
+                sides_to_petrify.append(side_index)
+
+        # If we need more than available sides, add None for overflow
+        while len(sides_to_petrify) < amount:
+            sides_to_petrify.append(None)
+
+        # Add new petrified sides
+        new_petrified = existing + sides_to_petrify
+
+        self._states[target] = EntityState(
+            target, state.hp, state.max_hp,
+            state.shield, state.spiky, state.self_heal, state.damage_blocked,
+            state.keep_shields, state.stone_hp, state.fled, state.dodge, state.regen,
+            new_petrified
+        )
+
+    def apply_cleanse_petrify(self, target: Entity, amount: int):
+        """Remove petrification from target's die sides.
+
+        Removes petrification in reverse order (last petrified first).
+        """
+        self._record_action()
+
+        state = self._states[target]
+        petrified = list(state.petrified_sides)
+
+        # Remove from end (reverse order of petrification)
+        for _ in range(min(amount, len(petrified))):
+            if petrified:
+                petrified.pop()
+
+        self._states[target] = EntityState(
+            target, state.hp, state.max_hp,
+            state.shield, state.spiky, state.self_heal, state.damage_blocked,
+            state.keep_shields, state.stone_hp, state.fled, state.dodge, state.regen,
+            petrified
+        )
