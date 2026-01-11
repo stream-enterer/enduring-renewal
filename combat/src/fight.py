@@ -5,6 +5,7 @@ from enum import Enum, auto
 from typing import Optional, TYPE_CHECKING
 from copy import deepcopy
 from math import gcd
+import random
 
 from .entity import Entity, Team, FIELD_CAPACITY
 from .effects import EffectType
@@ -178,15 +179,83 @@ class EntityState:
         """Process meta-keywords that depend on global state.
 
         Meta-keywords:
-        - COPYCAT: Copy keywords from the most recently used die side
-        - ECHO: Copy pips (value) from the most recently used die side
-        - RESONATE: Copy the effect from the most recently used die side,
-                    retaining this side's pips and the RESONATE keyword
-        - PAIR: x2 value if previous die had same calculated value
+        - Turn-start processing (skip turn 0):
+          - FUMBLE: 50% chance to become blank
+          - FLUCTUATE: Change to random effect type, keep keywords and pips
+          - SHIFTER: Add a random keyword
+          - LUCKY: Randomize pips to [0, current_pips]
+          - CRITICAL: 50% chance for +1 pip
+        - Copy keywords:
+          - COPYCAT: Copy keywords from the most recently used die side
+          - ECHO: Copy pips (value) from the most recently used die side
+          - RESONATE: Copy the effect from the most recently used die side,
+                      retaining this side's pips and the RESONATE keyword
+        - Value modifiers:
+          - PAIR: x2 value if previous die had same calculated value
         """
         from .dice import Keyword
 
         calculated = side_state.calculated_effect
+
+        # Turn-start processing keywords - all skip turn 0
+        if fight_log is not None and fight_log._turn != 0:
+            # FUMBLE: 50% chance to become blank
+            if Keyword.FUMBLE in calculated.keywords:
+                seed = fight_log.get_shifter_seed(side_state.index, self.entity)
+                rng = random.Random(seed)
+                if rng.random() < 0.5:
+                    # Replace with blank, keeping only FUMBLE keyword
+                    calculated.effect_type = EffectType.BLANK
+                    calculated.value = 0
+                    calculated.growth_bonus = 0
+                    calculated.keywords = {Keyword.FUMBLE}
+                    return  # No further processing for blanked side
+
+            # FLUCTUATE: Change to random effect type, keep keywords and pips
+            if Keyword.FLUCTUATE in calculated.keywords:
+                seed = fight_log.get_shifter_seed(side_state.index, self.entity)
+                rng = random.Random(seed)
+                # Effect types that have value (exclude BLANK and MANA which are special)
+                value_types = [EffectType.DAMAGE, EffectType.HEAL, EffectType.SHIELD]
+                # Pick a random type different from current
+                choices = [t for t in value_types if t != calculated.effect_type]
+                if choices:
+                    new_type = rng.choice(choices)
+                    calculated.effect_type = new_type
+                # Value and keywords are preserved
+
+            # SHIFTER: Add a random extra keyword, changes each turn
+            if Keyword.SHIFTER in calculated.keywords:
+                seed = fight_log.get_shifter_seed(side_state.index, self.entity)
+                rng = random.Random(seed)
+                # Get list of all keywords (excluding meta/ability-only ones)
+                # Try up to 20 times to find a keyword not already present
+                all_keywords = list(Keyword)
+                for _ in range(20):
+                    possible = rng.choice(all_keywords)
+                    if possible not in calculated.keywords:
+                        calculated.keywords.add(possible)
+                        break
+
+            # LUCKY: Pips randomized to [0, current_pips], changes each turn
+            if Keyword.LUCKY in calculated.keywords:
+                seed = fight_log.get_shifter_seed(side_state.index, self.entity)
+                rng = random.Random(seed)
+                current_value = calculated.calculated_value
+                if current_value > 0:
+                    # Roll determines reduction: int(-roll * (value + 1))
+                    roll = rng.random()
+                    bonus = int(-roll * (current_value + 1))
+                    if bonus != 0:
+                        calculated.value += bonus
+
+            # CRITICAL: 50% chance for +1 pip, rechecks each turn
+            if Keyword.CRITICAL in calculated.keywords:
+                seed = fight_log.get_shifter_seed(side_state.index, self.entity)
+                rng = random.Random(seed)
+                # In Java: nextBoolean() false = +1 bonus
+                if not rng.random() < 0.5:  # 50% chance
+                    calculated.value += 1
 
         # COPYCAT: Copy keywords from most recently used die
         if Keyword.COPYCAT in calculated.keywords and fight_log is not None:
@@ -400,6 +469,29 @@ class FightLog:
 
         # Counter for dice used this turn (for first, sixth, fizz keywords)
         self._dice_used_this_turn: int = 0
+
+        # Turn counter (starts at 0, incremented at end of each turn)
+        # Turn 0 is the initial state - turn-start processing keywords skip turn 0
+        self._turn: int = 0
+
+    def get_shifter_seed(self, side_index: int, entity: Entity) -> int:
+        """Generate a deterministic seed for turn-start processing keywords.
+
+        The seed is based on turn number, side index, and entity position.
+        This ensures effects like shifter/lucky/critical are deterministic
+        per turn but change each turn.
+
+        Args:
+            side_index: The index of the side on the die (0-5)
+            entity: The entity that owns the die
+
+        Returns:
+            An integer seed for random.Random(seed)
+        """
+        # Use entity position to distinguish between entities
+        entity_id = entity.position if entity.position is not None else 0
+        # Combine turn, side index, and entity id into a seed
+        return self._turn * 1000 + side_index * 10 + entity_id
 
     def _update_state(self, entity: Entity, **kwargs) -> EntityState:
         """Update entity state with specific fields while preserving all others.
@@ -954,6 +1046,9 @@ class FightLog:
         - Other turn-based buffs may be cleared (spiky, etc.)
         """
         self._record_action()
+
+        # Increment turn counter
+        self._turn += 1
 
         # Clear pending damage
         self._pending = []

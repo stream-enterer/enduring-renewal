@@ -138,13 +138,17 @@
     "quadUse",
     "hyperUse",
     "rite",
-    "trill"
+    "trill",
+    "shifter",
+    "lucky",
+    "critical",
+    "fluctuate",
+    "fumble"
   ],
   "blocked": {
     "effect_types": ["heal", "shield", "damage"],
     "meta_copy_buff": ["duplicate"],
     "turn_tracking": ["patient", "era", "minusEra"],
-    "turn_start_processing": ["shifter", "lucky", "critical", "fluctuate", "fumble"],
     "target_tracking": ["focus", "duel"],
     "roll_phase": ["cantrip", "sticky"],
     "side_replacement": ["stasis", "enduring", "dogma", "resilient"],

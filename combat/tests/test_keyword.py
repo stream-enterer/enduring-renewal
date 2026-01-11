@@ -7369,3 +7369,276 @@ class TestUnusable:
         # Check if side is usable (should be True)
         result = fight.is_side_usable(normal_side, is_cantrip=False)
         assert result is True, "Normal side should be usable"
+
+
+class TestTurnStartProcessing:
+    """Tests for turn-start processing keywords.
+
+    These keywords modify the side each turn with seeded randomness:
+    - SHIFTER: Add a random extra keyword
+    - LUCKY: Randomize pips to [0, current_pips]
+    - CRITICAL: 50% chance for +1 pip
+    - FLUCTUATE: Change to random effect type, keep keywords and pips
+    - FUMBLE: 50% chance to be blank
+
+    All skip turn 0 (initial state).
+    """
+
+    def test_critical_skips_turn_0(self):
+        """CRITICAL does not modify value on turn 0."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        critical_side = Side(EffectType.DAMAGE, 3, {Keyword.CRITICAL})
+        hero.die.set_all_sides(critical_side)
+
+        # Turn 0 - critical should not activate
+        side_state = fight.get_side_state(hero, 0)
+        assert side_state.value == 3, "CRITICAL should not modify value on turn 0"
+
+    def test_critical_may_add_bonus_after_turn_1(self):
+        """CRITICAL may add +1 on turn 1+."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        critical_side = Side(EffectType.DAMAGE, 3, {Keyword.CRITICAL})
+        hero.die.set_all_sides(critical_side)
+
+        # Advance to turn 1
+        fight.next_turn()
+
+        # On turn 1, critical can activate (seeded random)
+        side_state = fight.get_side_state(hero, 0)
+        # Value should be either 3 or 4 (50% chance each)
+        assert side_state.value in [3, 4], "CRITICAL should be 3 or 4 on turn 1"
+
+    def test_critical_deterministic_per_turn(self):
+        """CRITICAL is deterministic - same turn = same result."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        critical_side = Side(EffectType.DAMAGE, 3, {Keyword.CRITICAL})
+        hero.die.set_all_sides(critical_side)
+
+        fight.next_turn()
+
+        # Get side state twice - should be same result
+        value1 = fight.get_side_state(hero, 0).value
+        value2 = fight.get_side_state(hero, 0).value
+        assert value1 == value2, "CRITICAL should be deterministic on same turn"
+
+    def test_lucky_skips_turn_0(self):
+        """LUCKY does not modify value on turn 0."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        lucky_side = Side(EffectType.DAMAGE, 5, {Keyword.LUCKY})
+        hero.die.set_all_sides(lucky_side)
+
+        # Turn 0 - lucky should not activate
+        side_state = fight.get_side_state(hero, 0)
+        assert side_state.value == 5, "LUCKY should not modify value on turn 0"
+
+    def test_lucky_reduces_value_after_turn_1(self):
+        """LUCKY reduces value to random in [0, original] on turn 1+."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        lucky_side = Side(EffectType.DAMAGE, 5, {Keyword.LUCKY})
+        hero.die.set_all_sides(lucky_side)
+
+        fight.next_turn()
+
+        # On turn 1, lucky activates
+        side_state = fight.get_side_state(hero, 0)
+        # Value should be in range [0, 5]
+        assert 0 <= side_state.value <= 5, "LUCKY should reduce value to [0, original]"
+
+    def test_shifter_skips_turn_0(self):
+        """SHIFTER does not add keywords on turn 0."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        shifter_side = Side(EffectType.DAMAGE, 3, {Keyword.SHIFTER})
+        hero.die.set_all_sides(shifter_side)
+
+        # Turn 0 - shifter should not add keywords
+        side_state = fight.get_side_state(hero, 0)
+        assert len(side_state.calculated_effect.keywords) == 1, "SHIFTER should not add keywords on turn 0"
+        assert Keyword.SHIFTER in side_state.calculated_effect.keywords
+
+    def test_shifter_adds_keyword_after_turn_1(self):
+        """SHIFTER adds a random keyword on turn 1+."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        shifter_side = Side(EffectType.DAMAGE, 3, {Keyword.SHIFTER})
+        hero.die.set_all_sides(shifter_side)
+
+        fight.next_turn()
+
+        # On turn 1, shifter adds a keyword
+        side_state = fight.get_side_state(hero, 0)
+        # Should have SHIFTER + at least one more keyword
+        assert len(side_state.calculated_effect.keywords) >= 2, "SHIFTER should add a keyword on turn 1"
+        assert Keyword.SHIFTER in side_state.calculated_effect.keywords
+
+    def test_fluctuate_skips_turn_0(self):
+        """FLUCTUATE does not change effect type on turn 0."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        fluctuate_side = Side(EffectType.DAMAGE, 3, {Keyword.FLUCTUATE})
+        hero.die.set_all_sides(fluctuate_side)
+
+        # Turn 0 - fluctuate should not change type
+        side_state = fight.get_side_state(hero, 0)
+        assert side_state.effect_type == EffectType.DAMAGE, "FLUCTUATE should not change type on turn 0"
+
+    def test_fluctuate_changes_type_after_turn_1(self):
+        """FLUCTUATE changes to random effect type on turn 1+, preserving value and keywords."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        fluctuate_side = Side(EffectType.DAMAGE, 3, {Keyword.FLUCTUATE, Keyword.GROWTH})
+        hero.die.set_all_sides(fluctuate_side)
+
+        fight.next_turn()
+
+        # On turn 1, fluctuate changes type
+        side_state = fight.get_side_state(hero, 0)
+        # Type should be HEAL or SHIELD (not DAMAGE since we filter current type)
+        assert side_state.effect_type in [EffectType.HEAL, EffectType.SHIELD], \
+            "FLUCTUATE should change to different type"
+        # Value should be preserved
+        assert side_state.value == 3, "FLUCTUATE should preserve value"
+        # Keywords should be preserved
+        assert Keyword.FLUCTUATE in side_state.calculated_effect.keywords
+        assert Keyword.GROWTH in side_state.calculated_effect.keywords
+
+    def test_fumble_skips_turn_0(self):
+        """FUMBLE does not blank the side on turn 0."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        fumble_side = Side(EffectType.DAMAGE, 3, {Keyword.FUMBLE})
+        hero.die.set_all_sides(fumble_side)
+
+        # Turn 0 - fumble should not blank
+        side_state = fight.get_side_state(hero, 0)
+        assert side_state.effect_type == EffectType.DAMAGE, "FUMBLE should not blank on turn 0"
+        assert side_state.value == 3
+
+    def test_fumble_may_blank_after_turn_1(self):
+        """FUMBLE may blank the side on turn 1+ (50% chance)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        fumble_side = Side(EffectType.DAMAGE, 3, {Keyword.FUMBLE})
+        hero.die.set_all_sides(fumble_side)
+
+        fight.next_turn()
+
+        # On turn 1, fumble may or may not blank (seeded random)
+        side_state = fight.get_side_state(hero, 0)
+        # Either normal (DAMAGE with value 3) or blanked (BLANK with value 0)
+        if side_state.effect_type == EffectType.BLANK:
+            assert side_state.value == 0, "Blanked side should have value 0"
+            assert Keyword.FUMBLE in side_state.calculated_effect.keywords
+        else:
+            assert side_state.effect_type == EffectType.DAMAGE
+            assert side_state.value == 3
+
+    def test_turn_counter_increments(self):
+        """Turn counter should increment with next_turn()."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        assert fight._turn == 0, "Turn should start at 0"
+        fight.next_turn()
+        assert fight._turn == 1, "Turn should be 1 after next_turn"
+        fight.next_turn()
+        assert fight._turn == 2, "Turn should be 2 after second next_turn"
+
+    def test_shifter_different_keyword_each_turn(self):
+        """SHIFTER changes keyword each turn (different seed)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        shifter_side = Side(EffectType.DAMAGE, 3, {Keyword.SHIFTER})
+        hero.die.set_all_sides(shifter_side)
+
+        # Get keywords on different turns
+        fight.next_turn()
+        keywords_turn1 = set(fight.get_side_state(hero, 0).calculated_effect.keywords)
+
+        fight.next_turn()
+        keywords_turn2 = set(fight.get_side_state(hero, 0).calculated_effect.keywords)
+
+        # Keywords may be different (different random seed each turn)
+        # Can't guarantee difference, but they should both have SHIFTER + extra
+        assert Keyword.SHIFTER in keywords_turn1
+        assert Keyword.SHIFTER in keywords_turn2
+        assert len(keywords_turn1) >= 2
+        assert len(keywords_turn2) >= 2

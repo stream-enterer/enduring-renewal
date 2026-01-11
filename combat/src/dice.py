@@ -177,6 +177,12 @@ class Keyword(Enum):
     RITE = auto()          # +1 per unused ally, marks them as used
     # Combined keywords
     TRILL = auto()         # trio + skill: x3 if 2 previous dice match + tier bonus
+    # Turn-start processing keywords - modify side each turn
+    SHIFTER = auto()       # Add a random extra keyword, changes each turn
+    LUCKY = auto()         # Pips randomized to [0, current_pips] each turn
+    CRITICAL = auto()      # 50% chance for +1 pip, rechecks each turn
+    FLUCTUATE = auto()     # Change to random side type each turn, retaining keywords and pips
+    FUMBLE = auto()        # 50% chance to be blank each turn
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
