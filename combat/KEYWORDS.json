@@ -183,11 +183,16 @@
     "dispel",
     "hoard",
     "fashionable",
-    "equipped"
+    "equipped",
+    "singleCast",
+    "cooldown",
+    "deplete",
+    "channel",
+    "future"
   ],
   "blocked": {
     "roll_phase": ["cantrip", "sticky"],
-    "spell_tracking": ["singleCast", "cooldown", "deplete", "channel", "spellRescue", "future"],
+    "spell_tracking": ["spellRescue"],
     "item_system": ["potion"],
     "tactic_system": ["tactical"],
     "validation_only": ["permissive"],

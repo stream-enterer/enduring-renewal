@@ -234,6 +234,13 @@ class Keyword(Enum):
     HOARD = auto()       # +N pips where N = unequipped items in party
     FASHIONABLE = auto() # +N pips where N = total tier of equipped items on me
     EQUIPPED = auto()    # +N pips where N = number of items equipped on me
+    # Spell keywords
+    SINGLE_CAST = auto()   # Spell can only be cast once per fight
+    COOLDOWN = auto()      # Spell can only be cast once per turn
+    DEPLETE = auto()       # Spell costs +1 mana each time it is cast
+    CHANNEL = auto()       # Spell costs -1 mana each time it is cast (minimum 1)
+    SPELL_RESCUE = auto()  # Spell cost is refunded if it saves a hero
+    FUTURE = auto()        # Spell effect is delayed until start of next turn
 
 
 # Map from inflict keyword to the keyword it inflicts

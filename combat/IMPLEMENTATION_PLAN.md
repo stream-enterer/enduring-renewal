@@ -64,14 +64,14 @@ def _process_future_queue(self): ...     # Called at turn start
 
 ### Implementation Steps
 
-- [ ] Add Spell infrastructure (study Java, design SpellState class, add to FightLog)
-- [ ] Implement `singleCast` with tests
-- [ ] Implement `cooldown` with tests
-- [ ] Implement `deplete` with tests
-- [ ] Implement `channel` with tests
-- [ ] Implement `spellRescue` with tests
-- [ ] Implement `future` with tests (requires QueuedAbility)
-- [ ] Update KEYWORDS.json (move from blocked → implemented)
+- [x] Add Spell infrastructure (study Java, design SpellState class, add to FightLog)
+- [x] Implement `singleCast` with tests
+- [x] Implement `cooldown` with tests
+- [x] Implement `deplete` with tests
+- [x] Implement `channel` with tests
+- [ ] Implement `spellRescue` with tests (requires rescue detection logic)
+- [x] Implement `future` with tests (requires QueuedAbility)
+- [x] Update KEYWORDS.json (5/6 keywords moved from blocked → implemented)
 
 ---
 

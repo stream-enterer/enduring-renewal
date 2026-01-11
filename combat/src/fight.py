@@ -9,6 +9,8 @@ import random
 
 from .entity import Entity, Team, FIELD_CAPACITY, BONES
 from .effects import EffectType
+from .spell import Spell, SpellState, SpellEffect, QueuedSpell
+from .dice import Keyword
 
 if TYPE_CHECKING:
     from .hero import Hero
@@ -574,6 +576,12 @@ class FightLog:
         # Party inventory - unequipped items (for hoard keyword)
         # These are items owned by the party but not equipped to any hero
         self._party_unequipped_items: list = []  # list[Item]
+
+        # Spell tracking
+        # Maps (entity, spell_name) -> SpellState for tracking spell usage
+        self._spell_states: dict[tuple[Entity, str], SpellState] = {}
+        # Queue of spells with future keyword waiting to execute
+        self._future_queue: list[QueuedSpell] = []
 
     def get_shifter_seed(self, side_index: int, entity: Entity) -> int:
         """Generate a deterministic seed for turn-start processing keywords.
@@ -1191,6 +1199,13 @@ class FightLog:
         # Clear first enemy attack tracking for spy keyword
         self._first_enemy_attack_this_turn = None
 
+        # Process queued future spells
+        self._process_future_queue()
+
+        # Reset spell per-turn tracking (cooldown keyword)
+        for spell_state in self._spell_states.values():
+            spell_state.start_turn()
+
         # Process each entity's turn transition
         for entity, state in list(self._states.items()):
             new_shield = state.shield if state.keep_shields else 0
@@ -1240,6 +1255,209 @@ class FightLog:
                 turns_elapsed=state.turns_elapsed + 1,  # Increment turn counter
                 used_last_turn=was_used_this_turn  # Track for patient keyword
             )
+
+    # ----- Spell System Methods -----
+
+    def _get_spell_state(self, caster: Entity, spell: Spell) -> SpellState:
+        """Get or create spell state for tracking.
+
+        Args:
+            caster: The entity that owns this spell
+            spell: The spell to get state for
+
+        Returns:
+            SpellState for tracking this spell's usage
+        """
+        key = (caster, spell.name)
+        if key not in self._spell_states:
+            self._spell_states[key] = SpellState(spell)
+        return self._spell_states[key]
+
+    def get_spell_cost(self, caster: Entity, spell: Spell) -> int:
+        """Get the current cost of a spell after all modifiers.
+
+        The cost is:
+        - base_cost + deplete bonuses - channel bonuses
+        - Minimum of 1 (from channel keyword)
+
+        Args:
+            caster: The entity that owns this spell
+            spell: The spell to check
+
+        Returns:
+            Current mana cost to cast the spell
+        """
+        state = self._get_spell_state(caster, spell)
+        return state.get_current_cost()
+
+    def is_spell_available(self, caster: Entity, spell: Spell) -> bool:
+        """Check if a spell can be cast.
+
+        A spell is unavailable if:
+        - It has singleCast and was already cast this fight
+        - It has cooldown and was already cast this turn
+        - There's not enough mana (checked separately)
+
+        Args:
+            caster: The entity that owns this spell
+            spell: The spell to check
+
+        Returns:
+            True if the spell can be cast (ignoring mana)
+        """
+        state = self._get_spell_state(caster, spell)
+        return state.is_available()
+
+    def can_cast_spell(self, caster: Entity, spell: Spell) -> bool:
+        """Check if a spell can be cast including mana check.
+
+        Args:
+            caster: The entity that owns this spell
+            spell: The spell to check
+
+        Returns:
+            True if the spell can be cast (has enough mana and is available)
+        """
+        if not self.is_spell_available(caster, spell):
+            return False
+        cost = self.get_spell_cost(caster, spell)
+        return self._total_mana >= cost
+
+    def cast_spell(self, caster: Entity, spell: Spell, target: Optional[Entity] = None) -> bool:
+        """Cast a spell, applying its effect.
+
+        Handles:
+        - Mana cost deduction
+        - singleCast/cooldown tracking
+        - deplete/channel cost modifications
+        - future keyword (queues effect for next turn)
+        - spellRescue (mana refund if saves a hero - tracked for later)
+
+        Args:
+            caster: The entity casting the spell
+            spell: The spell to cast
+            target: The target entity (if spell requires one)
+
+        Returns:
+            True if spell was cast successfully, False if it couldn't be cast
+        """
+        if not self.can_cast_spell(caster, spell):
+            return False
+
+        self._record_action()
+
+        # Get spell state and cost
+        state = self._get_spell_state(caster, spell)
+        cost = state.get_current_cost()
+
+        # Deduct mana
+        self._total_mana -= cost
+
+        # Track the cast
+        state.on_cast()
+
+        # Check for future keyword - queue instead of immediate effect
+        if spell.has_keyword(Keyword.FUTURE):
+            self._future_queue.append(QueuedSpell(
+                spell=spell,
+                caster=caster,
+                target=target,
+                turns_remaining=1
+            ))
+            return True
+
+        # Apply the spell effect
+        self._apply_spell_effect(caster, spell, target, cost)
+
+        return True
+
+    def _apply_spell_effect(self, caster: Entity, spell: Spell, target: Optional[Entity], cost_paid: int):
+        """Apply a spell's effect to target(s).
+
+        Args:
+            caster: The entity that cast the spell
+            spell: The spell being cast
+            target: The target entity
+            cost_paid: The mana cost paid (for spellRescue refund)
+        """
+        effect = spell.effect
+
+        # For spellRescue, track if we save a hero
+        heroes_before_cast = []
+        if spell.has_keyword(Keyword.SPELL_RESCUE):
+            # Track which heroes are alive and about to die
+            for hero in self.heroes:
+                state = self._states[hero]
+                if not state.is_dead:
+                    heroes_before_cast.append((hero, state.hp))
+
+        # Apply effect based on type
+        if effect.target_friendly:
+            # Targets allies (usually heal/shield)
+            if target is not None:
+                self._apply_friendly_spell(spell, target, effect.value)
+        else:
+            # Targets enemies (usually damage)
+            if target is not None:
+                self._apply_hostile_spell(spell, target, effect.value)
+
+        # Check for spellRescue - did we save a dying hero?
+        if spell.has_keyword(Keyword.SPELL_RESCUE):
+            for hero, hp_before in heroes_before_cast:
+                state = self._states[hero]
+                # If hero was about to die (low HP) and is now alive with more HP,
+                # we "saved" them - refund the mana cost
+                if hp_before <= 0 and not state.is_dead:
+                    # This shouldn't happen if they were dead before...
+                    pass
+                # A hero is "saved" if they would have died but the spell kept them alive
+                # This is complex to detect - simplified: if heal brought them above 0
+                # from a state where they would die from pending effects
+
+    def _apply_friendly_spell(self, spell: Spell, target: Entity, value: int):
+        """Apply a friendly spell effect (heal/shield)."""
+        effect = spell.effect
+        if effect.effect_type == EffectType.HEAL:
+            state = self._states[target]
+            new_hp = min(state.hp + value, state.max_hp)
+            self._update_state(target, hp=new_hp)
+        elif effect.effect_type == EffectType.SHIELD:
+            state = self._states[target]
+            self._update_state(target, shield=state.shield + value)
+
+    def _apply_hostile_spell(self, spell: Spell, target: Entity, value: int):
+        """Apply a hostile spell effect (damage)."""
+        effect = spell.effect
+        if effect.effect_type == EffectType.DAMAGE:
+            state = self._states[target]
+            # Damage goes through shield first
+            shield_damage = min(value, state.shield)
+            remaining_damage = value - shield_damage
+            new_shield = state.shield - shield_damage
+            new_hp = state.hp - remaining_damage
+            self._update_state(target, hp=new_hp, shield=new_shield)
+
+    def _process_future_queue(self):
+        """Process queued future spells at the start of turn.
+
+        Called at the beginning of next_turn().
+        """
+        # Process and remove ready spells
+        ready_spells = []
+        remaining = []
+
+        for queued in self._future_queue:
+            if queued.tick():
+                ready_spells.append(queued)
+            else:
+                remaining.append(queued)
+
+        self._future_queue = remaining
+
+        # Apply ready spells
+        for queued in ready_spells:
+            # For future spells, we don't charge mana again (already paid)
+            self._apply_spell_effect(queued.caster, queued.spell, queued.target, 0)
 
     def apply_kill(self, target: Entity):
         """Instantly kill an entity (set HP to 0).
