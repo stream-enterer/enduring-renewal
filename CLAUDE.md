@@ -4,7 +4,7 @@
 
 **Phase 1 complete**: 36 test methods implemented from original test suite.
 **Phase 2 complete**: 9 infrastructure components, 124 passing Python tests.
-**Phase 3 active**: Expanding keyword coverage from ~11 to full game library (~150).
+**Phase 3 active**: Expanding keyword coverage from 11 to full game library (191 keywords).
 **On "Continue"**: Read PROGRESS, follow the keyword workflow below.
 
 ---
@@ -51,7 +51,7 @@ notes/            # Scratch space (gitignored)
 ## Key Reference Files
 
 Keywords source:
-- `decompiled/gameplay/effect/eff/keyword/Keyword.java` - Full keyword enum (~150 keywords)
+- `decompiled/gameplay/effect/eff/keyword/Keyword.java` - Full keyword enum (191 keywords)
 
 Combat logic:
 - `decompiled/gameplay/fightLog/FightLog.java` - Central combat state manager
@@ -71,120 +71,127 @@ Conditional bonus system:
 
 # Phase 3: Keyword Completeness
 
-The game has ~150 keywords. We have ~11 implemented. Phase 3 expands coverage.
+The game has 191 keywords. We have 11 implemented. Phase 3 expands coverage.
+See `combat/PROGRESS` for complete categorization and tracking.
 
-## Currently Implemented Keywords
+## Currently Implemented (11)
 
-```python
-GROWTH      # After use, side value increases by +1
-MANA        # Effect also grants mana equal to value
-PETRIFY     # Turns target's sides to stone (Blank)
-RESCUE      # Die recharged if heal saves a dying hero
-RAMPAGE     # Die recharged if attack kills an enemy
-ENGAGE      # x2 effect vs full HP targets
-RANGED      # Can hit back row, avoids on-hit passives
-SINGLE_USE  # Side becomes blank after use
-COPYCAT     # Copies keywords from previous die
-CRUEL       # x2 effect vs targets at half HP or less
-PAIR        # x2 effect if previous die had same value
+```
+GROWTH, MANA, PETRIFY, RESCUE, RAMPAGE, ENGAGE, RANGED, SINGLE_USE, COPYCAT, CRUEL, PAIR
 ```
 
-## Keyword Categories (Priority Order)
+## Complete Keyword Categories (191 total)
 
-### Tier 1: Conditional x2 Keywords (high impact, common)
-Similar to ENGAGE/CRUEL - double effect based on condition.
+### Core Effects (4)
+`heal`, `shield`, `damage`, `manaGain`
 
-| Keyword | Condition | Target/Self |
-|---------|-----------|-------------|
-| pristine | I have full HP | self |
-| deathwish | I am dying this turn | self |
-| armoured | I have shields | self |
-| wham | target has shields | target |
-| terminal | target on 1 HP | target |
-| moxie | I have least HP of all | self |
-| bully | I have most HP of all | self |
-| squish | target has least HP | target |
-| uppercut | target has most HP | target |
+### Conditional x2 - Self (9)
+x2 based on source state:
+`pristine`, `deathwish`, `armoured`, `moxie`, `bully`, `reborn`, `patient`, `first`, `sixth`
 
-### Tier 2: Pip Bonus Keywords (dynamic value modification)
-Add pips based on game state.
+### Conditional x2 - Target (11)
+x2 based on target state:
+`engage`, `cruel`, `terminal`, `wham`, `squish`, `uppercut`, `ego`, `serrated`, `century`, `duel`, `tall`
 
-| Keyword | Bonus Source |
-|---------|--------------|
-| bloodlust | +1 per damaged enemy |
-| charged | +1 per stored mana |
-| steel | +1 per shield I have |
-| flesh | +1 per HP I have |
-| fizz | +1 per ability used this turn |
-| skill | +1 per my level/tier |
-| defy | +1 per incoming damage |
-| era | +1 per elapsed turn |
+### Conditional x2 - Comparison (5)
+x2 comparing source vs target HP:
+`underdog`, `overdog`, `dog`, `hyena`, `sloth`
 
-### Tier 3: Streak/Combo Keywords
-Based on die sequences.
+### Conditional x2 - Sequence (3)
+x2 based on previous die:
+`chain`, `inspired`, `focus`
 
-| Keyword | Condition | Multiplier |
-|---------|-----------|------------|
-| trio | 3 dice same value | x3 |
-| quin | 5 dice same value | x5 |
-| step | run of 2 (eg 1,2) | x2 |
-| run | run of 3 (eg 1,2,3) | x3 |
-| sprint | run of 5 | x5 |
-| chain | shares keyword with prev | x2 |
-| inspired | prev die had more pips | x2 |
+### Streak Multipliers (7)
+Value-based sequences:
+`pair`, `trio`, `quin`, `sept`, `step`, `run`, `sprint`
 
-### Tier 4: Buff/Debuff Application
-Apply effects to target.
+### Pip Modifiers (10)
+Modify how N is calculated:
+`revDiff`, `doubDiff`, `fault`, `plus`, `doubled`, `squared`, `onesie`, `threesy`, `zeroed`, `treble`
 
-| Keyword | Effect |
-|---------|--------|
-| regen | heal N at end of each turn |
-| poison | (already have) |
-| weaken | -N to all pips for 1 turn |
-| boost | +N to all pips for 1 turn |
-| vulnerable | take +N damage for 1 turn |
-| cleanse | remove N negative effects |
+### Pip Bonus (19)
++N pips from game state:
+`fizz`, `skill`, `bloodlust`, `defy`, `charged`, `steel`, `flesh`, `rainbow`, `hoard`, `plague`, `acidic`, `vigil`, `flurry`, `fashionable`, `equipped`, `buffed`, `affected`, `rite`, `era`
 
-### Tier 5: Die Modification
-Change how dies work.
+### Death Triggers (4)
+`rampage`, `rescue`, `guilt`, `evil`
 
-| Keyword | Effect |
-|---------|--------|
-| doubleUse | can be used twice per turn |
-| stasis | side cannot change |
-| sticky | cannot be rerolled |
-| decay | -1 pip after each use |
-| hyperGrowth | +N pips after use |
+### Die Modification (7)
+`growth`, `hyperGrowth`, `undergrowth`, `groooooowth`, `doubleGrowth`, `decay`, `stasis`
 
-### Tier 6: Self-Targeting Variants
-selfX versions of existing keywords.
+### Use Modifiers (5)
+`singleUse`, `doubleUse`, `quadUse`, `hyperUse`, `cantrip`
 
-| Keyword | Effect |
-|---------|--------|
-| selfShield | shield myself for N |
-| selfHeal | heal myself for N |
-| selfPoison | poison myself |
-| selfRegen | regen on myself |
+### Buff/Debuff (13)
+`vulnerable`, `regen`, `poison`, `weaken`, `boost`, `smith`, `permaBoost`, `petrify`, `hypnotise`, `dispel`, `vitality`, `wither`, `cleanse`
 
-### Tier 7: Meta/Copy Keywords
-Copy effects from other sources.
+### Targeting Restrictions (5)
+`eliminate`, `heavy`, `generous`, `scared`, `picky`
 
-| Keyword | Effect |
-|---------|--------|
-| echo | copy pips from previous die |
-| resonate | copy full effect from previous die |
-| share | targets gain my keywords |
-| spy | copy keywords from first enemy attack |
+### Multi-Hit (4)
+`cleave`, `descend`, `duplicate`, `repel`
 
-### Tier 8: Targeting Restrictions
-Limit valid targets.
+### Self Effects (6)
+`pain`, `death`, `exert`, `manacost`, `mandatory`, `fierce`
 
-| Keyword | Restriction |
-|---------|-------------|
-| eliminate | target must have least HP |
-| heavy | target must have most HP |
-| generous | cannot target myself |
-| scared | target must have N or less HP |
+### Property Keywords (8)
+`permissive`, `sticky`, `enduring`, `dogma`, `resilient`, `unusable`, `tactical`, `lead`
+
+### Meta/Copy (8)
+`spy`, `dejavu`, `echo`, `copycat`, `resonate`, `share`, `annul`, `possessed`
+
+### Random Effects (5)
+`shifter`, `lucky`, `critical`, `fluctuate`, `fumble`
+
+### Summon/Consume (3)
+`boned`, `hyperBoned`, `potion`
+
+### Self Variants (8)
+`selfRepel`, `selfPetrify`, `selfPoison`, `selfRegen`, `selfCleanse`, `selfVulnerable`, `selfShield`, `selfHeal`
+
+### Group Variants (5)
+`groupExert`, `groupGrowth`, `groupDecay`, `groupSingleUse`, `groupGroooooowth`
+
+### Halve Variants (3)
+`halveEngage`, `halveDeathwish`, `halveDuel`
+
+### Anti Variants (5)
+`antiEngage`, `antiPristine`, `antiDog`, `antiDeathwish`, `antiPair`
+
+### Swap Variants (4)
+`swapDeathwish`, `swapCruel`, `swapEngage`, `swapTerminal`
+
+### Minus Variants (2)
+`minusFlesh`, `minusEra`
+
+### Combined Keywords (10)
+`engarged`, `cruesh`, `pristeel`, `deathlust`, `trill`, `duegue`, `engine`, `underocus`, `priswish`, `paxin`
+
+### Inflict Keywords (9)
+`inflictSelfShield`, `inflictBoned`, `inflictExert`, `inflictPain`, `inflictDeath`, `inflictSingleUse`, `inflictNothing`, `inflictInflictNothing`, `inflictInflictDeath`
+
+### Spell Keywords (6)
+`singleCast`, `cooldown`, `deplete`, `channel`, `spellRescue`, `future`
+
+### Special (3)
+`nothing`, `removed`, `ranged`
+
+## Implementation Tiers (Priority Order)
+
+| Tier | Name | Keywords | Count |
+|------|------|----------|-------|
+| 1 | Conditional x2 | Self + Target + Comparison + Sequence | 28 |
+| 2 | Pip Bonus | +N based on state | 19 |
+| 3 | Streak/Sequence | pair, trio, step, run, etc | 7 |
+| 4 | Buff/Debuff | Status effects | 13 |
+| 5 | Die Modification | growth, decay, use modifiers | 12 |
+| 6 | Self-Targeting | selfX + self effects | 14 |
+| 7 | Meta/Copy | echo, resonate, copy keywords | 13 |
+| 8 | Targeting/Multi-hit | Restrictions + cleave | 9 |
+| 9 | Variants | group/halve/anti/swap/minus | 19 |
+| 10 | Combined | Compound keywords | 10 |
+| 11 | Inflict | Add keywords to targets | 9 |
+| 12 | Other | Spell, property, pip mods, etc | 38 |
 
 ## Keyword Workflow
 
