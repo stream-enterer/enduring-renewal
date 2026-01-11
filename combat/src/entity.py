@@ -43,7 +43,7 @@ class Entity:
 
 
 # Common entity types - heroes are always HERO sized
-FIGHTER = EntityType("Fighter", 6, EntitySize.HERO)
+FIGHTER = EntityType("Fighter", 5, EntitySize.HERO)
 HEALER = EntityType("Healer", 6, EntitySize.HERO)
 
 # Monsters with various sizes

@@ -17,7 +17,7 @@ class HeroType:
 
 
 # Hero types
-FIGHTER_TYPE = HeroType("Fighter", 6, create_fighter_die)
+FIGHTER_TYPE = HeroType("Fighter", 5, create_fighter_die)
 
 
 class Hero:

@@ -10,6 +10,17 @@ class EffectType(Enum):
     SHIELD = auto()
     HEAL_SHIELD = auto()  # Combined heal+shield effect
 
+    def contains(self, other: "EffectType") -> bool:
+        """Check if this effect type contains the other type.
+
+        Combined types like HEAL_SHIELD contain both HEAL and SHIELD.
+        """
+        if self == other:
+            return True
+        if self == EffectType.HEAL_SHIELD:
+            return other in (EffectType.HEAL, EffectType.SHIELD)
+        return False
+
 
 # Default maximum value for any effect (damage, healing, shield, etc.)
 DEFAULT_NUMBER_LIMIT = 999

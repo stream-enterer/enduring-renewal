@@ -60,12 +60,17 @@ class SideModifier(ABC):
 
 @dataclass
 class FlatBonus(SideModifier):
-    """Adds a flat bonus to matching sides."""
+    """Adds a flat bonus to matching sides.
+
+    Uses effect type containment matching: a HEAL_SHIELD side matches
+    both HEAL and SHIELD type conditions.
+    """
     effect_type: EffectType
     bonus: int
 
     def applies_to(self, side: Side) -> bool:
-        return side.effect_type == self.effect_type
+        # Use containment check: HEAL_SHIELD contains both HEAL and SHIELD
+        return side.effect_type.contains(self.effect_type)
 
     def modify(self, side: Side) -> Side:
         if self.applies_to(side):
@@ -98,6 +103,8 @@ FAINT_HALO = Item(
     "Faint Halo",
     triggers=[ItemTrigger(TriggerType.ON_RESCUE, MaxHPBuff(1), target_self=True)]
 )
+DRAGON_PIPE = Item("Dragon Pipe", modifiers=[FlatBonus(EffectType.HEAL, 1)])
+METAL_STUDS = Item("Metal Studs", modifiers=[FlatBonus(EffectType.SHIELD, 1)])
 
 
 def item_by_name(name: str) -> Item:
@@ -105,5 +112,7 @@ def item_by_name(name: str) -> Item:
     items = {
         "Gauntlet": GAUNTLET,
         "Faint Halo": FAINT_HALO,
+        "Dragon Pipe": DRAGON_PIPE,
+        "Metal Studs": METAL_STUDS,
     }
     return items[name]

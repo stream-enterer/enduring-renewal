@@ -3,8 +3,9 @@
 from src.entity import Entity, Team, GOBLIN
 from src.fight import FightLog, Temporality
 from src.hero import Hero, FIGHTER_TYPE
-from src.item import item_by_name
+from src.item import item_by_name, Item
 from src.effects import EffectType
+from src.dice import Side
 
 
 def setup_fight_with_hero() -> tuple[FightLog, Hero, Entity]:
@@ -57,7 +58,7 @@ def test_steel_heart():
     # Add Faint Halo item
     hero.add_item(item_by_name("Faint Halo"))
 
-    initial_max_hp = hero.hero_type.hp  # Fighter has 6 HP
+    initial_max_hp = hero.hero_type.hp  # Fighter has 5 HP
 
     # Shield self while not dying - max HP shouldn't increase
     fight.apply_shield(hero.entity, amount=1)
@@ -84,3 +85,48 @@ def test_steel_heart():
     present_state = fight.get_state(hero.entity, Temporality.PRESENT)
     assert present_state.max_hp == initial_max_hp + 1, \
         f"Max HP should increase when rescued, got {present_state.max_hp}"
+
+
+def test_pipe_and_studs_with_heal_shield():
+    """Dragon Pipe and Metal Studs both apply to healShield sides.
+
+    From TestItem.testPipeAndStudsWithHealShield - combined effect types
+    match both component type conditions, so bonuses stack.
+
+    healShield(1) + Dragon Pipe (+1 heal) + Metal Studs (+1 shield)
+    = healShield(3) because HEAL_SHIELD contains both HEAL and SHIELD.
+    """
+    fight, hero, monster = setup_fight_with_hero()
+
+    # Add Dragon Pipe (+1 to heal) and Metal Studs (+1 to shield)
+    hero.add_item(item_by_name("Dragon Pipe"))
+    hero.add_item(item_by_name("Metal Studs"))
+
+    # Fighter has 5 HP, take 4 damage -> 1 HP
+    fight.apply_damage(monster, hero.entity, amount=4, is_pending=False)
+    hero_state = fight.get_state(hero.entity, Temporality.PRESENT)
+    assert hero_state.hp == 1, f"Warrior should be on 1hp, got {hero_state.hp}"
+
+    # Create a healShield side and apply item modifiers
+    base_side = Side(EffectType.HEAL_SHIELD, 1)
+
+    # Apply item modifiers - both should apply since HEAL_SHIELD contains both types
+    modified_side = base_side
+    for item in hero.get_items():
+        modified_side = item.modify_side(modified_side)
+
+    # Should be healShield(3) now (1 + 1 from Dragon Pipe + 1 from Metal Studs)
+    assert modified_side.value == 3, \
+        f"healShield should be boosted to 3, got {modified_side.value}"
+
+    # Apply the heal_shield effect
+    fight.apply_heal_shield(hero.entity, heal_amount=modified_side.value,
+                            shield_amount=modified_side.value)
+
+    # Warrior should be on 4 HP (1 + 3 heal, capped at 5)
+    hero_state = fight.get_state(hero.entity, Temporality.PRESENT)
+    assert hero_state.hp == 4, f"Warrior should be on 4hp, got {hero_state.hp}"
+
+    # Warrior should have 3 shields
+    assert hero_state.shield == 3, \
+        f"Warrior should have 3 shields, got {hero_state.shield}"

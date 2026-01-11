@@ -352,6 +352,26 @@ class FightLog:
             state.shield, state.spiky, state.self_heal, state.damage_blocked
         )
 
+    def apply_heal_shield(self, target: Entity, heal_amount: int, shield_amount: int):
+        """Apply both heal and shield to target.
+
+        Combined effect: heals first (capped at max HP), then adds shield.
+        Also checks for rescue triggers.
+        """
+        # Check if target was dying before
+        was_dying = self.get_state(target, Temporality.FUTURE).is_dead
+
+        self._record_action()
+        state = self._states[target]
+        new_hp = min(state.hp + heal_amount, state.max_hp)
+        self._states[target] = EntityState(
+            target, new_hp, state.max_hp,
+            state.shield + shield_amount, state.spiky, state.self_heal, state.damage_blocked
+        )
+
+        # Check for rescue and fire triggers
+        self._check_and_fire_rescue(target, was_dying)
+
     def apply_buff_self_heal(self, target: Entity):
         """Apply selfHeal buff to target. SelfHeal negates pain damage."""
         self._record_action()

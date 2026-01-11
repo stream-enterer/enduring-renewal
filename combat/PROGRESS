@@ -1,12 +1,20 @@
 {
   "current": {
     "file": "TestItem",
-    "method": "testPipeAndStudsWithHealShield",
+    "method": "testBonusIncomingWithHealShields",
     "status": "analyzing",
     "hypothesis": null,
     "verified": null
   },
   "completed": [
+    {
+      "file": "TestItem",
+      "method": "testPipeAndStudsWithHealShield",
+      "hypothesis": "Combined effect types like HEAL_SHIELD match both Heal and Shield type conditions. Multiple item bonuses stack on a single side.",
+      "verified": "Confirmed. Fighter has 5 HP.",
+      "test": "tests/test_item.py::test_pipe_and_studs_with_heal_shield",
+      "timestamp": "2025-01-10T16:40:00Z"
+    },
     {
       "file": "TestItem",
       "method": "testSteelHeart",
