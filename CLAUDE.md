@@ -32,103 +32,36 @@ verified ⊆ implemented (verified is always a subset)
 
 ## Workflow
 
-**Token efficiency:** Read `KEYWORDS.json` for current state. Only grep/read `fight.py` or `dice.py` sections when implementing - patterns below are starting points.
-
 When asked to "continue":
 
-1. **Read `combat/KEYWORDS.json`** - Compute `remaining = all - implemented - blocked`
-2. **If remaining is non-empty** - Implement unblocked keywords first (simpler)
-3. **If only blocked remain** - Use infrastructure-first workflow below
-4. **After implementing** - Update `KEYWORDS.json`, run tests, commit changes
+1. **Read `combat/IMPLEMENTATION_PLAN.md`** - Check "Current" section for next task
+2. **Implement** using the process below
+3. **Update state** and commit
 
-### Committing Changes
+### Implementation Process
 
-After each implementation session:
+1. **Read "Current"** in `IMPLEMENTATION_PLAN.md`
+2. **Verify not already done** - Check if keywords already in KEYWORDS.json `implemented`
+   - If done: Update "Current" to next system, then re-read
+3. **Study Java** using file references in the plan
+4. **Implement** core infrastructure + all dependent keywords
+5. **Run tests** - `cd combat && uv run pytest` (all must pass)
+6. **Update state** (only after tests pass):
+   - `KEYWORDS.json`: Move keywords from `blocked` → `implemented`
+   - `IMPLEMENTATION_PLAN.md`: Add to "Completed Systems", update "Current" to next
+7. **Commit**: `Implement <system> infrastructure with <x>, <y>, <z> keywords`
 
-1. **Update `KEYWORDS.json`** - Move implemented keywords from `blocked` to `implemented`
-2. **Run tests** - `cd combat && uv run pytest` (all must pass)
-3. **Commit** with message format: `Implement <system/keywords> with N keywords`
-   - Example: `Implement usage_tracking infrastructure with 5 keywords`
-   - Example: `Implement selfShield, selfHeal keywords`
+**If blocked:** Pick different system, note dependency in plan
+**If complex:** Implement incrementally, update state as each piece lands
+**If unclear:** Ask user about Java behavior
+**If all done:** "Current" should say `**COMPLETE** - Only permanently blocked keywords remain`
 
-### Infrastructure-First Workflow
+## Blocked Infrastructure
 
-When only blocked keywords remain:
-
-1. **Select infrastructure** using priority:
-   - **First**: Systems with no dependencies and high keyword count
-   - **Second**: Systems that unblock dependency chains (e.g., `duel` unblocks `halveDuel`, `duegue`)
-   - **Third**: Systems with fewer keywords / lower impact
-2. **For each infrastructure system:**
-   - Study Java implementation of that system
-   - Design Python equivalent
-   - Implement core infrastructure
-   - Implement all keywords that depend on it
-   - Move keywords from `blocked` to `implemented`
-3. **Commit**: `Implement <system> infrastructure with <x>, <y>, <z> keywords`
-4. **Report**: system implemented, keywords unblocked, remaining blocked count
-
-**Error recovery:**
-- If system is complex → implement incrementally, unblock keywords as each piece lands
-- If system depends on another blocked system → note dependency, move to different system
-- If unsure about Java behavior → ask user for clarification
-
-## Blocked Infrastructure Catalog
-
-Complete list from `KEYWORDS.json`. Priority based on: keyword count, dependency chains, implementation complexity.
-
-### Completed Systems
-
-| System | Keywords | Status |
-|--------|----------|--------|
-| `status_effect_system` | poison, regen, cleanse, selfPoison, selfRegen, selfCleanse, plague, acidic (8) | ✅ Done |
-| `buff_system` | weaken, boost, vulnerable, smith, permaBoost, selfVulnerable, buffed, affected, skill (9) | ✅ Done |
-| `usage_tracking` | doubleUse, quadUse, hyperUse, rite, trill (5) | ✅ Done |
-
-### High Priority (High Impact / Low Complexity)
-
-| System | Keywords | Notes |
-|--------|----------|-------|
-| `turn_start_processing` | shifter, lucky, critical, fluctuate, fumble (5) | Turn-start hooks, side modification |
-
-### Medium Priority (Moderate Complexity)
-
-| System | Keywords | Notes |
-|--------|----------|-------|
-| `target_tracking` | focus, duel (2) | Track last/locked target; `duel` unblocks `halveDuel`, `duegue` |
-| `turn_tracking` | patient, era, minusEra (3) | Count turns elapsed |
-| `spell_tracking` | singleCast, cooldown, deplete, channel, spellRescue, future (6) | Spell-specific counters and triggers |
-| `side_replacement` | stasis, enduring, dogma, resilient (4) | Preserve/restore side after use |
-| `meta_copy_advanced` | share, spy, dejavu, annul, possessed (5) | Advanced side copying/modification |
-
-### Lower Priority (Complex / Low Keyword Count)
-
-| System | Keywords | Notes |
-|--------|----------|-------|
-| `side_injection` | inflictSelfShield, inflictBoned, inflictExert, inflictPain, inflictDeath, inflictSingleUse, inflictNothing, inflictInflictNothing, inflictInflictDeath (9) | Modify target's dice |
-| `entity_summoning` | boned, hyperBoned (2) | Create new entities mid-combat |
-| `item_system` | hoard, fashionable, equipped, potion (4) | Requires item infrastructure |
-| `max_hp_modification` | vitality, wither (2) | Modify max HP |
-| `side_modification` | hypnotise (1) | Change side properties |
-| `trait_system` | dispel (1) | Trait removal |
-| `group_buff_system` | lead (1) | Team-wide buffs |
-| `tactic_system` | tactical (1) | Tactic interaction |
-| `roll_phase` | cantrip, sticky (2) | Roll/reroll modification |
-
-### Dependency Chains
-
-These keywords depend on other blocked keywords:
-- `depends_on_duel`: halveDuel, duegue (2) - Blocked until `duel` implemented
-- `depends_on_focus`: underocus (1) - Blocked until `focus` implemented
-- ~~`depends_on_skill`: trill~~ - ✅ Done (skill implemented)
-
-### Special Cases
-
-| System | Keywords | Notes |
-|--------|----------|-------|
-| `effect_types` | heal, shield, damage (3) | Core effect types - may already exist, needs verification |
-| `validation_only` | permissive (1) | Targeting validation only |
-| `not_implementable` | removed (1) | Deprecated, skip |
+See `combat/IMPLEMENTATION_PLAN.md` for:
+- Dependency graph and numbered implementation order
+- Per-system Java file references and complexity ratings
+- Permanently blocked keywords (6 total: cantrip, sticky, tactical, permissive, potion, removed)
 
 ## Infrastructure Implementation Patterns
 
@@ -390,19 +323,13 @@ pristine(Colours.light, "have full hp", StateConditionType.FullHP, true),
 
 ## Funnel Sieve Verification
 
-After ALL keywords implemented (including blocked), run gameplay tests:
+After ALL keywords implemented, run gameplay tests:
 
-**Layer 1-2: Already Verifiable** (all keywords implemented)
-- Combined keywords: engine, paxin, engarged, cruesh
-- Variant keywords: antiEngage, halveEngage, swapCruel, groupGrowth
+**Layer 1: Combined/Variant keywords**
+- Combined: engine, paxin, engarged, cruesh
+- Variants: antiEngage, halveEngage, swapCruel, groupGrowth
 
-**Layer 3: Requires Infrastructure** (currently blocked)
-- poison → status_effect_system
-- weaken → buff_system
-- boned → entity_summoning
-- inflictPain → side_injection
-
-**Layer 4: Edge Cases**
+**Layer 2: Edge Cases**
 - Multiple keywords on same side (stacking)
 - Parameterized keywords (N from pips)
 - Self-targeting keywords (selfHeal, selfShield)
