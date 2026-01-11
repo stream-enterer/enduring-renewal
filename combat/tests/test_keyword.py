@@ -651,3 +651,93 @@ class TestDrain:
         # Hero should still be at max HP (not over)
         hero_state = fight.get_state(hero, Temporality.PRESENT)
         assert hero_state.hp == 5, "Drain heal should be capped at max HP"
+
+
+class TestLifestealVsInvincible:
+    """Tests for Drain/SelfHeal vs Dodge (invincibility).
+
+    Drain heals the attacker by the intended amount even if the target
+    has the Dodge buff (invincibility), which prevents the damage.
+
+    The heal is based on the attack's value, not actual damage dealt.
+
+    Verified: Confirmed.
+    """
+
+    def test_dodge_makes_target_immune(self):
+        """Dodge buff makes target immune to damage."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Apply dodge to monster
+        fight.apply_dodge(monster)
+
+        # Try to damage monster
+        fight.apply_damage(hero, monster, 3, is_pending=False)
+
+        # Monster should take no damage
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 4, "Dodge should make target immune to damage"
+
+    def test_drain_heals_even_with_dodge(self):
+        """Drain still heals attacker even when target has dodge."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Damage hero first
+        fight.apply_damage(monster, hero, 3, is_pending=False)
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.hp == 2, "Hero should be at 2 HP"
+
+        # Apply dodge to monster
+        fight.apply_dodge(monster)
+
+        # Hero uses drain on monster with dodge
+        fight.apply_drain_damage(hero, monster, 1)
+
+        # Hero should still be healed by 1
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.hp == 3, "Drain should heal attacker even with dodge"
+
+        # Monster should take no damage
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 4, "Monster with dodge should take no damage"
+
+    def test_lifesteal_vs_invincible_full_scenario(self):
+        """Full lifestealVsInvincible test matching original Java test.
+
+        Setup: 1 Fighter hero (5 HP) vs 1 Goblin monster (4 HP)
+        - Monster damages hero for 3 -> hero at 2 HP
+        - Hero uses drain(1) on monster -> hero at 3 HP
+        - Monster gets dodge buff
+        - Hero uses drain(1) again -> hero at 4 HP (still heals despite dodge)
+
+        Verified: Confirmed.
+        """
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+        hero_max = 5
+
+        # Monster damages hero for 3
+        fight.apply_damage(monster, hero, 3, is_pending=False)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == hero_max - 3, "hero should have taken 3 damage"
+
+        # Hero uses drain(1) on monster
+        fight.apply_drain_damage(hero, monster, 1)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == hero_max - 2, "hero should have healed 1 damage"
+
+        # Monster gets dodge buff (invincibility)
+        fight.apply_dodge(monster)
+
+        # Hero uses drain(1) on monster again
+        fight.apply_drain_damage(hero, monster, 1)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == hero_max - 1, "hero should still heal additional damage"

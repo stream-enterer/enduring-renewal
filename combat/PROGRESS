@@ -1,12 +1,18 @@
 {
   "current": {
     "file": "TestKeyword",
-    "method": "lifestealVsInvincible",
+    "method": "regen",
     "status": "analyzing",
     "hypothesis": null,
     "verified": null
   },
   "blocked": [
+    {
+      "file": "TestKeyword",
+      "method": "precisePlusMagic",
+      "reason": "Requires mana system (shieldMana, getTotalMana) and buff/keyword application system (AffectSides, AddKeyword).",
+      "timestamp": "2025-01-10T21:30:00Z"
+    },
     {
       "file": "TestKeyword",
       "method": "rescue",
@@ -45,6 +51,14 @@
     }
   ],
   "completed": [
+    {
+      "file": "TestKeyword",
+      "method": "lifestealVsInvincible",
+      "hypothesis": "Dodge buff makes target immune to damage, but drain/selfHeal still heals the user by the intended amount regardless of whether damage was dealt.",
+      "verified": "Confirmed.",
+      "test": "tests/test_keyword.py::TestLifestealVsInvincible",
+      "timestamp": "2025-01-10T21:30:00Z"
+    },
     {
       "file": "TestKeyword",
       "method": "drain",

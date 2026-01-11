@@ -29,6 +29,7 @@ class EntityState:
     keep_shields: bool = False  # If True, shields persist across turns
     stone_hp: int = 0    # Stone HP pips - caps incoming damage to 1 per hit
     fled: bool = False   # If True, entity has fled the battle
+    dodge: bool = False  # If True, entity is invincible (immune to damage)
 
     @property
     def is_dead(self) -> bool:
@@ -144,7 +145,7 @@ class FightLog:
 
     def _snapshot_states(self) -> dict[Entity, EntityState]:
         """Deep copy current states."""
-        return {e: EntityState(e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked, s.keep_shields, s.stone_hp, s.fled) for e, s in self._states.items()}
+        return {e: EntityState(e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked, s.keep_shields, s.stone_hp, s.fled, s.dodge) for e, s in self._states.items()}
 
     def _record_action(self):
         """Record state before an action for undo."""
@@ -206,17 +207,22 @@ class FightLog:
                     shield_remaining -= blocked
                     future_hp -= actual_damage
 
-        return EntityState(entity, future_hp, base.max_hp, base.shield, base.spiky, base.self_heal, base.damage_blocked, base.keep_shields, base.stone_hp, base.fled)
+        return EntityState(entity, future_hp, base.max_hp, base.shield, base.spiky, base.self_heal, base.damage_blocked, base.keep_shields, base.stone_hp, base.fled, base.dodge)
 
     def apply_damage(self, source: Entity, target: Entity, amount: int, is_pending: bool = False):
         """Apply damage to target. If is_pending, damage goes to future state.
 
         Immediate damage is reduced by shield. Blocked amount is tracked.
         Stone HP caps damage to 1 per hit.
+        Dodge makes target immune to damage.
         """
         self._record_action()
 
         state = self._states[target]
+
+        # Dodge makes target immune to damage
+        if state.dodge:
+            return  # No damage dealt
 
         # Stone HP caps damage to 1 per hit (0 damage stays 0)
         effective_amount = amount
@@ -234,7 +240,7 @@ class FightLog:
             self._states[target] = EntityState(
                 target, new_hp, state.max_hp,
                 new_shield, state.spiky, state.self_heal, state.damage_blocked + blocked,
-                state.keep_shields, state.stone_hp, state.fled
+                state.keep_shields, state.stone_hp, state.fled, state.dodge
             )
             # Check if target died and triggers flee
             if new_hp <= 0 and target.team == Team.MONSTER:
@@ -841,5 +847,18 @@ class FightLog:
             source, new_hp, source_state.max_hp,
             source_state.shield, source_state.spiky, source_state.self_heal,
             source_state.damage_blocked, source_state.keep_shields,
-            source_state.stone_hp, source_state.fled
+            source_state.stone_hp, source_state.fled, source_state.dodge
+        )
+
+    def apply_dodge(self, target: Entity):
+        """Apply Dodge buff to target - makes them invincible (immune to damage).
+
+        While dodge is active, the entity takes no damage from any source.
+        """
+        self._record_action()
+        state = self._states[target]
+        self._states[target] = EntityState(
+            target, state.hp, state.max_hp,
+            state.shield, state.spiky, state.self_heal, state.damage_blocked,
+            state.keep_shields, state.stone_hp, state.fled, dodge=True
         )
