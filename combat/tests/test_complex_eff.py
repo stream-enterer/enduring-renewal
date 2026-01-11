@@ -218,3 +218,85 @@ class TestKeepShields:
         fight.next_turn()
         state = fight.get_state(hero, Temporality.PRESENT)
         assert state.shield == 5, "Shield should not disappear with KeepShields"
+
+
+class TestStoneskin:
+    """Tests for Stone HP (stoneskin) mechanic.
+
+    Stone HP caps all incoming damage to 1 per hit.
+    Some units have all stone HP, some have mixed stone/regular HP.
+    """
+
+    def test_stone_hp_caps_damage_to_one(self):
+        """Stone HP caps any positive damage to 1 per hit.
+
+        Verified: Stoneskin caps incoming damage to 1 per hit.
+        """
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Golem", hp=10)
+
+        fight = FightLog([hero], [monster])
+        monster_max = 10
+
+        # Apply stone HP buff to monster (10 stone pips)
+        fight.apply_stone_hp(monster, 10)
+
+        # Verify initial state
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max, "Monster should start at full HP"
+
+        # 0 damage should still do 0
+        fight.apply_damage(hero, monster, 0, is_pending=False)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max, "0 damage should do 0 damage"
+
+        # 1 damage should do 1
+        fight.apply_damage(hero, monster, 1, is_pending=False)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max - 1, "1 damage should do 1 damage"
+
+        # 3 damage should be capped to 1
+        fight.apply_damage(hero, monster, 3, is_pending=False)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max - 2, "3 damage should be capped to 1"
+
+        # 2000 damage should be capped to 1
+        fight.apply_damage(hero, monster, 2000, is_pending=False)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max - 3, "2000 damage should be capped to 1"
+
+    def test_stoneskin_full_scenario(self):
+        """Full stoneskin test matching original Java test.
+
+        Verified: Confirmed.
+        """
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Golem", hp=10)
+
+        fight = FightLog([hero], [monster])
+        monster_max = 10
+
+        # Apply StoneSpecialHp buff (10 pips)
+        fight.apply_stone_hp(monster, 10)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max - 0, "Monster should have taken 0 damage"
+
+        # damage(0) - no damage
+        fight.apply_damage(hero, monster, 0, is_pending=False)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max - 0, "Monster should have taken 0 damage"
+
+        # attack 1 - takes 1
+        fight.apply_damage(hero, monster, 1, is_pending=False)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max - 1, "Monster should have taken 1 damage"
+
+        # attack 3 - capped to 1, total 2
+        fight.apply_damage(hero, monster, 3, is_pending=False)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max - 2, "Monster should have taken 2 damage total"
+
+        # attack 2000 - capped to 1, total 3
+        fight.apply_damage(hero, monster, 2000, is_pending=False)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max - 3, "Monster should have taken 3 damage total"

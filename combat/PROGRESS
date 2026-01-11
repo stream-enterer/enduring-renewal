@@ -1,12 +1,20 @@
 {
   "current": {
     "file": "TestComplexEff",
-    "method": "keepShield",
+    "method": "stoneskin",
     "status": "implementing",
-    "hypothesis": "Shields normally clear at end of turn. KeepShields buff prevents shield decay - shields persist across turns.",
+    "hypothesis": "StoneSpecialHp (stoneskin) buff caps ALL incoming damage to 1 per hit. Some units have varying amounts - can vary in location and amount of stone HP pips.",
     "verified": "Confirmed."
   },
   "completed": [
+    {
+      "file": "TestComplexEff",
+      "method": "keepShield",
+      "hypothesis": "Shields normally clear at end of turn. KeepShields buff prevents shield decay - shields persist across turns.",
+      "verified": "Confirmed.",
+      "test": "tests/test_complex_eff.py::TestKeepShields",
+      "timestamp": "2025-01-10T18:00:00Z"
+    },
     {
       "file": "TestComplexEff",
       "method": "doubleTaunt",
