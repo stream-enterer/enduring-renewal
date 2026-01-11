@@ -1,9 +1,9 @@
 {
   "current": {
     "file": "TestComplexEff",
-    "method": "fortitudeHeal",
+    "method": "goblinFlee",
     "status": "implementing",
-    "hypothesis": "healVitality(N) heals by N AND increases max HP by N. HP capped at new max. Example: 2/4 + healVitality(3) = 5/7.",
+    "hypothesis": "Goblins have flee behavior - when one goblin dies, remaining goblins flee. Fleeing removes them from battle (counts as victory).",
     "verified": "Confirmed."
   },
   "blocked": [
@@ -12,9 +12,35 @@
       "method": "petrifyBug",
       "reason": "Requires die/sides system. Petrify removes die sides, cleanse restores them. Need to implement die infrastructure first.",
       "timestamp": "2025-01-10T18:40:00Z"
+    },
+    {
+      "file": "TestComplexEff",
+      "method": "copycatManagain",
+      "reason": "Requires mana system and copycat keyword (copies last used effect).",
+      "timestamp": "2025-01-10T19:00:00Z"
+    },
+    {
+      "file": "TestComplexEff",
+      "method": "pair",
+      "reason": "Requires mana system and pair keyword (bonus mana when rolling same effect twice).",
+      "timestamp": "2025-01-10T19:00:00Z"
+    },
+    {
+      "file": "TestComplexEff",
+      "method": "petrifyAboveSix",
+      "reason": "Requires die/sides system. Petrify capped at 6 sides.",
+      "timestamp": "2025-01-10T19:00:00Z"
     }
   ],
   "completed": [
+    {
+      "file": "TestComplexEff",
+      "method": "fortitudeHeal",
+      "hypothesis": "healVitality(N) heals by N AND increases max HP by N. HP capped at new max. Example: 2/4 + healVitality(3) = 5/7.",
+      "verified": "Confirmed.",
+      "test": "tests/test_complex_eff.py::TestVitality",
+      "timestamp": "2025-01-10T18:50:00Z"
+    },
     {
       "file": "TestComplexEff",
       "method": "resurrect",

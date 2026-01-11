@@ -28,6 +28,7 @@ class EntityType:
     name: str
     hp: int
     size: EntitySize = EntitySize.HERO
+    flees_on_ally_death: bool = False  # Goblins flee when an ally dies
 
 
 @dataclass
@@ -49,4 +50,5 @@ HEALER = EntityType("Healer", 6, EntitySize.HERO)
 # Monsters with various sizes
 GOBLIN = EntityType("Goblin", 3, EntitySize.HERO)  # Hero-sized
 TEST_GOBLIN = EntityType("testGoblin", 3, EntitySize.HERO)  # For tests
+FLEEING_GOBLIN = EntityType("goblin", 3, EntitySize.HERO, flees_on_ally_death=True)  # Flees when alone
 DRAGON = EntityType("Dragon", 20, EntitySize.HUGE)

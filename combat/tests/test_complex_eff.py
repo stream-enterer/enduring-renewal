@@ -474,3 +474,87 @@ class TestVitality:
         state = fight.get_state(hero, Temporality.PRESENT)
         assert state.hp == 9, "Hero HP should be 4+5=9"
         assert state.max_hp == hero_max + 2 + 5, "Hero max HP should be 5+2+5=12"
+
+
+class TestGoblinFlee:
+    """Tests for goblin flee mechanic.
+
+    Goblins flee when they become the only remaining enemy after an ally dies.
+    Fleeing counts as victory.
+    """
+
+    def test_goblin_flees_when_alone(self):
+        """When one goblin dies and another is left alone, it flees.
+
+        Verified: Goblins flee when they are the only remaining enemy.
+        """
+        from src.entity import Entity, Team, FLEEING_GOBLIN, FIGHTER
+
+        hero = Entity(FIGHTER, Team.HERO)
+        goblin1 = Entity(FLEEING_GOBLIN, Team.MONSTER, position=0)
+        goblin2 = Entity(FLEEING_GOBLIN, Team.MONSTER, position=1)
+
+        fight = FightLog([hero], [goblin1, goblin2])
+
+        # Both goblins should be alive
+        assert not fight.is_victory(Temporality.PRESENT), "Should not be victory yet"
+        assert len(fight.get_present_monsters(Temporality.PRESENT)) == 2
+
+        # Kill goblin1 with massive damage
+        fight.apply_damage(hero, goblin1, 100, is_pending=False)
+
+        # Goblin1 is dead
+        state1 = fight.get_state(goblin1, Temporality.PRESENT)
+        assert state1.is_dead, "Goblin1 should be dead"
+
+        # Goblin2 should have fled (only one remaining, has flee behavior)
+        state2 = fight.get_state(goblin2, Temporality.PRESENT)
+        assert state2.fled, "Goblin2 should have fled"
+
+        # Victory should be achieved
+        assert fight.is_victory(Temporality.PRESENT), "Should be victory after goblin flees"
+
+    def test_non_fleeing_monster_doesnt_flee(self):
+        """Regular monsters don't flee when left alone."""
+        from src.entity import Entity, Team, GOBLIN, FIGHTER
+
+        hero = Entity(FIGHTER, Team.HERO)
+        # GOBLIN (not FLEEING_GOBLIN) doesn't have flee behavior
+        goblin1 = Entity(GOBLIN, Team.MONSTER, position=0)
+        goblin2 = Entity(GOBLIN, Team.MONSTER, position=1)
+
+        fight = FightLog([hero], [goblin1, goblin2])
+
+        # Kill goblin1
+        fight.apply_damage(hero, goblin1, 100, is_pending=False)
+
+        # Goblin2 should NOT flee (no flee behavior)
+        state2 = fight.get_state(goblin2, Temporality.PRESENT)
+        assert not state2.fled, "Regular goblin should not flee"
+
+        # Not victory yet
+        assert not fight.is_victory(Temporality.PRESENT), "Should not be victory"
+
+    def test_goblin_flee_full_scenario(self):
+        """Full goblinFlee test matching original Java test.
+
+        Setup: 2 fleeing goblins
+        Kill one -> other flees -> victory
+
+        Verified: Confirmed.
+        """
+        from src.entity import Entity, Team, FLEEING_GOBLIN, FIGHTER
+
+        hero = Entity(FIGHTER, Team.HERO)
+        goblins = [
+            Entity(FLEEING_GOBLIN, Team.MONSTER, position=i)
+            for i in range(2)
+        ]
+
+        fight = FightLog([hero], goblins)
+
+        # Kill first goblin with 100 damage
+        fight.apply_damage(hero, goblins[0], 100, is_pending=False)
+
+        # Should be victory (other goblin fled)
+        assert fight.is_victory(Temporality.PRESENT), "Should be goblinflee victory"

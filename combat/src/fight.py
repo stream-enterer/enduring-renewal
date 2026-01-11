@@ -28,10 +28,16 @@ class EntityState:
     damage_blocked: int = 0  # Total damage blocked by shield this turn
     keep_shields: bool = False  # If True, shields persist across turns
     stone_hp: int = 0    # Stone HP pips - caps incoming damage to 1 per hit
+    fled: bool = False   # If True, entity has fled the battle
 
     @property
     def is_dead(self) -> bool:
         return self.hp <= 0
+
+    @property
+    def is_out_of_battle(self) -> bool:
+        """Entity is out of battle if dead or fled."""
+        return self.hp <= 0 or self.fled
 
 
 @dataclass
@@ -113,9 +119,32 @@ class FightLog:
                     spawned = True
                     break  # Restart loop to check remaining reinforcements
 
+    def _check_flee_triggers(self):
+        """Check if any monsters should flee after an ally died.
+
+        Goblins (and similar) flee when they become the only remaining enemy.
+        """
+        # Count alive, non-fled monsters
+        alive_monsters = []
+        for m in self.monsters:
+            state = self._states[m]
+            if not state.is_out_of_battle:
+                alive_monsters.append(m)
+
+        # If only one monster remains and it has flees_on_ally_death, it flees
+        if len(alive_monsters) == 1:
+            remaining = alive_monsters[0]
+            if remaining.entity_type.flees_on_ally_death:
+                state = self._states[remaining]
+                self._states[remaining] = EntityState(
+                    remaining, state.hp, state.max_hp,
+                    state.shield, state.spiky, state.self_heal, state.damage_blocked,
+                    state.keep_shields, state.stone_hp, fled=True
+                )
+
     def _snapshot_states(self) -> dict[Entity, EntityState]:
         """Deep copy current states."""
-        return {e: EntityState(e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked, s.keep_shields, s.stone_hp) for e, s in self._states.items()}
+        return {e: EntityState(e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked, s.keep_shields, s.stone_hp, s.fled) for e, s in self._states.items()}
 
     def _record_action(self):
         """Record state before an action for undo."""
@@ -177,7 +206,7 @@ class FightLog:
                     shield_remaining -= blocked
                     future_hp -= actual_damage
 
-        return EntityState(entity, future_hp, base.max_hp, base.shield, base.spiky, base.self_heal, base.damage_blocked, base.keep_shields, base.stone_hp)
+        return EntityState(entity, future_hp, base.max_hp, base.shield, base.spiky, base.self_heal, base.damage_blocked, base.keep_shields, base.stone_hp, base.fled)
 
     def apply_damage(self, source: Entity, target: Entity, amount: int, is_pending: bool = False):
         """Apply damage to target. If is_pending, damage goes to future state.
@@ -201,11 +230,15 @@ class FightLog:
             blocked = min(state.shield, effective_amount)
             actual_damage = effective_amount - blocked
             new_shield = state.shield - blocked
+            new_hp = state.hp - actual_damage
             self._states[target] = EntityState(
-                target, state.hp - actual_damage, state.max_hp,
+                target, new_hp, state.max_hp,
                 new_shield, state.spiky, state.self_heal, state.damage_blocked + blocked,
-                state.keep_shields, state.stone_hp
+                state.keep_shields, state.stone_hp, state.fled
             )
+            # Check if target died and triggers flee
+            if new_hp <= 0 and target.team == Team.MONSTER:
+                self._check_flee_triggers()
             # Check if something died and reinforcements can spawn
             self._try_spawn_reinforcements()
 
@@ -485,7 +518,7 @@ class FightLog:
         )
 
     def get_present_monsters(self, temporality: Temporality) -> list[Entity]:
-        """Get monsters currently on the field (not dead, not reinforcement).
+        """Get monsters currently on the field (not dead, not fled, not reinforcement).
 
         This differs from get_alive_monsters in that it only counts monsters
         that have been spawned onto the field, not those waiting as reinforcements.
@@ -493,7 +526,7 @@ class FightLog:
         present = []
         for monster in self.monsters:
             state = self.get_state(monster, temporality)
-            if not state.is_dead:
+            if not state.is_out_of_battle:
                 present.append(monster)
         return present
 
