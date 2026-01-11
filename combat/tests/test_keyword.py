@@ -9206,3 +9206,526 @@ class TestInflictedCleansing:
             1 for b in monster_state.buffs if isinstance(b.personal, Inflicted)
         )
         assert inflicted_count == 2  # Two separate inflictions
+
+
+class TestSpy:
+    """Tests for SPY keyword - copies all keywords from first enemy attack this turn.
+
+    SPY is a meta-keyword that copies all keywords from the first enemy attack
+    (DAMAGE effect from a monster) used this turn. This is evaluated when
+    calculating the side state.
+
+    Key behavior:
+    - Before any enemy attacks, spy side has only its own keywords
+    - After an enemy uses a damage side, spy copies those keywords
+    - Only the FIRST enemy attack is used (subsequent attacks ignored)
+    """
+
+    def test_spy_copies_keywords_from_enemy_attack(self):
+        """SPY copies keywords from the first enemy attack."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Spy", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Hero has spy side
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.SPY}))
+
+        # Monster has damage with ENGAGE
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.ENGAGE}))
+
+        # Before enemy attack, spy has only SPY keyword
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.SPY in side_state.calculated_effect.keywords
+        assert Keyword.ENGAGE not in side_state.calculated_effect.keywords
+
+        # Monster attacks hero
+        fight.use_die(monster, 0, hero)
+
+        # After enemy attack, spy has SPY + ENGAGE
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.SPY in side_state.calculated_effect.keywords
+        assert Keyword.ENGAGE in side_state.calculated_effect.keywords
+
+    def test_spy_only_copies_first_attack(self):
+        """SPY only copies from the first enemy attack, not subsequent ones."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Spy", hp=20)
+        monster1 = make_monster("Goblin1", hp=10)
+        monster2 = make_monster("Goblin2", hp=10)
+        fight = FightLog([hero], [monster1, monster2])
+
+        # Hero has spy side
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.SPY}))
+
+        # Monster1 has ENGAGE, Monster2 has CRUEL
+        monster1.die = Die()
+        monster1.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.ENGAGE}))
+        monster2.die = Die()
+        monster2.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.CRUEL}))
+
+        # Monster1 attacks first
+        fight.use_die(monster1, 0, hero)
+        # Monster2 attacks second
+        fight.use_die(monster2, 0, hero)
+
+        # Spy should have ENGAGE (from first attack), not CRUEL
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.ENGAGE in side_state.calculated_effect.keywords
+        assert Keyword.CRUEL not in side_state.calculated_effect.keywords
+
+    def test_spy_ignores_non_damage_effects(self):
+        """SPY only copies from damage attacks, not heal/shield."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Spy", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Hero has spy side
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.SPY}))
+
+        # Monster has heal side with a keyword
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.HEAL, 2, {Keyword.RESCUE}))
+
+        # Monster uses heal (not damage, so not an "attack")
+        fight.use_die(monster, 0, monster)
+
+        # Spy should NOT have copied RESCUE (it wasn't a damage attack)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.RESCUE not in side_state.calculated_effect.keywords
+
+    def test_spy_resets_each_turn(self):
+        """SPY first attack tracking resets each turn."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Spy", hp=30)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Hero has spy side
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.SPY}))
+
+        # Monster has ENGAGE
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.ENGAGE}))
+
+        # Monster attacks
+        fight.use_die(monster, 0, hero)
+
+        # Advance to next turn
+        fight.next_turn()
+
+        # Give monster CRUEL instead
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.CRUEL}))
+
+        # Before monster attacks this turn, spy should have no copied keywords
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.ENGAGE not in side_state.calculated_effect.keywords
+        assert Keyword.CRUEL not in side_state.calculated_effect.keywords
+
+        # Monster attacks again
+        fight.use_die(monster, 0, hero)
+
+        # Now spy should have CRUEL (first attack this turn)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.CRUEL in side_state.calculated_effect.keywords
+
+
+class TestDejavu:
+    """Tests for DEJAVU keyword - copies keywords from sides I used last turn.
+
+    DEJAVU is a meta-keyword that copies all keywords from all sides this
+    entity used last turn.
+
+    Key behavior:
+    - On first turn, dejavu copies nothing (no last turn)
+    - After using sides, next turn dejavu copies keywords from those sides
+    - Multiple sides used = all keywords combined
+    """
+
+    def test_dejavu_no_keywords_on_first_turn(self):
+        """DEJAVU copies nothing on the first turn (no previous turn)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Dreamer", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.DEJAVU}))
+
+        # On first turn, dejavu should only have its own keyword
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.DEJAVU in side_state.calculated_effect.keywords
+        assert len(side_state.calculated_effect.keywords) == 1
+
+    def test_dejavu_copies_from_last_turn(self):
+        """DEJAVU copies keywords from sides used last turn."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Dreamer", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # Hero has different sides: 0=ENGAGE damage, 1=DEJAVU damage
+        # Must initialize all sides first
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1))  # Initialize all 6 sides
+        hero.die.sides[0] = Side(EffectType.DAMAGE, 2, {Keyword.ENGAGE})
+        hero.die.sides[1] = Side(EffectType.DAMAGE, 2, {Keyword.DEJAVU})
+
+        # Use ENGAGE side on turn 0
+        fight.use_die(hero, 0, monster)
+
+        # Next turn
+        fight.next_turn()
+
+        # Now DEJAVU side should have ENGAGE (from last turn)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(1, fight)
+        assert Keyword.DEJAVU in side_state.calculated_effect.keywords
+        assert Keyword.ENGAGE in side_state.calculated_effect.keywords
+
+    def test_dejavu_combines_multiple_sides(self):
+        """DEJAVU copies keywords from all sides used last turn."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Dreamer", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # Hero die: 0=ENGAGE, 1=CRUEL, 2=DEJAVU
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1))  # Initialize all 6 sides
+        hero.die.sides[0] = Side(EffectType.DAMAGE, 1, {Keyword.ENGAGE, Keyword.DOUBLE_USE})
+        hero.die.sides[1] = Side(EffectType.DAMAGE, 1, {Keyword.CRUEL, Keyword.DOUBLE_USE})
+        hero.die.sides[2] = Side(EffectType.DAMAGE, 2, {Keyword.DEJAVU})
+
+        # Use both ENGAGE and CRUEL sides
+        fight.use_die(hero, 0, monster)
+        fight.use_die(hero, 1, monster)
+
+        # Next turn
+        fight.next_turn()
+
+        # DEJAVU should have both ENGAGE and CRUEL
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(2, fight)
+        assert Keyword.DEJAVU in side_state.calculated_effect.keywords
+        assert Keyword.ENGAGE in side_state.calculated_effect.keywords
+        assert Keyword.CRUEL in side_state.calculated_effect.keywords
+
+    def test_dejavu_only_copies_own_sides(self):
+        """DEJAVU only copies from this entity's sides, not others."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Dreamer", hp=10)
+        hero2 = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 has DEJAVU
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.DEJAVU}))
+
+        # Hero2 has ENGAGE
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.ENGAGE}))
+
+        # Hero2 uses their side
+        fight.use_die(hero2, 0, monster)
+
+        # Next turn
+        fight.next_turn()
+
+        # Hero1's DEJAVU should NOT have ENGAGE (Hero1 didn't use anything)
+        state = fight.get_state(hero1, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.ENGAGE not in side_state.calculated_effect.keywords
+
+
+class TestShare:
+    """Tests for SHARE keyword - targets gain all my keywords this turn.
+
+    SHARE adds all keywords (except SHARE itself) from the used side to all
+    of the target's sides for one turn via a buff.
+
+    Key behavior:
+    - After using share, target's sides gain all keywords (except share)
+    - Effect lasts one turn
+    - Buff is applied after the main effect
+    """
+
+    def test_share_adds_keywords_to_target(self):
+        """SHARE adds keywords to all target's sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Sharer", hp=5)
+        ally = make_hero("Receiver", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero, ally], [monster])
+
+        # Hero has share + engage
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.HEAL, 1, {Keyword.SHARE, Keyword.ENGAGE}))
+
+        # Ally has basic damage
+        ally.die = Die()
+        ally.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        # Before share, ally has no ENGAGE
+        state = fight.get_state(ally, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.ENGAGE not in side_state.calculated_effect.keywords
+
+        # Hero uses share on ally
+        fight.use_die(hero, 0, ally)
+
+        # After share, ally's sides should have ENGAGE (but not SHARE)
+        state = fight.get_state(ally, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.ENGAGE in side_state.calculated_effect.keywords
+        assert Keyword.SHARE not in side_state.calculated_effect.keywords
+
+    def test_share_does_not_share_share(self):
+        """SHARE keyword itself is not shared."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Sharer", hp=5)
+        ally = make_hero("Receiver", hp=10)
+        fight = FightLog([hero, ally], [])
+
+        # Hero has only SHARE
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.HEAL, 1, {Keyword.SHARE}))
+
+        ally.die = Die()
+        ally.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        # Hero uses share on ally
+        fight.use_die(hero, 0, ally)
+
+        # Ally should NOT have SHARE
+        state = fight.get_state(ally, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.SHARE not in side_state.calculated_effect.keywords
+
+    def test_share_expires_after_turn(self):
+        """SHARE buff expires after one turn."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Sharer", hp=5)
+        ally = make_hero("Receiver", hp=10)
+        fight = FightLog([hero, ally], [])
+
+        # Hero has share + engage
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.HEAL, 1, {Keyword.SHARE, Keyword.ENGAGE}))
+
+        ally.die = Die()
+        ally.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        # Hero uses share
+        fight.use_die(hero, 0, ally)
+
+        # Ally has ENGAGE now
+        state = fight.get_state(ally, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.ENGAGE in side_state.calculated_effect.keywords
+
+        # Next turn
+        fight.next_turn()
+
+        # ENGAGE should be gone
+        state = fight.get_state(ally, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.ENGAGE not in side_state.calculated_effect.keywords
+
+
+class TestAnnul:
+    """Tests for ANNUL keyword - targets lose all keywords this turn.
+
+    ANNUL removes all keywords from all of the target's sides for one turn
+    via a buff.
+
+    Key behavior:
+    - After using annul, target's sides lose all keywords
+    - Effect lasts one turn
+    - Original keywords return after the turn ends
+    """
+
+    def test_annul_removes_all_keywords(self):
+        """ANNUL removes all keywords from target's sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Nullifier", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Hero has annul
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.ANNUL}))
+
+        # Monster has multiple keywords
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.ENGAGE, Keyword.CRUEL}))
+
+        # Before annul, monster has keywords
+        state = fight.get_state(monster, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.ENGAGE in side_state.calculated_effect.keywords
+        assert Keyword.CRUEL in side_state.calculated_effect.keywords
+
+        # Hero uses annul on monster
+        fight.use_die(hero, 0, monster)
+
+        # After annul, monster's sides should have no keywords
+        state = fight.get_state(monster, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.ENGAGE not in side_state.calculated_effect.keywords
+        assert Keyword.CRUEL not in side_state.calculated_effect.keywords
+
+    def test_annul_expires_after_turn(self):
+        """ANNUL buff expires after one turn, restoring keywords."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Nullifier", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Hero has annul
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.ANNUL}))
+
+        # Monster has ENGAGE
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.ENGAGE}))
+
+        # Hero uses annul
+        fight.use_die(hero, 0, monster)
+
+        # Monster has no ENGAGE now
+        state = fight.get_state(monster, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.ENGAGE not in side_state.calculated_effect.keywords
+
+        # Next turn
+        fight.next_turn()
+
+        # ENGAGE should be back
+        state = fight.get_state(monster, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert Keyword.ENGAGE in side_state.calculated_effect.keywords
+
+    def test_annul_works_on_all_sides(self):
+        """ANNUL affects all of target's sides, not just one."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Nullifier", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.ANNUL}))
+
+        # Monster has different keywords on different sides
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 1))  # Initialize all 6 sides
+        monster.die.sides[0] = Side(EffectType.DAMAGE, 1, {Keyword.ENGAGE})
+        monster.die.sides[1] = Side(EffectType.DAMAGE, 2, {Keyword.CRUEL})
+
+        # Hero uses annul
+        fight.use_die(hero, 0, monster)
+
+        # All sides should lose their keywords
+        state = fight.get_state(monster, Temporality.PRESENT)
+        side0 = state.get_side_state(0, fight)
+        side1 = state.get_side_state(1, fight)
+        assert Keyword.ENGAGE not in side0.calculated_effect.keywords
+        assert Keyword.CRUEL not in side1.calculated_effect.keywords
+
+
+class TestPossessed:
+    """Tests for POSSESSED keyword - targets as if used by the other side.
+
+    POSSESSED inverts the "friendly" flag of an effect, meaning:
+    - Normally friendly effects (heal, shield allies) can target enemies
+    - Normally unfriendly effects (damage enemies) can target allies
+
+    In our simplified system where targets are explicit, POSSESSED primarily
+    serves as a marker. The effect still applies to the explicit target.
+    """
+
+    def test_possessed_on_damage_side(self):
+        """POSSESSED on damage side still deals damage."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Cursed", hp=10)
+        ally = make_hero("Friend", hp=10)
+        fight = FightLog([hero, ally], [])
+
+        # Hero has possessed damage (can target ally with damage)
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.POSSESSED}))
+
+        # Hero uses on ally - should deal damage
+        fight.use_die(hero, 0, ally)
+
+        state = fight.get_state(ally, Temporality.PRESENT)
+        assert state.hp == 7  # 10 - 3 damage
+
+    def test_possessed_on_heal_side(self):
+        """POSSESSED on heal side still heals (but could target enemy)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Cursed", hp=5)
+        monster = make_monster("Goblin", hp=10)  # Create with 10 max HP
+        fight = FightLog([hero], [monster])
+
+        # Damage the monster to 6 HP
+        fight.apply_damage(hero, monster, 4)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6  # 10 - 4 = 6
+
+        # Hero has possessed heal (can heal enemy)
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.HEAL, 2, {Keyword.POSSESSED}))
+
+        # Hero uses on monster - should heal it
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8  # 6 + 2 heal

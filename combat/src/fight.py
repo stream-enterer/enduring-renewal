@@ -298,6 +298,22 @@ class EntityState:
                 calculated.growth_bonus = current_growth
                 calculated.keywords.add(Keyword.RESONATE)
 
+        # SPY: Copy all keywords from first enemy attack this turn
+        if Keyword.SPY in calculated.keywords and fight_log is not None:
+            first_attack = fight_log.get_first_enemy_attack()
+            if first_attack is not None:
+                # Copy all keywords from the first enemy attack
+                for kw in first_attack.calculated_effect.keywords:
+                    calculated.keywords.add(kw)
+
+        # DEJAVU: Copy keywords from sides I used last turn
+        if Keyword.DEJAVU in calculated.keywords and fight_log is not None:
+            sides_last_turn = fight_log.get_sides_used_last_turn(self.entity)
+            for side in sides_last_turn:
+                # Copy keywords from each side used last turn
+                for kw in side.calculated_effect.keywords:
+                    calculated.keywords.add(kw)
+
         # PAIR: x2 if previous die had same calculated value
         # Checks current value (after triggers, before pair bonus) vs previous die's visible value
         # Visibility keywords (fault, doubled, etc.) modify how others see the previous die's value
@@ -528,6 +544,13 @@ class FightLog:
         self._last_die_source: Optional[Entity] = None
         # Track if last die was self-targeting (for focus keyword edge case)
         self._last_die_was_self_targeting: bool = False
+
+        # Track first enemy attack this turn (for spy keyword)
+        self._first_enemy_attack_this_turn: Optional[SideState] = None
+
+        # Track sides used per entity per turn (for dejavu keyword)
+        # Maps turn_number -> entity -> list of SideState
+        self._sides_used_per_turn: dict[int, dict[Entity, list[SideState]]] = {}
 
     def get_shifter_seed(self, side_index: int, entity: Entity) -> int:
         """Generate a deterministic seed for turn-start processing keywords.
@@ -1142,6 +1165,9 @@ class FightLog:
         self._last_die_source = None
         self._last_die_was_self_targeting = False
 
+        # Clear first enemy attack tracking for spy keyword
+        self._first_enemy_attack_this_turn = None
+
         # Process each entity's turn transition
         for entity, state in list(self._states.items()):
             new_shield = state.shield if state.keep_shields else 0
@@ -1632,6 +1658,20 @@ class FightLog:
         self._last_die_source = entity
         self._last_die_was_self_targeting = (entity == target)
 
+        # Track first enemy attack this turn (for spy keyword)
+        # Only count enemy attacks (monster team, damage effect type)
+        if (entity.team == Team.MONSTER and
+            calculated_side.effect_type == EffectType.DAMAGE and
+            self._first_enemy_attack_this_turn is None):
+            self._first_enemy_attack_this_turn = side_state
+
+        # Track sides used per entity per turn (for dejavu keyword)
+        if self._turn not in self._sides_used_per_turn:
+            self._sides_used_per_turn[self._turn] = {}
+        if entity not in self._sides_used_per_turn[self._turn]:
+            self._sides_used_per_turn[self._turn][entity] = []
+        self._sides_used_per_turn[self._turn][entity].append(side_state)
+
         # Mark die as used (check for multi-use keywords)
         max_uses = 1
         if calculated_side.has_keyword(Keyword.QUAD_USE):
@@ -1854,6 +1894,21 @@ class FightLog:
             if calculated_side.has_keyword(inflict_kw):
                 self.apply_inflicted(target, target_kw)
 
+        # === ADVANCED COPY KEYWORDS ===
+        # SHARE: targets gain all my keywords this turn (except share)
+        if calculated_side.has_keyword(Keyword.SHARE):
+            keywords_to_share = [kw for kw in calculated_side.keywords if kw != Keyword.SHARE]
+            self.apply_share(target, keywords_to_share)
+
+        # ANNUL: targets lose all keywords this turn
+        if calculated_side.has_keyword(Keyword.ANNUL):
+            self.apply_annul(target)
+
+        # Note: POSSESSED is handled at the effect type determination level.
+        # It inverts the "friendly" flag, affecting targeting in the full game.
+        # In our simplified system where targets are explicit, possessed allows
+        # targeting the "opposite" team with effects that normally target same team.
+
     def apply_inflicted(self, entity: Entity, keyword: "Keyword"):
         """Apply an Inflicted debuff to an entity, adding keyword to all their sides.
 
@@ -1866,6 +1921,47 @@ class FightLog:
         state = self._states[entity]
         inflicted = Inflicted(keyword)
         buff = Buff(personal=inflicted, turns_remaining=None)  # Permanent until cleansed
+        state.add_buff(buff)
+
+    def apply_share(self, entity: Entity, keywords: list["Keyword"]):
+        """Apply share buff to an entity - all their sides gain the specified keywords.
+
+        The buff lasts for 1 turn. Used by the SHARE keyword which shares
+        all keywords (except SHARE itself) from the used side to the target.
+
+        Args:
+            entity: The entity to apply the share buff to
+            keywords: The keywords to add to all the entity's sides
+        """
+        from .triggers import Buff, AffectSides, AddKeyword
+
+        if not keywords:
+            return  # Nothing to share
+
+        state = self._states[entity]
+        affect_sides = AffectSides(
+            conditions=None,
+            effects=AddKeyword(*keywords)
+        )
+        buff = Buff(personal=affect_sides, turns_remaining=1)
+        state.add_buff(buff)
+
+    def apply_annul(self, entity: Entity):
+        """Apply annul buff to an entity - all their sides lose all keywords.
+
+        The buff lasts for 1 turn. Used by the ANNUL keyword.
+
+        Args:
+            entity: The entity to apply the annul buff to
+        """
+        from .triggers import Buff, AffectSides, RemoveAllKeywords
+
+        state = self._states[entity]
+        affect_sides = AffectSides(
+            conditions=None,
+            effects=RemoveAllKeywords()
+        )
+        buff = Buff(personal=affect_sides, turns_remaining=1)
         state.add_buff(buff)
 
     def get_most_recent_die_effect(self) -> Optional[SideState]:
@@ -1881,6 +1977,29 @@ class FightLog:
         if n <= 0:
             return []
         return list(reversed(self._die_effect_history[-n:]))
+
+    def get_first_enemy_attack(self) -> Optional[SideState]:
+        """Get the first enemy attack this turn (for spy keyword).
+
+        Returns the first damage side used by a monster this turn,
+        or None if no enemy has attacked yet.
+        """
+        return self._first_enemy_attack_this_turn
+
+    def get_sides_used_last_turn(self, entity: Entity) -> list[SideState]:
+        """Get the sides used by this entity last turn (for dejavu keyword).
+
+        Returns a list of SideState objects representing the sides
+        this entity used last turn, or empty list if none.
+        """
+        last_turn = self._turn - 1
+        if last_turn < 0:
+            return []
+        if last_turn not in self._sides_used_per_turn:
+            return []
+        if entity not in self._sides_used_per_turn[last_turn]:
+            return []
+        return self._sides_used_per_turn[last_turn][entity]
 
     def _get_multiplier(self, side: "Side") -> int:
         """Get the conditional bonus multiplier (2 normally, 3 if treble present)."""

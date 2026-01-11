@@ -293,6 +293,19 @@ class RemoveKeyword(AffectSideEffect):
             side_state.remove_keyword(keyword)
 
 
+class RemoveAllKeywords(AffectSideEffect):
+    """Remove all keywords from the side.
+
+    Used by annul keyword to strip all keywords from target's sides.
+    """
+
+    def affect(self, side_state: "SideState", owner: "EntityState", index: int, trigger_index: int):
+        # Get all keywords and remove them
+        keywords_to_remove = list(side_state.calculated_effect.keywords)
+        for keyword in keywords_to_remove:
+            side_state.remove_keyword(keyword)
+
+
 class ReplaceWith(AffectSideEffect):
     """Replace the side's calculated effect with a new side entirely."""
 

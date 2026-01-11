@@ -114,6 +114,8 @@ class Keyword(Enum):
     # Meta keywords - copy from previous die
     ECHO = auto()        # Copy pips (value) from previous die
     RESONATE = auto()    # Copy effect from previous die, retaining pips and resonate keyword
+    SPY = auto()         # Copy all keywords from first enemy attack this turn
+    DEJAVU = auto()      # Copy keywords from sides I used last turn
     # No-effect keywords
     NOTHING = auto()     # This keyword has no effect
     # Conditional bonus keywords
@@ -221,6 +223,10 @@ class Keyword(Enum):
     INFLICT_NOTHING = auto()      # Add nothing keyword to all target's sides
     INFLICT_INFLICT_NOTHING = auto()  # Add inflictNothing keyword to all target's sides
     INFLICT_INFLICT_DEATH = auto()    # Add inflictDeath keyword to all target's sides
+    # Advanced copy keywords - copy/modify target's keywords
+    SHARE = auto()       # Targets gain all my keywords this turn (except share)
+    ANNUL = auto()       # Targets lose all keywords this turn
+    POSSESSED = auto()   # Targets as if used by the other side (inverts friendly flag)
 
 
 # Map from inflict keyword to the keyword it inflicts

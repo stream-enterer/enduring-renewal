@@ -15,8 +15,9 @@
 | `side_modification` | hypnotise | 1 |
 | `side_replacement` | stasis, enduring, dogma, resilient | 4 |
 | `side_injection` | inflictSelfShield, inflictBoned, inflictExert, inflictPain, inflictDeath, inflictSingleUse, inflictNothing, inflictInflictNothing, inflictInflictDeath | 9 |
+| `meta_copy_advanced` | share, spy, dejavu, annul, possessed | 5 |
 
-**Total implemented: 51 keywords**
+**Total implemented: 56 keywords**
 
 ### Dependency Graph
 
@@ -25,7 +26,7 @@ Buff System Tree (depends on buff_system ✅):
     ├─► #1 side_modification (hypnotise)           [1 kw] ✅
     ├─► #2 side_replacement (stasis, enduring...)  [4 kw] ✅
     ├─► #3 side_injection (inflict*)               [9 kw] ✅
-    ├─► #4 meta_copy_advanced (share, spy...)      [5 kw]
+    ├─► #4 meta_copy_advanced (share, spy...)      [5 kw] ✅
     ├─► #5 meta_copy_buff (duplicate)              [1 kw]
     └─► #6 group_buff_system (lead)                [1 kw]
 
@@ -105,9 +106,8 @@ Independent Systems (no prerequisites):
 
 <!-- Format: "Next: #N (name)" or "COMPLETE - Only permanently blocked remain" -->
 
-**Next: #4 (meta_copy_advanced)**
-- Implement 5 keywords: share, spy, dejavu, annul, possessed
-- Java: EntState.java:546-552, EntSideState.java:237-248
-- share/annul use Buff+AffectSides+AddKeyword/RemoveAllKeywords
-- spy/dejavu already work in meta keyword recursion
-- Estimated: 5 keywords unblocked
+**Next: #5 (meta_copy_buff)**
+- Implement 1 keyword: duplicate
+- Java: Keyword.java:267-273
+- Post-effect that applies Buff with AffectSides+AddKeyword to ALL allied sides
+- Estimated: 1 keyword unblocked
