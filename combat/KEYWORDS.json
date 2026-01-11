@@ -133,7 +133,12 @@
     "selfVulnerable",
     "buffed",
     "affected",
-    "skill"
+    "skill",
+    "doubleUse",
+    "quadUse",
+    "hyperUse",
+    "rite",
+    "trill"
   ],
   "blocked": {
     "effect_types": ["heal", "shield", "damage"],
@@ -150,15 +155,13 @@
     "spell_tracking": ["singleCast", "cooldown", "deplete", "channel", "spellRescue", "future"],
     "side_injection": ["inflictSelfShield", "inflictBoned", "inflictExert", "inflictPain", "inflictDeath", "inflictSingleUse", "inflictNothing", "inflictInflictNothing", "inflictInflictDeath"],
     "item_system": ["hoard", "fashionable", "equipped", "potion"],
-    "usage_tracking": ["doubleUse", "quadUse", "hyperUse", "rite"],
     "entity_summoning": ["boned", "hyperBoned"],
     "group_buff_system": ["lead"],
     "tactic_system": ["tactical"],
     "validation_only": ["permissive"],
     "not_implementable": ["removed"],
     "depends_on_duel": ["halveDuel", "duegue"],
-    "depends_on_focus": ["underocus"],
-    "combined_skill": ["trill"]
+    "depends_on_focus": ["underocus"]
   },
   "all": [
     "heal", "shield", "damage", "manaGain",

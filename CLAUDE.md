@@ -39,6 +39,17 @@ When asked to "continue":
 1. **Read `combat/KEYWORDS.json`** - Compute `remaining = all - implemented - blocked`
 2. **If remaining is non-empty** - Implement unblocked keywords first (simpler)
 3. **If only blocked remain** - Use infrastructure-first workflow below
+4. **After implementing** - Update `KEYWORDS.json`, run tests, commit changes
+
+### Committing Changes
+
+After each implementation session:
+
+1. **Update `KEYWORDS.json`** - Move implemented keywords from `blocked` to `implemented`
+2. **Run tests** - `cd combat && uv run pytest` (all must pass)
+3. **Commit** with message format: `Implement <system/keywords> with N keywords`
+   - Example: `Implement usage_tracking infrastructure with 5 keywords`
+   - Example: `Implement selfShield, selfHeal keywords`
 
 ### Infrastructure-First Workflow
 
@@ -66,13 +77,18 @@ When only blocked keywords remain:
 
 Complete list from `KEYWORDS.json`. Priority based on: keyword count, dependency chains, implementation complexity.
 
+### Completed Systems
+
+| System | Keywords | Status |
+|--------|----------|--------|
+| `status_effect_system` | poison, regen, cleanse, selfPoison, selfRegen, selfCleanse, plague, acidic (8) | ✅ Done |
+| `buff_system` | weaken, boost, vulnerable, smith, permaBoost, selfVulnerable, buffed, affected, skill (9) | ✅ Done |
+| `usage_tracking` | doubleUse, quadUse, hyperUse, rite, trill (5) | ✅ Done |
+
 ### High Priority (High Impact / Low Complexity)
 
 | System | Keywords | Notes |
 |--------|----------|-------|
-| `status_effect_system` | poison, regen, cleanse, selfPoison, selfRegen, selfCleanse, plague, acidic (8) | Needs turn-end processing, status stacking |
-| `buff_system` | weaken, boost, vulnerable, smith, permaBoost, selfVulnerable, duplicate, buffed, affected, skill (10) | Temporary modifiers; `skill` unblocks `trill` |
-| `usage_tracking` | doubleUse, quadUse, hyperUse, rite (4) | Per-turn/per-combat use counters |
 | `turn_start_processing` | shifter, lucky, critical, fluctuate, fumble (5) | Turn-start hooks, side modification |
 
 ### Medium Priority (Moderate Complexity)
@@ -104,7 +120,7 @@ Complete list from `KEYWORDS.json`. Priority based on: keyword count, dependency
 These keywords depend on other blocked keywords:
 - `depends_on_duel`: halveDuel, duegue (2) - Blocked until `duel` implemented
 - `depends_on_focus`: underocus (1) - Blocked until `focus` implemented
-- `depends_on_skill`: trill (1) - Blocked until `skill` implemented
+- ~~`depends_on_skill`: trill~~ - ✅ Done (skill implemented)
 
 ### Special Cases
 

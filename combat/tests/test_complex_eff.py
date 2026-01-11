@@ -882,3 +882,269 @@ class TestPair:
         # Use manaPair(1) → prev=3, not equal, no pair → 1 mana
         fight.use_die(hero, 2, monster)
         assert fight.get_total_mana() == 5, "...+ manaPair(1) = 5 mana (still no pair)"
+
+
+class TestDoubleUse:
+    """Tests for DOUBLE_USE keyword.
+
+    DOUBLE_USE allows a die to be used twice per turn before becoming used.
+    """
+
+    def test_double_use_first_use_not_exhausted(self):
+        """First use of doubleUse die does not exhaust it."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Create a damage side with DOUBLE_USE
+        double_use_side = Side(EffectType.DAMAGE, 2, {Keyword.DOUBLE_USE})
+        hero.die = Die([double_use_side for _ in range(6)])
+
+        # First use
+        fight.use_die(hero, 0, monster)
+
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert not hero_state.is_used(), "Die should NOT be used after first use with doubleUse"
+        assert hero_state.times_used_this_turn == 1
+
+    def test_double_use_second_use_exhausts(self):
+        """Second use of doubleUse die exhausts it."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        double_use_side = Side(EffectType.DAMAGE, 2, {Keyword.DOUBLE_USE})
+        hero.die = Die([double_use_side for _ in range(6)])
+
+        # First use
+        fight.use_die(hero, 0, monster)
+        # Second use
+        fight.use_die(hero, 1, monster)
+
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.is_used(), "Die should be used after second use with doubleUse"
+        assert hero_state.times_used_this_turn == 2
+
+
+class TestQuadUse:
+    """Tests for QUAD_USE keyword.
+
+    QUAD_USE allows a die to be used 4 times per turn before becoming used.
+    """
+
+    def test_quad_use_exhausts_on_fourth(self):
+        """Die with quadUse exhausts on 4th use."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero], [monster])
+
+        quad_use_side = Side(EffectType.DAMAGE, 1, {Keyword.QUAD_USE})
+        hero.die = Die([quad_use_side for _ in range(6)])
+
+        # Uses 1-3: not exhausted
+        for i in range(3):
+            fight.use_die(hero, i, monster)
+            hero_state = fight.get_state(hero, Temporality.PRESENT)
+            assert not hero_state.is_used(), f"Die should NOT be used after {i+1} uses"
+
+        # Use 4: exhausted
+        fight.use_die(hero, 3, monster)
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.is_used(), "Die should be used after 4th use"
+
+
+class TestHyperUse:
+    """Tests for HYPER_USE keyword.
+
+    HYPER_USE allows a die to be used N times per turn (N = pip value).
+    """
+
+    def test_hyper_use_3_pips_exhausts_on_third(self):
+        """Die with hyperUse(3) exhausts on 3rd use."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero], [monster])
+
+        hyper_use_side = Side(EffectType.DAMAGE, 3, {Keyword.HYPER_USE})
+        hero.die = Die([hyper_use_side for _ in range(6)])
+
+        # Uses 1-2: not exhausted
+        for i in range(2):
+            fight.use_die(hero, i, monster)
+            hero_state = fight.get_state(hero, Temporality.PRESENT)
+            assert not hero_state.is_used(), f"Die should NOT be used after {i+1} uses"
+
+        # Use 3: exhausted
+        fight.use_die(hero, 2, monster)
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.is_used(), "Die should be used after 3rd use (hyperUse(3))"
+
+
+class TestRite:
+    """Tests for RITE keyword.
+
+    RITE gives +1 per unused ally (excluding self) and marks them as used.
+    """
+
+    def test_rite_bonus_per_unused_ally(self):
+        """Rite grants +1 damage per unused ally."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter", hp=5)
+        hero2 = make_hero("Thief", hp=5)
+        hero3 = make_hero("Mage", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero1, hero2, hero3], [monster])
+
+        # Give hero1 a rite damage side (base 1 damage)
+        rite_side = Side(EffectType.DAMAGE, 1, {Keyword.RITE})
+        hero1.die = Die([rite_side for _ in range(6)])
+
+        # Give hero2 and hero3 dummy dice
+        dummy = Side(EffectType.DAMAGE, 1, set())
+        hero2.die = Die([dummy for _ in range(6)])
+        hero3.die = Die([dummy for _ in range(6)])
+
+        # Hero1 uses rite: 2 unused allies (hero2, hero3) = +2 bonus = 3 total damage
+        fight.use_die(hero1, 0, monster)
+
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 17, "Monster should take 3 damage (1 base + 2 unused allies)"
+
+    def test_rite_marks_allies_as_used(self):
+        """Rite marks all unused allies as used after applying bonus."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter", hp=5)
+        hero2 = make_hero("Thief", hp=5)
+        hero3 = make_hero("Mage", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero1, hero2, hero3], [monster])
+
+        rite_side = Side(EffectType.DAMAGE, 1, {Keyword.RITE})
+        hero1.die = Die([rite_side for _ in range(6)])
+
+        dummy = Side(EffectType.DAMAGE, 1, set())
+        hero2.die = Die([dummy for _ in range(6)])
+        hero3.die = Die([dummy for _ in range(6)])
+
+        # Hero1 uses rite
+        fight.use_die(hero1, 0, monster)
+
+        # All allies should be marked as used now
+        assert fight.get_state(hero2, Temporality.PRESENT).is_used()
+        assert fight.get_state(hero3, Temporality.PRESENT).is_used()
+
+    def test_rite_second_use_no_bonus(self):
+        """Second rite gets no bonus since all allies are now used."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter", hp=5)
+        hero2 = make_hero("Thief", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero1, hero2], [monster])
+
+        rite_side = Side(EffectType.DAMAGE, 1, {Keyword.RITE})
+        hero1.die = Die([rite_side for _ in range(6)])
+
+        dummy = Side(EffectType.DAMAGE, 1, set())
+        hero2.die = Die([dummy for _ in range(6)])
+
+        # First rite: 1 unused ally = 2 damage
+        fight.use_die(hero1, 0, monster)
+        fight.recharge_die(hero1)
+
+        # Second rite: 0 unused allies = 1 damage (base only)
+        fight.use_die(hero1, 1, monster)
+
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 17, "Monster should take 2+1=3 total damage"
+
+
+class TestTrill:
+    """Tests for TRILL keyword (trio + skill combined).
+
+    TRILL = trio + skill:
+    - x3 multiplier if previous 2 dice had same calculated value
+    - +N pips where N = entity tier
+    """
+
+    def test_trill_skill_bonus_always_applies(self):
+        """Trill adds tier bonus even without trio match."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        hero.entity_type.tier = 2  # Set tier for skill bonus
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero], [monster])
+
+        # Create a damage(1) side with TRILL
+        trill_side = Side(EffectType.DAMAGE, 1, {Keyword.TRILL})
+        hero.die = Die([trill_side for _ in range(6)])
+
+        # Use trill: base 1 + tier 2 = 3 damage (no trio match)
+        fight.use_die(hero, 0, monster)
+
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 17, "Monster should take 3 damage (1 base + 2 tier)"
+
+    def test_trill_trio_multiplier_when_matched(self):
+        """Trill x3 when previous 2 dice match current value.
+
+        Note: trill has both trio (x3 if match) AND skill (+tier) bonuses.
+        Default tier is 1, so trill damage = 1*3 + 1 = 4 when matching.
+        """
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter", hp=5)
+        hero1.entity_type.tier = 0  # No tier bonus for easier testing
+        hero2 = make_hero("Thief", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 has trill(1), hero2 has regular damage(1)
+        trill_side = Side(EffectType.DAMAGE, 1, {Keyword.TRILL})
+        dmg_side = Side(EffectType.DAMAGE, 1, set())
+
+        hero1.die = Die([trill_side for _ in range(6)])
+        hero2.die = Die([dmg_side for _ in range(6)])
+
+        # Use dmg(1) twice to set up trio
+        fight.use_die(hero2, 0, monster)  # prev value = 1
+        fight.recharge_die(hero2)
+        fight.use_die(hero2, 1, monster)  # prev value = 1
+
+        # Now hero1 uses trill(1): value=1, previous 2 also =1 → trio match! x3 = 3
+        # With tier=0, final damage = 1*3 + 0 = 3
+        fight.recharge_die(hero2)  # recharge hero2 so we can use hero1
+        fight.use_die(hero1, 0, monster)
+
+        # Total damage: 1 + 1 + 3 = 5
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 15, "Monster should take 1+1+3=5 damage (trill triggered x3)"

@@ -243,6 +243,14 @@ class EntityState:
                 if all(eff.calculated_effect.get_visible_value() == current_value for eff in previous_effects):
                     calculated.value *= 3
 
+        # TRILL: trio + skill combined - x3 if previous 2 dice match (skill bonus in conditional)
+        if Keyword.TRILL in calculated.keywords and fight_log is not None:
+            current_value = calculated.calculated_value
+            previous_effects = fight_log.get_last_n_die_effects(2)
+            if len(previous_effects) >= 2:
+                if all(eff.calculated_effect.get_visible_value() == current_value for eff in previous_effects):
+                    calculated.value *= 3
+
         # QUIN: x5 if previous 4 dice had same calculated value (using visible values)
         if Keyword.QUIN in calculated.keywords and fight_log is not None:
             current_value = calculated.calculated_value
@@ -1104,6 +1112,15 @@ class FightLog:
                     count += 1
         return count
 
+    def _get_allies(self, entity: Entity) -> list[Entity]:
+        """Get all allies of the given entity (excluding self).
+
+        For heroes, returns other heroes.
+        For monsters, returns other monsters.
+        """
+        team = self.heroes if entity.team == Team.HERO else self.monsters
+        return [ally for ally in team if ally != entity]
+
     def apply_bloodlust_damage(self, source: Entity, target: Entity, base_damage: int, is_pending: bool = False):
         """Apply damage with Bloodlust keyword.
 
@@ -1408,8 +1425,22 @@ class FightLog:
         self._die_effect_history.append(side_state)
         self._dice_used_this_turn += 1
 
-        # Mark die as used
-        self.mark_die_used(entity)
+        # Mark die as used (check for multi-use keywords)
+        max_uses = 1
+        if calculated_side.has_keyword(Keyword.QUAD_USE):
+            max_uses = 4
+        elif calculated_side.has_keyword(Keyword.DOUBLE_USE):
+            max_uses = 2
+        elif calculated_side.has_keyword(Keyword.HYPER_USE):
+            max_uses = value  # N = calculated pip value
+        self.mark_die_used(entity, max_uses)
+
+        # RITE: mark all unused allies as used (side effect after bonus was applied)
+        if calculated_side.has_keyword(Keyword.RITE):
+            for ally in self._get_allies(entity):
+                ally_state = self.get_state(ally, Temporality.PRESENT)
+                if not ally_state.is_used():
+                    self.mark_die_used(ally)
 
         # Apply growth AFTER use (to the original side, not the calculated)
         original_side = die.get_side(side_index)
@@ -1682,6 +1713,19 @@ class FightLog:
 
         # SKILL: +N where N = my level/tier
         if side.has_keyword(Keyword.SKILL):
+            value += self.get_entity_tier(source_entity)
+
+        # RITE: +1 per unused ally (excluding self)
+        if side.has_keyword(Keyword.RITE):
+            unused_count = 0
+            for ally in self._get_allies(source_entity):
+                ally_state = self.get_state(ally, Temporality.PRESENT)
+                if not ally_state.is_used():
+                    unused_count += 1
+            value += unused_count
+
+        # TRILL: trio + skill - add tier bonus (multiplier handled below)
+        if side.has_keyword(Keyword.TRILL):
             value += self.get_entity_tier(source_entity)
 
         # x2 multiplier keywords (applied after +N bonuses)

@@ -170,6 +170,13 @@ class Keyword(Enum):
     SKILL = auto()         # +N pips where N = my level/tier
     # Meta keyword - copy to allies
     DUPLICATE = auto()     # Copy this side onto all allied sides for one turn
+    # Usage tracking keywords - multiple uses per turn
+    DOUBLE_USE = auto()    # Can be used twice per turn
+    QUAD_USE = auto()      # Can be used 4 times per turn
+    HYPER_USE = auto()     # Can be used N times per turn (N = pip value)
+    RITE = auto()          # +1 per unused ally, marks them as used
+    # Combined keywords
+    TRILL = auto()         # trio + skill: x3 if 2 previous dice match + tier bonus
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
