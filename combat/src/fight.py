@@ -4,6 +4,7 @@ from dataclasses import dataclass, field, replace
 from enum import Enum, auto
 from typing import Optional, TYPE_CHECKING
 from copy import deepcopy
+from math import gcd
 
 from .entity import Entity, Team, FIELD_CAPACITY
 from .effects import EffectType
@@ -1367,6 +1368,38 @@ class FightLog:
         # EGO: x2 if targeting myself
         if side.has_keyword(Keyword.EGO):
             if source_entity == target_entity:
+                value *= 2
+
+        # SERRATED: x2 if target gained no shields this turn
+        # (has no shields AND hasn't blocked any damage with shields)
+        if side.has_keyword(Keyword.SERRATED):
+            if target_state.shield == 0 and target_state.damage_blocked == 0:
+                value *= 2
+
+        # UNDERDOG: x2 if source HP < target HP
+        if side.has_keyword(Keyword.UNDERDOG):
+            if source_state.hp < target_state.hp:
+                value *= 2
+
+        # OVERDOG: x2 if source HP > target HP
+        if side.has_keyword(Keyword.OVERDOG):
+            if source_state.hp > target_state.hp:
+                value *= 2
+
+        # DOG: x2 if source HP == target HP
+        if side.has_keyword(Keyword.DOG):
+            if source_state.hp == target_state.hp:
+                value *= 2
+
+        # HYENA: x2 if source HP and target HP are coprime (GCD == 1)
+        if side.has_keyword(Keyword.HYENA):
+            if gcd(source_state.hp, target_state.hp) == 1:
+                value *= 2
+
+        # TALL: x2 if target is topmost (index 0 in their team)
+        if side.has_keyword(Keyword.TALL):
+            team_list = self.heroes if target_entity.team == Team.HERO else self.monsters
+            if team_list and team_list[0] == target_entity:
                 value *= 2
 
         return value

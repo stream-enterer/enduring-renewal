@@ -32,6 +32,12 @@ class Keyword(Enum):
     TERMINAL = auto()    # x2 effect vs targets on exactly 1 HP
     EGO = auto()         # x2 effect if targeting myself
     CENTURY = auto()     # x2 effect vs targets with 100+ HP
+    SERRATED = auto()    # x2 effect vs targets who gained no shields this turn
+    UNDERDOG = auto()    # x2 effect vs targets with more HP than me
+    OVERDOG = auto()     # x2 effect vs targets with less HP than me
+    DOG = auto()         # x2 effect vs targets with equal HP to me
+    HYENA = auto()       # x2 effect vs targets whose HP is coprime with mine
+    TALL = auto()        # x2 effect vs topmost target
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom

@@ -2435,3 +2435,389 @@ class TestCentury:
         fight.use_die(hero, 0, monster)
         state = fight.get_state(monster, Temporality.PRESENT)
         assert state.hp == 97, "Century should deal normal (2 damage) when target has 99 HP"
+
+
+class TestSerrated:
+    """Tests for Serrated keyword.
+
+    Serrated deals x2 damage if the TARGET has gained no shields this turn.
+    Condition: target.shield == 0 AND target.damage_blocked == 0
+    """
+
+    def test_serrated_doubles_vs_no_shields(self):
+        """Serrated deals x2 damage when target has no shields."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        serrated_side = Side(EffectType.DAMAGE, 2, {Keyword.SERRATED})
+        hero.die.set_all_sides(serrated_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6, "Serrated should deal x2 (4 damage) when target has no shields"
+
+    def test_serrated_no_bonus_with_shields(self):
+        """Serrated deals normal damage when target has shields."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+        fight.apply_shield(monster, 2)  # Give monster shields
+
+        hero.die = Die()
+        serrated_side = Side(EffectType.DAMAGE, 2, {Keyword.SERRATED})
+        hero.die.set_all_sides(serrated_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # Shield absorbs 2, no shield bonus
+        assert state.hp == 10, "Serrated should deal normal damage when target has shields"
+
+    def test_serrated_no_bonus_after_shield_blocked(self):
+        """Serrated deals normal damage when target blocked damage with shields."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        hero2 = make_hero("Ranger", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero, hero2], [monster])
+        fight.apply_shield(monster, 1)
+
+        # First attack uses up the shield
+        hero2.die = Die()
+        normal_side = Side(EffectType.DAMAGE, 2)
+        hero2.die.set_all_sides(normal_side)
+        fight.use_die(hero2, 0, monster)
+
+        # Monster now has damage_blocked > 0, even though shields == 0
+        hero.die = Die()
+        serrated_side = Side(EffectType.DAMAGE, 2, {Keyword.SERRATED})
+        hero.die.set_all_sides(serrated_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # Monster took 2-1=1 from first attack, then 2 from serrated (no bonus since shield blocked damage)
+        assert state.hp == 7, "Serrated should deal normal damage when target blocked damage this turn"
+
+
+class TestUnderdog:
+    """Tests for Underdog keyword.
+
+    Underdog deals x2 damage if SOURCE has less HP than TARGET.
+    """
+
+    def test_underdog_doubles_when_less_hp(self):
+        """Underdog deals x2 damage when I have less HP than target."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=3)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        underdog_side = Side(EffectType.DAMAGE, 2, {Keyword.UNDERDOG})
+        hero.die.set_all_sides(underdog_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6, "Underdog should deal x2 (4 damage) when source has less HP"
+
+    def test_underdog_no_bonus_when_equal_hp(self):
+        """Underdog deals normal damage when HP is equal."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        underdog_side = Side(EffectType.DAMAGE, 2, {Keyword.UNDERDOG})
+        hero.die.set_all_sides(underdog_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Underdog should deal normal damage when HP is equal"
+
+    def test_underdog_no_bonus_when_more_hp(self):
+        """Underdog deals normal damage when I have more HP than target."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=15)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        underdog_side = Side(EffectType.DAMAGE, 2, {Keyword.UNDERDOG})
+        hero.die.set_all_sides(underdog_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Underdog should deal normal damage when source has more HP"
+
+
+class TestOverdog:
+    """Tests for Overdog keyword.
+
+    Overdog deals x2 damage if SOURCE has more HP than TARGET.
+    """
+
+    def test_overdog_doubles_when_more_hp(self):
+        """Overdog deals x2 damage when I have more HP than target."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=15)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        overdog_side = Side(EffectType.DAMAGE, 2, {Keyword.OVERDOG})
+        hero.die.set_all_sides(overdog_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6, "Overdog should deal x2 (4 damage) when source has more HP"
+
+    def test_overdog_no_bonus_when_equal_hp(self):
+        """Overdog deals normal damage when HP is equal."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        overdog_side = Side(EffectType.DAMAGE, 2, {Keyword.OVERDOG})
+        hero.die.set_all_sides(overdog_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Overdog should deal normal damage when HP is equal"
+
+    def test_overdog_no_bonus_when_less_hp(self):
+        """Overdog deals normal damage when I have less HP than target."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        overdog_side = Side(EffectType.DAMAGE, 2, {Keyword.OVERDOG})
+        hero.die.set_all_sides(overdog_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Overdog should deal normal damage when source has less HP"
+
+
+class TestDog:
+    """Tests for Dog keyword.
+
+    Dog deals x2 damage if SOURCE has equal HP to TARGET.
+    """
+
+    def test_dog_doubles_when_equal_hp(self):
+        """Dog deals x2 damage when HP is equal."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        dog_side = Side(EffectType.DAMAGE, 2, {Keyword.DOG})
+        hero.die.set_all_sides(dog_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6, "Dog should deal x2 (4 damage) when HP is equal"
+
+    def test_dog_no_bonus_when_more_hp(self):
+        """Dog deals normal damage when I have more HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=15)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        dog_side = Side(EffectType.DAMAGE, 2, {Keyword.DOG})
+        hero.die.set_all_sides(dog_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Dog should deal normal damage when HP is not equal"
+
+    def test_dog_no_bonus_when_less_hp(self):
+        """Dog deals normal damage when I have less HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        dog_side = Side(EffectType.DAMAGE, 2, {Keyword.DOG})
+        hero.die.set_all_sides(dog_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Dog should deal normal damage when HP is not equal"
+
+
+class TestHyena:
+    """Tests for Hyena keyword.
+
+    Hyena deals x2 damage if SOURCE HP and TARGET HP are coprime (GCD == 1).
+    """
+
+    def test_hyena_doubles_when_coprime(self):
+        """Hyena deals x2 damage when HP values are coprime."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        # 7 and 11 are coprime (GCD = 1)
+        hero = make_hero("Fighter", hp=7)
+        monster = make_monster("Goblin", hp=11)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        hyena_side = Side(EffectType.DAMAGE, 2, {Keyword.HYENA})
+        hero.die.set_all_sides(hyena_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 7, "Hyena should deal x2 (4 damage) when HP values are coprime"
+
+    def test_hyena_no_bonus_when_not_coprime(self):
+        """Hyena deals normal damage when HP values share a factor."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        # 6 and 10 are not coprime (GCD = 2)
+        hero = make_hero("Fighter", hp=6)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        hyena_side = Side(EffectType.DAMAGE, 2, {Keyword.HYENA})
+        hero.die.set_all_sides(hyena_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Hyena should deal normal damage when HP values share a factor"
+
+    def test_hyena_doubles_with_one_hp(self):
+        """Hyena deals x2 damage when one entity has 1 HP (1 is coprime with everything)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        # 1 and 10 are coprime (GCD = 1)
+        hero = make_hero("Fighter", hp=1)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        hyena_side = Side(EffectType.DAMAGE, 2, {Keyword.HYENA})
+        hero.die.set_all_sides(hyena_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6, "Hyena should deal x2 (4 damage) when source has 1 HP"
+
+
+class TestTall:
+    """Tests for Tall keyword.
+
+    Tall deals x2 damage if TARGET is the topmost entity in their team (index 0).
+    """
+
+    def test_tall_doubles_vs_topmost(self):
+        """Tall deals x2 damage when target is at top of their team."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster1 = make_monster("Goblin", hp=10)
+        monster2 = make_monster("Orc", hp=15)
+
+        # monster1 is at index 0 (topmost)
+        fight = FightLog([hero], [monster1, monster2])
+
+        hero.die = Die()
+        tall_side = Side(EffectType.DAMAGE, 2, {Keyword.TALL})
+        hero.die.set_all_sides(tall_side)
+
+        fight.use_die(hero, 0, monster1)
+        state = fight.get_state(monster1, Temporality.PRESENT)
+        assert state.hp == 6, "Tall should deal x2 (4 damage) vs topmost target"
+
+    def test_tall_no_bonus_vs_non_topmost(self):
+        """Tall deals normal damage when target is not at top of their team."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster1 = make_monster("Goblin", hp=10)
+        monster2 = make_monster("Orc", hp=15)
+
+        # monster2 is at index 1 (not topmost)
+        fight = FightLog([hero], [monster1, monster2])
+
+        hero.die = Die()
+        tall_side = Side(EffectType.DAMAGE, 2, {Keyword.TALL})
+        hero.die.set_all_sides(tall_side)
+
+        fight.use_die(hero, 0, monster2)
+        state = fight.get_state(monster2, Temporality.PRESENT)
+        assert state.hp == 13, "Tall should deal normal damage vs non-topmost target"
+
+    def test_tall_doubles_vs_only_monster(self):
+        """Tall deals x2 damage when target is the only monster (topmost by default)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        tall_side = Side(EffectType.DAMAGE, 2, {Keyword.TALL})
+        hero.die.set_all_sides(tall_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6, "Tall should deal x2 (4 damage) vs only monster (topmost)"
