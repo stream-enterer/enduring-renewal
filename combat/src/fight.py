@@ -33,10 +33,16 @@ class EntityState:
     dodge: bool = False  # If True, entity is invincible (immune to damage)
     regen: int = 0       # Regen amount - heals this much HP each turn
     petrified_sides: list = field(default_factory=list)  # Side indices that are petrified (int or None for overflow)
+    used_die: bool = False  # If True, die has been fully used this turn
+    times_used_this_turn: int = 0  # How many times die has been used this turn
 
     @property
     def is_dead(self) -> bool:
         return self.hp <= 0
+
+    def is_used(self) -> bool:
+        """Check if this entity's die has been fully used this turn."""
+        return self.used_die
 
     @property
     def is_out_of_battle(self) -> bool:
@@ -197,7 +203,7 @@ class FightLog:
 
     def _snapshot_states(self) -> dict[Entity, EntityState]:
         """Deep copy current states."""
-        return {e: EntityState(e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked, s.keep_shields, s.stone_hp, s.fled, s.dodge, s.regen, list(s.petrified_sides)) for e, s in self._states.items()}
+        return {e: EntityState(e, s.hp, s.max_hp, s.shield, s.spiky, s.self_heal, s.damage_blocked, s.keep_shields, s.stone_hp, s.fled, s.dodge, s.regen, list(s.petrified_sides), s.used_die, s.times_used_this_turn) for e, s in self._states.items()}
 
     def _record_action(self):
         """Record state before an action for undo."""
@@ -983,6 +989,7 @@ class FightLog:
 
         Executes the side's effect and applies growth if the side has the growth keyword.
         The side's calculated_value is used (includes growth bonus from previous uses).
+        Marks the die as used after applying the effect.
 
         For shieldMana effects (SHIELD type with MANA keyword):
         - Grants shield equal to calculated_value
@@ -1012,6 +1019,9 @@ class FightLog:
 
         elif side.effect_type == EffectType.HEAL:
             self.apply_heal(target, value)
+
+        # Mark die as used
+        self.mark_die_used(entity)
 
         # Apply growth AFTER use
         if side.has_keyword(Keyword.GROWTH):
@@ -1077,3 +1087,107 @@ class FightLog:
             state.keep_shields, state.stone_hp, state.fled, state.dodge, state.regen,
             petrified
         )
+
+    def mark_die_used(self, entity: Entity, max_uses: int = 1):
+        """Mark entity's die as used (or partially used for multi-use keywords).
+
+        Args:
+            entity: The entity whose die was used
+            max_uses: How many times the die can be used before being fully used.
+                      Default 1 for normal dies, higher for doubleUse/quadUse keywords.
+        """
+        self._record_action()
+        state = self._states[entity]
+        times = state.times_used_this_turn + 1
+        is_used = times >= max_uses
+
+        self._states[entity] = EntityState(
+            entity, state.hp, state.max_hp,
+            state.shield, state.spiky, state.self_heal, state.damage_blocked,
+            state.keep_shields, state.stone_hp, state.fled, state.dodge, state.regen,
+            list(state.petrified_sides), is_used, times
+        )
+
+    def recharge_die(self, entity: Entity):
+        """Recharge entity's die - allows it to be used again.
+
+        Called by RESCUE keyword (when healing saves a dying hero)
+        and RAMPAGE keyword (when attack kills an enemy).
+        """
+        self._record_action()
+        state = self._states[entity]
+
+        self._states[entity] = EntityState(
+            entity, state.hp, state.max_hp,
+            state.shield, state.spiky, state.self_heal, state.damage_blocked,
+            state.keep_shields, state.stone_hp, state.fled, state.dodge, state.regen,
+            list(state.petrified_sides), False, 0  # Reset used_die and times_used
+        )
+
+    def apply_heal_rescue(self, source: Entity, target: Entity, amount: int):
+        """Apply heal with RESCUE keyword.
+
+        If the heal saves a dying hero (future HP was <= 0, now > 0),
+        the source's die is recharged and can be used again.
+
+        Flow:
+        1. Check if target was dying before heal (future HP <= 0)
+        2. Apply heal
+        3. Mark source's die as used
+        4. Check if target is now surviving (future HP > 0)
+        5. If was dying and now surviving = rescue, recharge die
+        """
+        # Check if target was dying before heal
+        was_dying = self.get_state(target, Temporality.FUTURE).is_dead
+
+        # Apply heal
+        self.apply_heal(target, amount)
+
+        # Mark die as used
+        self.mark_die_used(source)
+
+        # Check for rescue
+        now_surviving = not self.get_state(target, Temporality.FUTURE).is_dead
+        if was_dying and now_surviving:
+            # Rescue! Recharge the die
+            self.recharge_die(source)
+
+    def apply_rampage_damage_all(self, source: Entity, amount: int):
+        """Apply damage to ALL entities with RAMPAGE keyword.
+
+        burningFlail-style: hits all entities for N damage.
+        If any entity dies, the source's die is recharged.
+
+        Flow:
+        1. Record which entities were alive before
+        2. Apply damage to all present entities (heroes and monsters)
+        3. Mark source's die as used
+        4. Check if any entity died
+        5. If any died = kill, recharge die
+        """
+        # Record alive entities before damage
+        alive_before = set()
+        for entity in self.heroes + self.monsters:
+            state = self.get_state(entity, Temporality.PRESENT)
+            if not state.is_dead:
+                alive_before.add(entity)
+
+        # Apply damage to all present entities
+        for entity in list(alive_before):
+            if entity != source:  # Don't hit yourself
+                self.apply_damage(source, entity, amount, is_pending=False)
+
+        # Mark die as used
+        self.mark_die_used(source)
+
+        # Check for kills
+        killed = False
+        for entity in alive_before:
+            state = self.get_state(entity, Temporality.PRESENT)
+            if state.is_dead:
+                killed = True
+                break
+
+        if killed:
+            # Kill! Recharge the die
+            self.recharge_die(source)

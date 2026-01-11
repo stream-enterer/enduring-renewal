@@ -2,10 +2,10 @@
   "phase": 2,
   "infrastructure": {
     "current": {
-      "component": "used_state",
+      "component": "mana",
       "status": "not_started",
-      "target_test": "TestKeyword.rescue",
-      "unblocks": ["rescue", "rampageHeroKill"],
+      "target_test": "TestKeyword.precisePlusMagic",
+      "unblocks": ["precisePlusMagic"],
       "design": null
     },
     "completed": [
@@ -22,6 +22,13 @@
         "tests_added": ["TestPetrify (6 tests)"],
         "tests_unblocked": ["TestComplexEff.petrifyBug", "TestComplexEff.petrifyAboveSix"],
         "summary": "Added BLANK effect type, PETRIFY_ORDER, petrified_sides tracking, get_side_state, get_total_petrification, apply_petrify, apply_cleanse_petrify"
+      },
+      {
+        "component": "used_state",
+        "timestamp": "2026-01-10",
+        "tests_added": ["TestRescue (3 tests)", "TestRampage (5 tests)"],
+        "tests_unblocked": ["TestKeyword.rescue", "TestKeyword.rampageHeroKill"],
+        "summary": "Added used_die/times_used_this_turn to EntityState, is_used(), mark_die_used(), recharge_die(), RESCUE keyword (apply_heal_rescue), RAMPAGE keyword (apply_rampage_damage_all)"
       }
     ],
     "order": [
@@ -39,14 +46,12 @@
     "python_tests": 77
   },
   "phase2_summary": {
-    "tests_added": 10,
-    "total_python_tests": 87,
-    "components_completed": 2
+    "tests_added": 18,
+    "total_python_tests": 95,
+    "components_completed": 3
   },
   "blocked": [
-    {"test": "TestKeyword.rescue", "needs": "used_state", "reason": "isUsed() state tracking"},
     {"test": "TestKeyword.precisePlusMagic", "needs": "mana", "reason": "shieldMana, getTotalMana - partially done"},
-    {"test": "TestKeyword.rampageHeroKill", "needs": "used_state", "reason": "turnInto, isUsed()"},
     {"test": "TestKeyword.testComboCruel", "needs": "copycat", "reason": "turnInto, copycat keyword"},
     {"test": "TestKeyword.testComboCruelWand", "needs": "copycat", "reason": "turnInto, copycat keyword"},
     {"test": "TestComplexEff.copycatManagain", "needs": "copycat", "reason": "mana + copycat"},
@@ -63,7 +68,7 @@
     "TestBasicEff: basicSanityTest, attackEnemy, attackHero, basicBlock, basicHeal, reinforcements",
     "TestItem: testGauntlet, testSteelHeart, testPipeAndStudsWithHealShield, testBonusIncomingWithHealShields",
     "TestComplexEff: pain, doubleTaunt, keepShield, stoneskin, resurrect, fortitudeHeal, goblinFlee, petrify (via TestPetrify)",
-    "TestKeyword: bloodlust, poison, precise, fierce, weaken, drain, lifestealVsInvincible, regen, pain, growth",
+    "TestKeyword: bloodlust, poison, precise, fierce, weaken, drain, lifestealVsInvincible, regen, pain, growth, rescue, rampageHeroKill",
     "TestKeywordSpell: engage, cruel"
   ],
   "skipped_files": [

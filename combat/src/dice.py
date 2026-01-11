@@ -12,6 +12,8 @@ class Keyword(Enum):
     GROWTH = auto()      # After use, side value increases by +1
     MANA = auto()        # Effect also grants mana equal to value
     PETRIFY = auto()     # Turns target's sides to stone (Blank)
+    RESCUE = auto()      # Die recharged if heal saves a dying hero
+    RAMPAGE = auto()     # Die recharged if attack kills an enemy
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
@@ -126,4 +128,29 @@ def petrified_blank() -> Side:
         keywords=set(),
         growth_bonus=0,
         is_petrified=True
+    )
+
+
+def heal_rescue(value: int) -> Side:
+    """Create a healRescue side: heals with RESCUE keyword.
+
+    If this heal saves a dying hero (was going to die, now survives),
+    the die is recharged and can be used again.
+    """
+    return Side(
+        effect_type=EffectType.HEAL,
+        value=value,
+        keywords={Keyword.RESCUE}
+    )
+
+
+def damage_rampage(value: int) -> Side:
+    """Create a damage side with RAMPAGE keyword (like burningFlail).
+
+    If this attack kills an enemy, the die is recharged and can be used again.
+    """
+    return Side(
+        effect_type=EffectType.DAMAGE,
+        value=value,
+        keywords={Keyword.RAMPAGE}
     )
