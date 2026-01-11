@@ -43,8 +43,13 @@ When asked to "continue":
 1. **Read "Current"** in `IMPLEMENTATION_PLAN.md`
 2. **Verify not already done** - Check if keywords already in KEYWORDS.json `implemented`
    - If done: Update "Current" to next system, then re-read
-3. **Study Java** using file references in the plan
-4. **Implement** core infrastructure + all dependent keywords
+3. **Study Java** using strategic research (3 steps max):
+   - Read keyword's Keyword.java entry (identifies type: conditional/buff/trigger)
+   - Grep keyword name in `decompiled/` (finds implementation files)
+   - Read implementation (usually EntState.java case statement + trigger classes)
+4. **Implement** - batch edits by file:
+   - List all changes needed per file before editing
+   - All changes to same file in single Edit call
 5. **Run tests** - `cd combat && uv run pytest` (all must pass)
 6. **Update state** (only after tests pass):
    - `KEYWORDS.json`: Move keywords from `blocked` → `implemented`
