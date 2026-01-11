@@ -777,3 +777,47 @@ class FightLog:
         total_damage = base_damage * multiplier
 
         self.apply_damage(source, target, total_damage, is_pending)
+
+    def apply_weaken_damage(self, source: Entity, target: Entity, amount: int):
+        """Apply damage with Weaken keyword.
+
+        Weaken deals damage to target AND reduces target's outgoing pending damage by N.
+        This affects pending damage that the target has already dealt.
+
+        Example: If monster dealt 3 pending to hero, weaken(2) reduces that to 1 pending.
+        """
+        self._record_action()
+
+        # 1. Deal damage to target
+        state = self._states[target]
+
+        # Stone HP caps damage to 1 per hit (0 damage stays 0)
+        effective_amount = amount
+        if state.stone_hp > 0 and amount > 0:
+            effective_amount = 1
+
+        # Shield blocks damage
+        blocked = min(state.shield, effective_amount)
+        actual_damage = effective_amount - blocked
+        new_shield = state.shield - blocked
+        new_hp = state.hp - actual_damage
+        self._states[target] = EntityState(
+            target, new_hp, state.max_hp,
+            new_shield, state.spiky, state.self_heal, state.damage_blocked + blocked,
+            state.keep_shields, state.stone_hp, state.fled
+        )
+
+        # Check if target died and triggers flee
+        if new_hp <= 0 and target.team == Team.MONSTER:
+            self._check_flee_triggers()
+
+        # Check if something died and reinforcements can spawn
+        self._try_spawn_reinforcements()
+
+        # 2. Reduce pending damage from target by 'amount'
+        remaining_reduction = amount
+        for pending in self._pending:
+            if pending.source == target and remaining_reduction > 0:
+                reduction = min(remaining_reduction, pending.amount)
+                pending.amount -= reduction
+                remaining_reduction -= reduction

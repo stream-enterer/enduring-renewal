@@ -453,3 +453,117 @@ class TestCruel:
         fight.apply_cruel_damage(hero, monster, 1)
         state = fight.get_state(monster, Temporality.PRESENT)
         assert state.hp == -1, "Should deal 2 damage (well below half HP)"
+
+
+class TestWeaken:
+    """Tests for Weaken keyword.
+
+    Weaken deals damage to target AND reduces target's outgoing pending damage by N.
+    This affects pending damage that the target has already dealt.
+
+    Example: If monster dealt 3 pending to hero, weaken(2) reduces that to 1 pending.
+
+    Verified: Confirmed.
+    """
+
+    def test_weaken_deals_damage(self):
+        """Weaken deals damage to the target."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        fight.apply_weaken_damage(hero, monster, 2)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 2, "Weaken should deal damage to target"
+
+    def test_weaken_reduces_pending_damage(self):
+        """Weaken reduces target's outgoing pending damage."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Monster attacks hero for 3 pending
+        fight.apply_damage(monster, hero, 3, is_pending=True)
+
+        # Hero's future should show 3 damage
+        future = fight.get_state(hero, Temporality.FUTURE)
+        assert future.hp == 2, "Hero should have 3 pending damage"
+
+        # Hero uses weaken(2) on monster
+        fight.apply_weaken_damage(hero, monster, 2)
+
+        # Hero's future should now show only 1 damage (3 - 2 = 1)
+        future = fight.get_state(hero, Temporality.FUTURE)
+        assert future.hp == 4, "Pending damage should be reduced by 2"
+
+    def test_weaken_full_scenario(self):
+        """Full weaken test matching original Java test.
+
+        Setup: 1 Fighter hero (5 HP) vs 1 Goblin monster (4 HP)
+        - Monster attacks hero for 3 pending damage
+        - Hero's future: 5 - 3 = 2 HP
+        - Hero uses weaken(2) on monster
+        - Hero's future: 5 - 1 = 4 HP (pending reduced from 3 to 1)
+
+        Verified: Confirmed.
+        """
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Monster attacks hero for 3 pending
+        fight.apply_damage(monster, hero, 3, is_pending=True)
+
+        # Check hero's future state - should show 3 damage
+        future = fight.get_state(hero, Temporality.FUTURE)
+        hero_max = fight.get_state(hero, Temporality.PRESENT).max_hp
+        assert future.hp == hero_max - 3, "hero should be hit for 3 damage"
+
+        # Hero uses weaken(2) on monster
+        fight.apply_weaken_damage(hero, monster, 2)
+
+        # Check hero's future state - pending should be reduced by 2
+        future = fight.get_state(hero, Temporality.FUTURE)
+        assert future.hp == hero_max - 1, "damage should be reduced by 2"
+
+    def test_weaken_cannot_reduce_below_zero(self):
+        """Weaken cannot make pending damage negative."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Monster attacks hero for 1 pending
+        fight.apply_damage(monster, hero, 1, is_pending=True)
+
+        # Hero uses weaken(5) on monster (more than pending)
+        fight.apply_weaken_damage(hero, monster, 5)
+
+        # Hero's future should show 0 damage (not negative)
+        future = fight.get_state(hero, Temporality.FUTURE)
+        assert future.hp == 5, "Pending damage should be reduced to 0, not negative"
+
+    def test_weaken_affects_only_target_source(self):
+        """Weaken only reduces pending from the weakened target, not other sources."""
+        hero = make_hero("Fighter", hp=5)
+        monsters = [make_monster(f"Goblin{i}", hp=4) for i in range(2)]
+
+        fight = FightLog([hero], monsters)
+
+        # Both monsters attack hero for 2 pending each
+        fight.apply_damage(monsters[0], hero, 2, is_pending=True)
+        fight.apply_damage(monsters[1], hero, 2, is_pending=True)
+
+        # Hero's future should show 4 damage
+        future = fight.get_state(hero, Temporality.FUTURE)
+        assert future.hp == 1, "Hero should have 4 pending damage"
+
+        # Hero uses weaken(2) on monster 0
+        fight.apply_weaken_damage(hero, monsters[0], 2)
+
+        # Hero's future should show 2 damage (only monster 1's pending remains)
+        future = fight.get_state(hero, Temporality.FUTURE)
+        assert future.hp == 3, "Only monster 0's pending should be reduced"

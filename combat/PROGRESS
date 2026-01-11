@@ -1,7 +1,7 @@
 {
   "current": {
     "file": "TestKeyword",
-    "method": "weaken",
+    "method": "drain",
     "status": "analyzing",
     "hypothesis": null,
     "verified": null
@@ -45,6 +45,14 @@
     }
   ],
   "completed": [
+    {
+      "file": "TestKeyword",
+      "method": "weaken",
+      "hypothesis": "Weaken deals damage AND reduces target's outgoing damage by N. Affects pending damage from that source (3 pending - 2 weaken = 1 pending).",
+      "verified": "Confirmed.",
+      "test": "tests/test_keyword.py::TestWeaken",
+      "timestamp": "2025-01-10T21:00:00Z"
+    },
     {
       "file": "TestKeyword",
       "method": "fierce",
