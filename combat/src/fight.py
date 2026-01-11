@@ -7,7 +7,7 @@ from copy import deepcopy
 from math import gcd
 import random
 
-from .entity import Entity, Team, FIELD_CAPACITY
+from .entity import Entity, Team, FIELD_CAPACITY, BONES
 from .effects import EffectType
 
 if TYPE_CHECKING:
@@ -565,6 +565,31 @@ class FightLog:
                     self._reinforcements.pop(i)
                     spawned = True
                     break  # Restart loop to check remaining reinforcements
+
+    def summon_entity(self, entity_type, count: int = 1):
+        """Summon entities during combat.
+
+        Creates new entities of the given type and adds them to the monster team.
+        If the field is full, they go into reinforcements.
+
+        Args:
+            entity_type: The EntityType to summon (e.g., BONES)
+            count: Number of entities to summon
+        """
+        for _ in range(count):
+            # Create new entity
+            new_entity = Entity(entity_type, Team.MONSTER)
+
+            # Check if there's room on the field
+            size = entity_type.size.value
+            if self._get_field_usage() + size <= FIELD_CAPACITY:
+                # Spawn directly on field
+                new_entity.position = len(self.monsters)
+                self.monsters.append(new_entity)
+                self._states[new_entity] = EntityState(new_entity, entity_type.hp, entity_type.hp)
+            else:
+                # Add to reinforcements
+                self._reinforcements.append(new_entity)
 
     def _check_flee_triggers(self):
         """Check if any monsters should flee after an ally died.
@@ -1710,6 +1735,15 @@ class FightLog:
         if calculated_side.has_keyword(Keyword.EXERT):
             source_state = self.get_state(entity, Temporality.PRESENT)
             source_state.is_exerted = True
+
+        # === ENTITY SUMMONING KEYWORDS ===
+        # BONED: summon 1 Bones monster
+        if calculated_side.has_keyword(Keyword.BONED):
+            self.summon_entity(BONES, 1)
+
+        # HYPER_BONED: summon N Bones monsters (N = pip value)
+        if calculated_side.has_keyword(Keyword.HYPER_BONED):
+            self.summon_entity(BONES, value)
 
         # SINGLE_USE: replace this side with a blank (for this fight)
         if original_side.has_keyword(Keyword.SINGLE_USE) or calculated_side.has_keyword(Keyword.SINGLE_USE):

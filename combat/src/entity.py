@@ -52,3 +52,4 @@ GOBLIN = EntityType("Goblin", 3, EntitySize.HERO)  # Hero-sized
 TEST_GOBLIN = EntityType("testGoblin", 3, EntitySize.HERO)  # For tests
 FLEEING_GOBLIN = EntityType("goblin", 3, EntitySize.HERO, flees_on_ally_death=True)  # Flees when alone
 DRAGON = EntityType("Dragon", 20, EntitySize.HUGE)
+BONES = EntityType("Bones", 4, EntitySize.TINY)  # Summoned skeleton - 4 HP, tiny size

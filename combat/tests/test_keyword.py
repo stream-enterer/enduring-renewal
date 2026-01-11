@@ -8385,3 +8385,234 @@ class TestWither:
         assert monster_state.max_hp == 6  # 10 - 2 - 2
         # HP is capped at 6 after each wither
         assert monster_state.hp == 6
+
+
+class TestBoned:
+    """Tests for Boned keyword - summons a Bones monster.
+
+    From Java: boned(Colours.light, "Summon a bones", null, KeywordAllowType.PIPS_ONLY)
+
+    - boned: Summons 1 Bones monster (regardless of pip value)
+    - Uses BONES EntityType (4 HP, TINY size)
+    """
+
+    def test_boned_summons_one_bones(self):
+        """Using a side with boned should summon exactly 1 Bones monster."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+        from src.entity import BONES
+
+        hero = make_hero("Necromancer", hp=5)
+        monster = make_monster("Goblin", hp=4)
+        fight = FightLog([hero], [monster])
+
+        # Initially just 1 monster
+        assert len(fight.monsters) == 1
+
+        hero.die = Die()
+        # Damage 1 with boned keyword - summons Bones after dealing damage
+        side = Side(EffectType.DAMAGE, 1, {Keyword.BONED})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Now should have 2 monsters (original + summoned Bones)
+        assert len(fight.monsters) == 2
+        # The new monster should be a Bones
+        summoned = fight.monsters[1]
+        assert summoned.entity_type.name == "Bones"
+        assert summoned.entity_type.hp == 4  # Bones has 4 HP
+
+    def test_boned_summons_regardless_of_pip_value(self):
+        """Boned always summons exactly 1 Bones, regardless of pip value."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Necromancer", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # High pip value (5), but still should only summon 1 Bones
+        side = Side(EffectType.DAMAGE, 5, {Keyword.BONED})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Should have exactly 2 monsters
+        assert len(fight.monsters) == 2
+
+    def test_boned_can_be_used_multiple_times(self):
+        """Using boned multiple times summons multiple Bones."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Necromancer", hp=5)
+        monster = make_monster("Dragon", hp=20)  # High HP so it survives
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 1, {Keyword.BONED})
+        hero.die.set_all_sides(side)
+
+        # Use boned 3 times
+        fight.use_die(hero, 0, monster)
+        fight.use_die(hero, 1, monster)
+        fight.use_die(hero, 2, monster)
+
+        # Should have 4 monsters (1 original + 3 summoned)
+        assert len(fight.monsters) == 4
+
+
+class TestHyperBoned:
+    """Tests for HyperBoned keyword - summons N Bones monsters.
+
+    From Java: hyperBoned(Colours.light, "Summon [n] bones", null, KeywordAllowType.PIPS_ONLY)
+
+    - hyperBoned: Summons N Bones monsters where N = pip value
+    - Uses BONES EntityType (4 HP, TINY size)
+    """
+
+    def test_hyper_boned_summons_n_bones(self):
+        """Using hyperBoned with N pips summons N Bones monsters."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Necromancer", hp=5)
+        monster = make_monster("Goblin", hp=4)
+        fight = FightLog([hero], [monster])
+
+        # Initially 1 monster
+        assert len(fight.monsters) == 1
+
+        hero.die = Die()
+        # Damage 3 with hyperBoned - should summon 3 Bones
+        side = Side(EffectType.DAMAGE, 3, {Keyword.HYPER_BONED})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Should have 4 monsters (1 original + 3 summoned)
+        assert len(fight.monsters) == 4
+        # All new monsters should be Bones
+        for i in range(1, 4):
+            assert fight.monsters[i].entity_type.name == "Bones"
+
+    def test_hyper_boned_zero_pips_summons_nothing(self):
+        """HyperBoned with 0 pips summons 0 Bones."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Necromancer", hp=5)
+        monster = make_monster("Goblin", hp=4)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # 0 pips with hyperBoned
+        side = Side(EffectType.DAMAGE, 0, {Keyword.HYPER_BONED})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Should still have only 1 monster
+        assert len(fight.monsters) == 1
+
+    def test_hyper_boned_one_pip_summons_one(self):
+        """HyperBoned with 1 pip summons exactly 1 Bones."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Necromancer", hp=5)
+        monster = make_monster("Goblin", hp=4)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 1, {Keyword.HYPER_BONED})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Should have 2 monsters
+        assert len(fight.monsters) == 2
+
+
+class TestEntitySummoning:
+    """Tests for entity summoning infrastructure.
+
+    Tests the summon_entity method and related mechanics.
+    """
+
+    def test_summoned_entity_gets_state(self):
+        """Summoned entities should have proper state initialized."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Necromancer", hp=5)
+        monster = make_monster("Goblin", hp=4)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 1, {Keyword.BONED})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Get state for summoned Bones
+        bones = fight.monsters[1]
+        bones_state = fight.get_state(bones, Temporality.PRESENT)
+
+        assert bones_state is not None
+        assert bones_state.hp == 4  # Full HP
+        assert bones_state.max_hp == 4
+        assert not bones_state.is_dead
+
+    def test_summoned_entity_can_be_targeted(self):
+        """Summoned entities should be targetable."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Necromancer", hp=5)
+        monster = make_monster("Goblin", hp=4)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        boned_side = Side(EffectType.DAMAGE, 1, {Keyword.BONED})
+        dmg_side = Side(EffectType.DAMAGE, 2)
+        hero.die.sides = [boned_side.copy(), dmg_side.copy(), dmg_side.copy(),
+                         dmg_side.copy(), dmg_side.copy(), dmg_side.copy()]
+
+        # Summon a Bones
+        fight.use_die(hero, 0, monster)
+
+        # Target the summoned Bones with damage
+        bones = fight.monsters[1]
+        fight.use_die(hero, 1, bones)
+
+        # Bones should have taken damage
+        bones_state = fight.get_state(bones, Temporality.PRESENT)
+        assert bones_state.hp == 2  # 4 - 2 = 2
+
+    def test_summon_to_reinforcements_when_field_full(self):
+        """When field is full, summoned entities go to reinforcements."""
+        from src.entity import EntityType, EntitySize, FIELD_CAPACITY
+
+        hero = make_hero("Necromancer", hp=5)
+        # Create a huge monster that takes up most of the field
+        huge_type = EntityType("Giant", 20, EntitySize.HUGE)  # 64 units
+        huge_monster = Entity(huge_type, Team.MONSTER)
+        huge_type2 = EntityType("Giant2", 20, EntitySize.HUGE)  # 64 units
+        huge_monster2 = Entity(huge_type2, Team.MONSTER)
+
+        fight = FightLog([hero], [huge_monster, huge_monster2])
+
+        # Field should be near capacity (2 huge = 128 units out of 165)
+        # BONES is TINY (16 units), so ~2 more should fit before overflow
+
+        # Summon many bones to force some into reinforcements
+        from src.entity import BONES
+        for i in range(10):
+            fight.summon_entity(BONES, 1)
+
+        # Some Bones should be in reinforcements
+        total_summoned = len(fight.monsters) - 2 + len(fight._reinforcements)
+        assert total_summoned == 10  # All 10 were summoned (some in reinforcements)

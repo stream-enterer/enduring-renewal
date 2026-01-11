@@ -201,6 +201,9 @@ class Keyword(Enum):
     # Max HP modification keywords
     VITALITY = auto()      # Grant target +N max HP (as empty HP) this fight
     WITHER = auto()        # Grant target -N max HP this fight
+    # Entity summoning keywords
+    BONED = auto()         # Summon 1 Bones
+    HYPER_BONED = auto()   # Summon N Bones (N = pip value)
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
