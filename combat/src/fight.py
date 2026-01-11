@@ -601,3 +601,48 @@ class FightLog:
                 new_shield, state.spiky, state.self_heal, 0,  # Reset damage_blocked
                 state.keep_shields, state.stone_hp
             )
+
+    def apply_kill(self, target: Entity):
+        """Instantly kill an entity (set HP to 0)."""
+        self._record_action()
+        state = self._states[target]
+        self._states[target] = EntityState(
+            target, 0, state.max_hp,
+            state.shield, state.spiky, state.self_heal, state.damage_blocked,
+            state.keep_shields, state.stone_hp
+        )
+
+    def apply_resurrect(self, amount: int):
+        """Resurrect up to N dead heroes with full HP.
+
+        Resurrects dead heroes in order (by position).
+        Capped at number of dead heroes.
+        Resurrected heroes come back with full HP.
+        """
+        self._record_action()
+
+        # Find dead heroes
+        dead_heroes = []
+        for hero in self.heroes:
+            state = self._states[hero]
+            if state.is_dead:
+                dead_heroes.append(hero)
+
+        # Resurrect up to 'amount' dead heroes
+        to_resurrect = dead_heroes[:amount]
+        for hero in to_resurrect:
+            state = self._states[hero]
+            self._states[hero] = EntityState(
+                hero, state.max_hp, state.max_hp,  # Full HP
+                0, 0, False, 0,  # Reset buffs
+                False, 0  # Reset keep_shields and stone_hp
+            )
+
+    def get_dead_heroes(self) -> list[Entity]:
+        """Get list of dead heroes."""
+        dead = []
+        for hero in self.heroes:
+            state = self._states[hero]
+            if state.is_dead:
+                dead.append(hero)
+        return dead

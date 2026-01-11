@@ -300,3 +300,96 @@ class TestStoneskin:
         fight.apply_damage(hero, monster, 2000, is_pending=False)
         state = fight.get_state(monster, Temporality.PRESENT)
         assert state.hp == monster_max - 3, "Monster should have taken 3 damage total"
+
+
+class TestResurrect:
+    """Tests for resurrect mechanic.
+
+    resurrect(N) brings back up to N dead heroes with full HP.
+    Capped at number of dead heroes.
+    """
+
+    def test_resurrect_brings_back_dead_hero(self):
+        """Resurrect brings back a dead hero with full HP.
+
+        Verified: Confirmed.
+        """
+        heroes = [make_hero(f"Hero{i}", hp=5) for i in range(3)]
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog(heroes, [monster])
+
+        # All 3 heroes alive
+        assert len(fight.get_alive_heroes(Temporality.PRESENT)) == 3
+
+        # Kill hero 0
+        fight.apply_kill(heroes[0])
+        assert len(fight.get_alive_heroes(Temporality.PRESENT)) == 2
+
+        # Resurrect 1 hero
+        fight.apply_resurrect(1)
+        assert len(fight.get_alive_heroes(Temporality.PRESENT)) == 3
+
+        # Check resurrected hero has full HP
+        state = fight.get_state(heroes[0], Temporality.PRESENT)
+        assert state.hp == 5, "Resurrected hero should have full HP"
+
+    def test_resurrect_capped_at_dead_count(self):
+        """Resurrect can't bring back more than are dead.
+
+        Verified: Confirmed.
+        """
+        heroes = [make_hero(f"Hero{i}", hp=5) for i in range(5)]
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog(heroes, [monster])
+
+        # Kill 2 heroes
+        fight.apply_kill(heroes[0])
+        fight.apply_kill(heroes[1])
+        assert len(fight.get_alive_heroes(Temporality.PRESENT)) == 3
+
+        # Resurrect 5 (but only 2 are dead)
+        fight.apply_resurrect(5)
+        assert len(fight.get_alive_heroes(Temporality.PRESENT)) == 5, "Should resurrect all dead (capped)"
+
+    def test_resurrect_full_scenario(self):
+        """Full resurrect test matching original Java test.
+
+        Verified: Confirmed.
+        """
+        heroes = [make_hero(f"Hero{i}", hp=5) for i in range(5)]
+        monsters = [make_monster(f"Goblin{i}", hp=4) for i in range(6)]
+
+        fight = FightLog(heroes, monsters)
+
+        # All 5 heroes should be alive
+        assert len(fight.get_alive_heroes(Temporality.PRESENT)) == 5
+
+        # Kill hero 0 -> 4 alive
+        fight.apply_kill(heroes[0])
+        assert len(fight.get_alive_heroes(Temporality.PRESENT)) == 4
+
+        # Kill heroes 1, 2 -> 2 alive
+        fight.apply_kill(heroes[1])
+        fight.apply_kill(heroes[2])
+        assert len(fight.get_alive_heroes(Temporality.PRESENT)) == 2
+
+        # Resurrect 1 -> 3 alive
+        fight.apply_resurrect(1)
+        assert len(fight.get_alive_heroes(Temporality.PRESENT)) == 3
+
+        # Resurrect 5 -> all 5 alive (only 2 more dead)
+        fight.apply_resurrect(5)
+        assert len(fight.get_alive_heroes(Temporality.PRESENT)) == 5
+
+        # Kill heroes 0,1,2,3 -> 1 alive
+        fight.apply_kill(heroes[0])
+        fight.apply_kill(heroes[1])
+        fight.apply_kill(heroes[2])
+        fight.apply_kill(heroes[3])
+        assert len(fight.get_alive_heroes(Temporality.PRESENT)) == 1
+
+        # Resurrect 3 -> 4 alive
+        fight.apply_resurrect(3)
+        assert len(fight.get_alive_heroes(Temporality.PRESENT)) == 4

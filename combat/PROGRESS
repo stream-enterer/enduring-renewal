@@ -1,12 +1,20 @@
 {
   "current": {
     "file": "TestComplexEff",
-    "method": "stoneskin",
+    "method": "resurrect",
     "status": "implementing",
-    "hypothesis": "StoneSpecialHp (stoneskin) buff caps ALL incoming damage to 1 per hit. Some units have varying amounts - can vary in location and amount of stone HP pips.",
+    "hypothesis": "resurrect(N) brings back up to N dead heroes with full HP. Capped at number of dead. Resurrected heroes can't roll dice that turn.",
     "verified": "Confirmed."
   },
   "completed": [
+    {
+      "file": "TestComplexEff",
+      "method": "stoneskin",
+      "hypothesis": "StoneSpecialHp (stoneskin) buff caps ALL incoming damage to 1 per hit. Some units have varying amounts - can vary in location and amount of stone HP pips.",
+      "verified": "Confirmed.",
+      "test": "tests/test_complex_eff.py::TestStoneskin",
+      "timestamp": "2025-01-10T18:15:00Z"
+    },
     {
       "file": "TestComplexEff",
       "method": "keepShield",
