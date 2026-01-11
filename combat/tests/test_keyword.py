@@ -7642,3 +7642,309 @@ class TestTurnStartProcessing:
         assert Keyword.SHIFTER in keywords_turn2
         assert len(keywords_turn1) >= 2
         assert len(keywords_turn2) >= 2
+
+
+class TestTurnTracking:
+    """Tests for turn tracking keywords: PATIENT, ERA, MINUS_ERA.
+
+    These keywords depend on turns elapsed and usage history:
+    - PATIENT: x2 if die was not used last turn (and not on first turn)
+    - ERA: +N pips where N = turns elapsed
+    - MINUS_ERA: -N pips where N = turns elapsed
+    """
+
+    def test_patient_no_bonus_on_first_turn(self):
+        """PATIENT does not activate on turn 0 (first turn)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        patient_side = Side(EffectType.DAMAGE, 3, {Keyword.PATIENT})
+        hero.die.set_all_sides(patient_side)
+
+        # Turn 0 - patient should not activate (first turn)
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 3 damage (no bonus on first turn)
+        assert state.hp == 17, "PATIENT should not activate on first turn"
+
+    def test_patient_doubles_when_not_used_last_turn(self):
+        """PATIENT x2 if die was not used last turn."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=50)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        patient_side = Side(EffectType.DAMAGE, 3, {Keyword.PATIENT})
+        hero.die.set_all_sides(patient_side)
+
+        # Turn 0 - don't use the die
+        fight.next_turn()
+
+        # Turn 1 - use die (was not used last turn)
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 3 * 2 = 6 damage (patient activates)
+        assert state.hp == 44, "PATIENT should x2 when not used last turn"
+
+    def test_patient_no_bonus_when_used_last_turn(self):
+        """PATIENT no bonus if die was used last turn."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=50)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        patient_side = Side(EffectType.DAMAGE, 3, {Keyword.PATIENT})
+        hero.die.set_all_sides(patient_side)
+
+        # Turn 0 - use the die
+        fight.use_die(hero, 0, monster)  # 3 damage, monster at 47
+
+        fight.next_turn()
+
+        # Turn 1 - die WAS used last turn
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 3 damage on turn 0 + 3 damage on turn 1 (no bonus) = 6 total
+        assert state.hp == 44, "PATIENT should not activate when used last turn"
+
+    def test_patient_reactivates_after_skip(self):
+        """PATIENT x2 after skipping a turn (not using die)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=100)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        patient_side = Side(EffectType.DAMAGE, 3, {Keyword.PATIENT})
+        hero.die.set_all_sides(patient_side)
+
+        # Turn 0 - use die
+        fight.use_die(hero, 0, monster)  # 3 damage, monster at 97
+
+        fight.next_turn()
+
+        # Turn 1 - use die (was used last turn, no bonus)
+        fight.use_die(hero, 0, monster)  # 3 damage, monster at 94
+
+        fight.next_turn()
+
+        # Turn 2 - skip (don't use)
+
+        fight.next_turn()
+
+        # Turn 3 - use die (was NOT used last turn, bonus!)
+        fight.use_die(hero, 0, monster)  # 6 damage, monster at 88
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 88, "PATIENT should reactivate after skipping a turn"
+
+    def test_era_adds_turns_elapsed(self):
+        """ERA adds +N pips where N = turns elapsed."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=50)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        era_side = Side(EffectType.DAMAGE, 2, {Keyword.ERA})
+        hero.die.set_all_sides(era_side)
+
+        # Turn 0 - turns_elapsed = 0, so 2 + 0 = 2 damage
+        fight.use_die(hero, 0, monster)  # monster at 48
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 48, "ERA with 0 turns elapsed should deal base damage"
+
+    def test_era_increases_with_turns(self):
+        """ERA bonus increases as turns pass."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=100)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        era_side = Side(EffectType.DAMAGE, 2, {Keyword.ERA})
+        hero.die.set_all_sides(era_side)
+
+        # Turn 0: 2 + 0 = 2 damage
+        fight.use_die(hero, 0, monster)  # monster at 98
+
+        fight.next_turn()
+        # Turn 1: 2 + 1 = 3 damage
+        fight.use_die(hero, 0, monster)  # monster at 95
+
+        fight.next_turn()
+        # Turn 2: 2 + 2 = 4 damage
+        fight.use_die(hero, 0, monster)  # monster at 91
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 2 + 3 + 4 = 9 total damage, 100 - 9 = 91
+        assert state.hp == 91, "ERA should increase damage each turn"
+
+    def test_minus_era_subtracts_turns_elapsed(self):
+        """MINUS_ERA subtracts N pips where N = turns elapsed."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=50)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        minus_era_side = Side(EffectType.DAMAGE, 5, {Keyword.MINUS_ERA})
+        hero.die.set_all_sides(minus_era_side)
+
+        # Turn 0: 5 - 0 = 5 damage
+        fight.use_die(hero, 0, monster)  # monster at 45
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 45, "MINUS_ERA with 0 turns elapsed should deal base damage"
+
+    def test_minus_era_decreases_with_turns(self):
+        """MINUS_ERA reduces value as turns pass."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=50)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        minus_era_side = Side(EffectType.DAMAGE, 5, {Keyword.MINUS_ERA})
+        hero.die.set_all_sides(minus_era_side)
+
+        # Turn 0: 5 - 0 = 5 damage
+        fight.use_die(hero, 0, monster)  # monster at 45
+
+        fight.next_turn()
+        # Turn 1: 5 - 1 = 4 damage
+        fight.use_die(hero, 0, monster)  # monster at 41
+
+        fight.next_turn()
+        # Turn 2: 5 - 2 = 3 damage
+        fight.use_die(hero, 0, monster)  # monster at 38
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 5 + 4 + 3 = 12 total damage, 50 - 12 = 38
+        assert state.hp == 38, "MINUS_ERA should decrease damage each turn"
+
+    def test_minus_era_can_go_negative(self):
+        """MINUS_ERA can result in negative (zero) damage if turns exceed base."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=50)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        minus_era_side = Side(EffectType.DAMAGE, 2, {Keyword.MINUS_ERA})
+        hero.die.set_all_sides(minus_era_side)
+
+        # Advance several turns
+        for _ in range(5):
+            fight.next_turn()
+
+        # Turn 5: 2 - 5 = -3, but damage is clamped to 0
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # Negative damage should not heal; 0 damage at minimum
+        assert state.hp == 50, "MINUS_ERA negative value should deal 0 damage"
+
+    def test_patient_with_treble(self):
+        """PATIENT with TREBLE gives x3 instead of x2."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=50)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        patient_treble_side = Side(EffectType.DAMAGE, 3, {Keyword.PATIENT, Keyword.TREBLE})
+        hero.die.set_all_sides(patient_treble_side)
+
+        # Turn 0 - don't use
+        fight.next_turn()
+
+        # Turn 1 - use (was not used last turn)
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 3 * 3 = 9 damage (treble makes it x3)
+        assert state.hp == 41, "PATIENT with TREBLE should give x3"
+
+    def test_turns_elapsed_per_entity(self):
+        """Each entity tracks turns_elapsed independently."""
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=50)
+        fight = FightLog([hero], [monster])
+
+        # Initial state - both at 0 turns elapsed
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert hero_state.turns_elapsed == 0
+        assert monster_state.turns_elapsed == 0
+
+        fight.next_turn()
+
+        # After one turn - both at 1 turn elapsed
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert hero_state.turns_elapsed == 1
+        assert monster_state.turns_elapsed == 1
+
+    def test_used_last_turn_tracking(self):
+        """Verify used_last_turn is tracked correctly."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=50)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        damage_side = Side(EffectType.DAMAGE, 1)
+        hero.die.set_all_sides(damage_side)
+
+        # Initial state - not used last turn
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert not state.used_last_turn, "Should not be used_last_turn initially"
+
+        # Use die on turn 0
+        fight.use_die(hero, 0, monster)
+
+        # Advance turn
+        fight.next_turn()
+
+        # Now used_last_turn should be True
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.used_last_turn, "Should be used_last_turn after using and advancing"
+
+        # Don't use die this turn, advance again
+        fight.next_turn()
+
+        # Now used_last_turn should be False
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert not state.used_last_turn, "Should not be used_last_turn after skipping"

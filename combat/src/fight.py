@@ -41,6 +41,8 @@ class EntityState:
     cleansed_map: dict = field(default_factory=dict)  # CleanseType -> amount cleansed this turn
     deaths_this_fight: int = 0  # Number of times entity has died this fight (for reborn keyword)
     is_exerted: bool = False  # If True, all sides are blanks until end of next turn
+    turns_elapsed: int = 0  # Number of turns this entity has been in combat
+    used_last_turn: bool = False  # If True, this entity's die was used last turn
 
     @property
     def is_dead(self) -> bool:
@@ -1082,6 +1084,9 @@ class FightLog:
             was_alive = state.hp > 0
             new_deaths = state.deaths_this_fight + (1 if was_alive and new_hp <= 0 else 0)
 
+            # Track whether die was used this turn (for patient keyword)
+            was_used_this_turn = state.used_die
+
             # Preserve buffs, reset turn-specific state for new turn
             self._update_state(entity,
                 hp=new_hp,
@@ -1090,7 +1095,9 @@ class FightLog:
                 used_die=False,  # Reset used_die
                 times_used_this_turn=0,  # Reset times used
                 cleansed_map={},  # Reset cleansed_map for new turn
-                deaths_this_fight=new_deaths  # Preserve/update death count
+                deaths_this_fight=new_deaths,  # Preserve/update death count
+                turns_elapsed=state.turns_elapsed + 1,  # Increment turn counter
+                used_last_turn=was_used_this_turn  # Track for patient keyword
             )
 
     def apply_kill(self, target: Entity):
@@ -1823,6 +1830,14 @@ class FightLog:
         if side.has_keyword(Keyword.TRILL):
             value += self.get_entity_tier(source_entity)
 
+        # ERA: +N where N = turns elapsed
+        if side.has_keyword(Keyword.ERA):
+            value += source_state.turns_elapsed
+
+        # MINUS_ERA: -N where N = turns elapsed (inverted era)
+        if side.has_keyword(Keyword.MINUS_ERA):
+            value -= source_state.turns_elapsed
+
         # x2 multiplier keywords (applied after +N bonuses)
         # Note: with TREBLE keyword, these become x3 instead of x2 (mult variable)
 
@@ -1894,6 +1909,12 @@ class FightLog:
         # REBORN: x2 if I died this fight
         if side.has_keyword(Keyword.REBORN):
             if source_state.deaths_this_fight > 0:
+                value *= mult
+
+        # PATIENT: x2 if I was not used last turn (and not on first turn)
+        if side.has_keyword(Keyword.PATIENT):
+            # Must be past the first turn and die must not have been used last turn
+            if source_state.turns_elapsed >= 1 and not source_state.used_last_turn:
                 value *= mult
 
         # EGO: x2 if targeting myself

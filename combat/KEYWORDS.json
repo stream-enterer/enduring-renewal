@@ -143,12 +143,14 @@
     "lucky",
     "critical",
     "fluctuate",
-    "fumble"
+    "fumble",
+    "patient",
+    "era",
+    "minusEra"
   ],
   "blocked": {
     "effect_types": ["heal", "shield", "damage"],
     "meta_copy_buff": ["duplicate"],
-    "turn_tracking": ["patient", "era", "minusEra"],
     "target_tracking": ["focus", "duel"],
     "roll_phase": ["cantrip", "sticky"],
     "side_replacement": ["stasis", "enduring", "dogma", "resilient"],

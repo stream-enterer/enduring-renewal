@@ -183,6 +183,10 @@ class Keyword(Enum):
     CRITICAL = auto()      # 50% chance for +1 pip, rechecks each turn
     FLUCTUATE = auto()     # Change to random side type each turn, retaining keywords and pips
     FUMBLE = auto()        # 50% chance to be blank each turn
+    # Turn tracking keywords - based on elapsed turns
+    PATIENT = auto()       # x2 if I was not used last turn
+    ERA = auto()           # +N pips where N = turns elapsed
+    MINUS_ERA = auto()     # -N pips where N = turns elapsed
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
