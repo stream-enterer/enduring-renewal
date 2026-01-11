@@ -2,12 +2,12 @@
   "phase": 2,
   "infrastructure": {
     "current": {
-      "component": "copycat_keyword",
+      "component": "pair_keyword",
       "status": "not_started",
-      "target_test": "TestKeyword.testComboCruel",
+      "target_test": "TestComplexEff.pair",
       "design": null,
-      "unblocks": ["testComboCruel", "testComboCruelWand", "copycatManagain"],
-      "notes": "Copycat keyword copies keywords from most recently used die side. Need getMostRecentlyUsedDieCommandEffect() tracking in Snapshot, and copycat meta-keyword processing."
+      "unblocks": ["pair"],
+      "notes": "Pair keyword grants double mana on second consecutive use. Need to track last used effect type and check if current matches. manaPair(N) grants N mana on first use, 2N on second consecutive use."
     },
     "completed": [
       {
@@ -51,6 +51,13 @@
         "tests_added": ["TestPrecisePlusMagic (2 tests)"],
         "tests_unblocked": ["TestKeyword.precisePlusMagic"],
         "summary": "Added engage x2 conditional bonus logic in use_die(). Now uses get_side_state() to apply buffs/triggers, then checks ENGAGE keyword for x2 vs full HP targets. Added _apply_conditional_keyword_bonuses() helper."
+      },
+      {
+        "component": "copycat_keyword",
+        "timestamp": "2026-01-10",
+        "tests_added": ["TestCopycat (3 tests)"],
+        "tests_unblocked": ["TestKeyword.testComboCruel", "TestKeyword.testComboCruelWand", "TestComplexEff.copycatManagain"],
+        "summary": "Added COPYCAT and CRUEL keywords. Track most recent die effect in FightLog._most_recent_die_effect. get_side_state() accepts optional fight_log for meta-keyword processing. _process_meta_keywords() copies keywords from recent die for COPYCAT. use_die() grants mana for all effect types if MANA keyword present."
       }
     ],
     "order": [
@@ -59,7 +66,8 @@
       "used_state",
       "mana",
       "triggers",
-      "engage_keyword"
+      "engage_keyword",
+      "copycat_keyword"
     ]
   },
   "phase1_summary": {
@@ -69,14 +77,11 @@
     "python_tests": 77
   },
   "phase2_summary": {
-    "tests_added": 34,
-    "total_python_tests": 111,
-    "components_completed": 6
+    "tests_added": 37,
+    "total_python_tests": 114,
+    "components_completed": 7
   },
   "blocked": [
-    {"test": "TestKeyword.testComboCruel", "needs": "copycat", "reason": "turnInto, copycat keyword"},
-    {"test": "TestKeyword.testComboCruelWand", "needs": "copycat", "reason": "turnInto, copycat keyword"},
-    {"test": "TestComplexEff.copycatManagain", "needs": "copycat", "reason": "mana + copycat"},
     {"test": "TestComplexEff.pair", "needs": "pair_keyword", "reason": "mana + pair keyword"},
     {"test": "TestTriggerOrdering.testTriggerHPOrdering", "needs": "modifiers", "reason": "ModifierLib"},
     {"test": "TestTriggerOrdering.testCreakyJointsSword", "needs": "items_modifiers", "reason": "getSideState with items + modifiers"},
@@ -87,8 +92,8 @@
     "TestStrangeScenarios: multiTargetStickiness, targetingEfficienct, painShouldKill, maxHpFiddles, maxHpLimit, revengeSpiky, painDrainNiceness, numberLimit",
     "TestBasicEff: basicSanityTest, attackEnemy, attackHero, basicBlock, basicHeal, reinforcements",
     "TestItem: testGauntlet, testSteelHeart, testPipeAndStudsWithHealShield, testBonusIncomingWithHealShields",
-    "TestComplexEff: pain, doubleTaunt, keepShield, stoneskin, resurrect, fortitudeHeal, goblinFlee, petrify (via TestPetrify)",
-    "TestKeyword: bloodlust, poison, precise, fierce, weaken, drain, lifestealVsInvincible, regen, pain, growth, rescue, rampageHeroKill, precisePlusMagic",
+    "TestComplexEff: pain, doubleTaunt, keepShield, stoneskin, resurrect, fortitudeHeal, goblinFlee, petrify (via TestPetrify), copycatManagain",
+    "TestKeyword: bloodlust, poison, precise, fierce, weaken, drain, lifestealVsInvincible, regen, pain, growth, rescue, rampageHeroKill, precisePlusMagic, testComboCruel, testComboCruelWand",
     "TestKeywordSpell: engage, cruel",
     "TestTriggerOrdering: testBuffReplacedSides, testBrainGrips (via TestTriggers)"
   ],

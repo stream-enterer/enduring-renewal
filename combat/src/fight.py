@@ -74,13 +74,17 @@ class EntityState:
         """Add a buff to this entity state."""
         self.buffs.append(buff)
 
-    def get_side_state(self, index: int) -> "SideState":
+    def get_side_state(self, index: int, fight_log: "FightLog" = None) -> "SideState":
         """Get the calculated state for a side, after applying all triggers.
 
         If the side is petrified, returns a blank petrified side.
         Otherwise creates a mutable copy and applies all active triggers.
+
+        Args:
+            index: The side index to get state for
+            fight_log: Optional FightLog for meta-keyword processing (e.g., copycat)
         """
-        from .dice import Side, petrified_blank
+        from .dice import Side, petrified_blank, Keyword
 
         # Check if entity has a die
         die = getattr(self.entity, 'die', None)
@@ -114,7 +118,28 @@ class EntityState:
         for i, personal in enumerate(personals):
             personal.affect_side(side_state, self, i)
 
+        # Process meta-keywords (like copycat) after triggers
+        self._process_meta_keywords(side_state, fight_log)
+
         return side_state
+
+    def _process_meta_keywords(self, side_state: "SideState", fight_log: "FightLog" = None):
+        """Process meta-keywords that depend on global state.
+
+        Meta-keywords:
+        - COPYCAT: Copy keywords from the most recently used die side
+        """
+        from .dice import Keyword
+
+        calculated = side_state.calculated_effect
+
+        # COPYCAT: Copy keywords from most recently used die
+        if Keyword.COPYCAT in calculated.keywords and fight_log is not None:
+            recent = fight_log.get_most_recent_die_effect()
+            if recent is not None:
+                # Copy all keywords from the recent die effect
+                for kw in recent.calculated_effect.keywords:
+                    calculated.keywords.add(kw)
 
     def get_total_petrification(self) -> int:
         """Count the number of petrified sides.
@@ -226,6 +251,9 @@ class FightLog:
 
         # Mana pool (global resource for the fight)
         self._total_mana: int = 0
+
+        # Most recently used die effect (for copycat keyword)
+        self._most_recent_die_effect: Optional[SideState] = None
 
     def _get_field_usage(self) -> int:
         """Calculate current field usage from present (alive) monsters."""
@@ -1082,12 +1110,16 @@ class FightLog:
         """Use a die side against a target.
 
         Executes the side's effect and applies growth if the side has the growth keyword.
-        Gets the side state (applies all buffs/triggers) and checks conditional keywords.
+        Gets the side state (applies all buffs/triggers including meta-keywords like copycat).
 
         For shieldMana effects (SHIELD type with MANA keyword):
         - Grants shield equal to calculated_value
         - Grants mana equal to calculated_value
         - If has ENGAGE keyword and target at full HP, doubles the effect
+
+        For copycat:
+        - If side has COPYCAT keyword, it copies keywords from most recently used die
+        - This means dmgCopycat can grant mana if the recent die had MANA keyword
 
         For growth keyword:
         - Increases side's base value by 1 after use
@@ -1099,9 +1131,9 @@ class FightLog:
         if die is None:
             raise ValueError(f"Entity {entity} has no die")
 
-        # Get the side state (applies all buffs/triggers to get calculated effect)
+        # Get the side state (applies all buffs/triggers + meta-keywords like copycat)
         source_state = self._states[entity]
-        side_state = source_state.get_side_state(side_index)
+        side_state = source_state.get_side_state(side_index, self)
         calculated_side = side_state.get_calculated_effect()
 
         # Base value from calculated side
@@ -1122,8 +1154,19 @@ class FightLog:
         elif calculated_side.effect_type == EffectType.DAMAGE:
             self.apply_damage(entity, target, value)
 
+            # If has MANA keyword (e.g., from copycat), also grant mana
+            if calculated_side.has_keyword(Keyword.MANA):
+                self.add_mana(value)
+
         elif calculated_side.effect_type == EffectType.HEAL:
             self.apply_heal(target, value)
+
+            # If has MANA keyword (e.g., from copycat), also grant mana
+            if calculated_side.has_keyword(Keyword.MANA):
+                self.add_mana(value)
+
+        # Store this side state as the most recently used (for copycat)
+        self._most_recent_die_effect = side_state
 
         # Mark die as used
         self.mark_die_used(entity)
@@ -1132,6 +1175,10 @@ class FightLog:
         original_side = die.get_side(side_index)
         if original_side.has_keyword(Keyword.GROWTH) or calculated_side.has_keyword(Keyword.GROWTH):
             original_side.apply_growth()
+
+    def get_most_recent_die_effect(self) -> Optional[SideState]:
+        """Get the most recently used die's side state (for copycat keyword)."""
+        return self._most_recent_die_effect
 
     def _apply_conditional_keyword_bonuses(self, value: int, side: "Side", target_state: EntityState) -> int:
         """Apply conditional bonuses based on keywords and target state.

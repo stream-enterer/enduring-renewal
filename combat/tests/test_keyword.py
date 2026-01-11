@@ -1448,3 +1448,131 @@ class TestPrecisePlusMagic:
         state = fight.get_state(hero, Temporality.PRESENT)
         # Should be 1 shield, not 2
         assert state.shield == 1, "Engage should NOT double when target is damaged"
+
+
+class TestCopycat:
+    """Tests for Copycat keyword (meta-keyword).
+
+    Copycat is a meta-keyword that copies all keywords from the most recently
+    used die side. This is evaluated when calculating the side state, not
+    when the side is used.
+
+    Key behavior:
+    - Before any die is used, copycat side has only 1 keyword (copycat itself)
+    - After another die is used, copycat side gains that die's keywords
+    - This includes keywords like MANA, so dmgCopycat can grant mana if
+      the most recent die was shieldMana
+
+    Verified: From TestKeyword.testComboCruel, testComboCruelWand,
+              TestComplexEff.copycatManagain in Java tests.
+    """
+
+    def test_copycat_copies_keywords_after_die_use(self):
+        """Copycat copies keywords from the most recently used die side.
+
+        Test flow (testComboCruel):
+        1. Hero A has dmgCopycat(1) - 1 keyword (copycat)
+        2. Hero B has dmgCruel(1) - 1 keyword (cruel)
+        3. Before B uses die, A's side has 1 keyword
+        4. B uses die (rolls cruel)
+        5. After B uses die, A's side has 2 keywords (copycat + cruel)
+        """
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero_a = make_hero("Healer", hp=5)
+        hero_b = make_hero("Defender", hp=5)
+        monster = make_monster("Dragon", hp=20)
+
+        fight = FightLog([hero_a, hero_b], [monster])
+
+        # Hero A has dmgCopycat(1) - just copycat keyword
+        hero_a.die = Die()
+        copycat_side = Side(EffectType.DAMAGE, 1, {Keyword.COPYCAT})
+        hero_a.die.set_all_sides(copycat_side)
+
+        # Hero B has dmgCruel(1) - just cruel keyword (simulated)
+        hero_b.die = Die()
+        cruel_side = Side(EffectType.DAMAGE, 1, {Keyword.CRUEL})
+        hero_b.die.set_all_sides(cruel_side)
+
+        # Before B rolls, A's copycat side should have 1 keyword
+        state_a = fight.get_state(hero_a, Temporality.PRESENT)
+        side_state = state_a.get_side_state(0, fight)
+        assert len(side_state.calculated_effect.keywords) == 1, \
+            "Hero A's copycat side should only have 1 keyword before B rolls"
+
+        # B uses die (rolls cruel) against monster
+        fight.use_die(hero_b, 0, monster)
+
+        # After B rolls, A's copycat side should have 2 keywords (copycat + cruel)
+        state_a = fight.get_state(hero_a, Temporality.PRESENT)
+        side_state = state_a.get_side_state(0, fight)
+        assert len(side_state.calculated_effect.keywords) == 2, \
+            "Hero A's copycat side should have 2 keywords after B rolls"
+        assert Keyword.COPYCAT in side_state.calculated_effect.keywords
+        assert Keyword.CRUEL in side_state.calculated_effect.keywords
+
+    def test_copycat_mana_interaction(self):
+        """Copycat copies MANA keyword, allowing dmgCopycat to grant mana.
+
+        Test flow (copycatManagain):
+        1. Hero uses dmgCopycat(1) on monster - 0 mana (no mana keyword yet)
+        2. Hero uses shieldMana(1) on self - 1 mana
+        3. Hero uses dmgCopycat(1) on monster - 2 mana (copycat now has mana!)
+        """
+        from src.dice import Die, Side, Keyword, shield_mana
+        from src.effects import EffectType
+
+        hero = make_hero("Mage", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Set up die with dmgCopycat(1) on side 0, shieldMana(1) on side 1
+        hero.die = Die()
+        copycat_side = Side(EffectType.DAMAGE, 1, {Keyword.COPYCAT})
+        mana_side = shield_mana(1)
+        hero.die.sides = [
+            copycat_side.copy(),
+            mana_side.copy(),
+            copycat_side.copy(),
+            copycat_side.copy(),
+            copycat_side.copy(),
+            copycat_side.copy(),
+        ]
+
+        # First use: dmgCopycat(1) on monster - should have 0 mana
+        fight.use_die(hero, 0, monster)
+        assert fight.get_total_mana() == 0, "Should have 0 mana after first copycat use"
+
+        # Second use: shieldMana(1) on self - should have 1 mana
+        fight.use_die(hero, 1, hero)
+        assert fight.get_total_mana() == 1, "Should have 1 mana after shieldMana use"
+
+        # Third use: dmgCopycat(1) on monster - copycat now copies MANA keyword!
+        # So this should also grant 1 mana (total 2)
+        fight.use_die(hero, 2, monster)
+        assert fight.get_total_mana() == 2, "Should have 2 mana (copycat copied MANA)"
+
+    def test_copycat_no_effect_before_any_die_use(self):
+        """Copycat doesn't copy anything if no die has been used yet."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Mage", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Hero has dmgCopycat(1)
+        hero.die = Die()
+        copycat_side = Side(EffectType.DAMAGE, 1, {Keyword.COPYCAT})
+        hero.die.set_all_sides(copycat_side)
+
+        # Before any die is used, copycat side should have just 1 keyword
+        state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert len(side_state.calculated_effect.keywords) == 1, \
+            "Copycat side should have 1 keyword when no die used yet"
+        assert Keyword.COPYCAT in side_state.calculated_effect.keywords

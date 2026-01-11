@@ -17,6 +17,8 @@ class Keyword(Enum):
     ENGAGE = auto()      # x2 effect vs full HP targets
     RANGED = auto()      # Arrow-type attacks (can hit back row)
     SINGLE_USE = auto()  # One use per turn (wands)
+    COPYCAT = auto()     # Meta-keyword: copies keywords from most recently used die
+    CRUEL = auto()       # x2 effect vs targets at half HP or less
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
