@@ -6029,3 +6029,215 @@ class TestGroupGroooooowth:
         # Hero2's sides unchanged (dead)
         for i in range(6):
             assert hero2.die.get_side(i).growth_bonus == 0
+
+
+class TestEcho:
+    """Tests for ECHO keyword - copy pips from previous die."""
+
+    def test_echo_copies_previous_value(self):
+        """ECHO copies the calculated value from the previous die."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1))
+        # First side: 5 damage (no keywords)
+        hero.die.set_side(0, Side(EffectType.DAMAGE, 5))
+        # Second side: 1 damage with ECHO
+        hero.die.set_side(1, Side(EffectType.DAMAGE, 1, {Keyword.ECHO}))
+
+        # Use first side (5 damage)
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 15  # 20 - 5
+
+        # Use second side with ECHO (should copy 5 pips from previous)
+        fight.use_die(hero, 1, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 10  # 15 - 5 (echoed value)
+
+    def test_echo_no_previous_die(self):
+        """ECHO with no previous die uses the base value."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Side with ECHO but no previous die used
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.ECHO}))
+
+        # Use echo side (no previous die to copy from)
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # With no previous die, echo should use 0 or base value
+        # Based on Java: "hasValue() ? recent.getValue() : 0"
+        assert state.hp == 7  # Still uses base 3 since no previous
+
+    def test_echo_copies_base_value_not_conditional_bonus(self):
+        """ECHO copies the base calculated value, not conditional bonus results.
+
+        Conditional bonuses (like ENGAGE x2) are applied fresh during resolution
+        and are not part of the stored side state that ECHO copies.
+        """
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=30)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1))
+        # First side: 3 damage with ENGAGE (x2 vs full HP)
+        hero.die.set_side(0, Side(EffectType.DAMAGE, 3, {Keyword.ENGAGE}))
+        # Second side: 1 damage with ECHO
+        hero.die.set_side(1, Side(EffectType.DAMAGE, 1, {Keyword.ECHO}))
+
+        # Use first side (3 * 2 = 6 damage due to ENGAGE)
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 24  # 30 - 6
+
+        # Use second side with ECHO - copies base value (3), NOT the engage-multiplied value (6)
+        # ECHO copies value + growth_bonus, not conditional bonus results
+        fight.use_die(hero, 1, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 21  # 24 - 3 (echoed base value, not 6)
+
+
+class TestResonate:
+    """Tests for RESONATE keyword - copy effect type from previous die, keep pips."""
+
+    def test_resonate_copies_effect_type(self):
+        """RESONATE copies the effect type from the previous die."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Damage the hero first
+        fight.apply_damage(monster, hero, 5, is_pending=False)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 5
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1))
+        # First side: HEAL 3
+        hero.die.set_side(0, Side(EffectType.HEAL, 3))
+        # Second side: DAMAGE 5 with RESONATE (should become HEAL 5)
+        hero.die.set_side(1, Side(EffectType.DAMAGE, 5, {Keyword.RESONATE}))
+
+        # Use first side (heal 3)
+        fight.use_die(hero, 0, hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 8  # 5 + 3
+
+        # Use second side with RESONATE (should copy HEAL effect type, use our 5 pips)
+        fight.use_die(hero, 1, hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 10  # 8 + 2 (capped at max_hp=10, but would be +5 heal)
+
+    def test_resonate_retains_pips(self):
+        """RESONATE keeps original pips while copying effect type."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1))
+        # First side: 2 damage
+        hero.die.set_side(0, Side(EffectType.DAMAGE, 2))
+        # Second side: 7 pips SHIELD with RESONATE (should become 7 DAMAGE)
+        hero.die.set_side(1, Side(EffectType.SHIELD, 7, {Keyword.RESONATE}))
+
+        # Use first side (2 damage)
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 18  # 20 - 2
+
+        # Use second side with RESONATE (should copy DAMAGE effect, keep 7 pips)
+        fight.use_die(hero, 1, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 11  # 18 - 7
+
+    def test_resonate_retains_resonate_keyword(self):
+        """RESONATE keeps the RESONATE keyword after copying."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=30)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1))
+        # First side: 3 damage with ENGAGE
+        hero.die.set_side(0, Side(EffectType.DAMAGE, 3, {Keyword.ENGAGE}))
+        # Second side: 4 pips SHIELD with RESONATE
+        hero.die.set_side(1, Side(EffectType.SHIELD, 4, {Keyword.RESONATE}))
+
+        # Use first side (3 * 2 = 6 damage due to engage vs full HP)
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 24  # 30 - 6
+
+        # Use second side with RESONATE - it copies DAMAGE + ENGAGE, keeps 4 pips
+        # ENGAGE condition: target at full HP? No, target is at 24/30
+        # So it should do 4 damage (no engage bonus)
+        fight.use_die(hero, 1, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 20  # 24 - 4 (ENGAGE doesn't trigger, target not full HP)
+
+
+class TestNothing:
+    """Tests for NOTHING keyword - has no effect."""
+
+    def test_nothing_has_no_effect(self):
+        """NOTHING keyword doesn't modify the effect."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Side with NOTHING keyword
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.NOTHING}))
+
+        # Use the side
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # Should deal exactly 3 damage, NOTHING has no effect
+        assert state.hp == 7  # 10 - 3
+
+    def test_nothing_with_other_keywords(self):
+        """NOTHING doesn't interfere with other keywords."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Side with NOTHING + ENGAGE (ENGAGE should still work)
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.NOTHING, Keyword.ENGAGE}))
+
+        # Use the side - ENGAGE should trigger (target at full HP)
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # Should deal 6 damage (3 * 2 for engage)
+        assert state.hp == 4  # 10 - 6

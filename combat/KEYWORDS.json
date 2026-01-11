@@ -89,7 +89,10 @@
     "groupDecay",
     "groupSingleUse",
     "groupExert",
-    "groupGroooooowth"
+    "groupGroooooowth",
+    "echo",
+    "resonate",
+    "nothing"
   ],
   "blocked": {
     "turn_tracking": ["patient", "era", "minusEra"],

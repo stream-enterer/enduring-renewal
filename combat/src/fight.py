@@ -179,6 +179,9 @@ class EntityState:
 
         Meta-keywords:
         - COPYCAT: Copy keywords from the most recently used die side
+        - ECHO: Copy pips (value) from the most recently used die side
+        - RESONATE: Copy the effect from the most recently used die side,
+                    retaining this side's pips and the RESONATE keyword
         - PAIR: x2 value if previous die had same calculated value
         """
         from .dice import Keyword
@@ -192,6 +195,32 @@ class EntityState:
                 # Copy all keywords from the recent die effect
                 for kw in recent.calculated_effect.keywords:
                     calculated.keywords.add(kw)
+
+        # ECHO: Copy pips (value) from most recently used die
+        if Keyword.ECHO in calculated.keywords and fight_log is not None:
+            recent = fight_log.get_most_recent_die_effect()
+            if recent is not None:
+                recent_calc = recent.calculated_effect
+                # Copy the value from the recent die (use 0 if it has no value)
+                calculated.value = recent_calc.calculated_value if recent_calc.calculated_value else 0
+                # Reset growth_bonus since we're copying the calculated value
+                calculated.growth_bonus = 0
+
+        # RESONATE: Copy effect from most recently used die, keeping pips and resonate
+        if Keyword.RESONATE in calculated.keywords and fight_log is not None:
+            recent = fight_log.get_most_recent_die_effect()
+            if recent is not None:
+                recent_calc = recent.calculated_effect
+                # Save current value and resonate keyword
+                current_value = calculated.value
+                current_growth = calculated.growth_bonus
+                # Copy effect type and keywords from recent
+                calculated.effect_type = recent_calc.effect_type
+                calculated.keywords = set(recent_calc.keywords)
+                # Restore our value/pips and add resonate back
+                calculated.value = current_value
+                calculated.growth_bonus = current_growth
+                calculated.keywords.add(Keyword.RESONATE)
 
         # PAIR: x2 if previous die had same calculated value
         # Checks current value (after triggers, before pair bonus) vs previous die's final value

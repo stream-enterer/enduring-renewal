@@ -111,6 +111,11 @@ class Keyword(Enum):
     GROUP_SINGLE_USE = auto()   # All allies' sides become blank
     GROUP_EXERT = auto()        # All allies become exerted
     GROUP_GROOOOOOWTH = auto()  # All allies' dice get +1 pip on all sides
+    # Meta keywords - copy from previous die
+    ECHO = auto()        # Copy pips (value) from previous die
+    RESONATE = auto()    # Copy effect from previous die, retaining pips and resonate keyword
+    # No-effect keywords
+    NOTHING = auto()     # This keyword has no effect
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
