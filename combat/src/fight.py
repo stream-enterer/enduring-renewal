@@ -1315,6 +1315,14 @@ class FightLog:
             if calculated_side.has_keyword(Keyword.MANA):
                 self.add_mana(value)
 
+            # REPEL: N damage to all enemies attacking the target
+            if calculated_side.has_keyword(Keyword.REPEL):
+                attackers = self._get_entities_attacking(target)
+                for attacker in attackers:
+                    attacker_state = self.get_state(attacker, Temporality.PRESENT)
+                    if not attacker_state.is_dead:
+                        self.apply_damage(entity, attacker, value, is_pending=False)
+
             # EVIL: If shielding saved a dying hero, I die
             if calculated_side.has_keyword(Keyword.EVIL):
                 now_surviving = not self.get_state(target, Temporality.FUTURE).is_dead
@@ -1322,7 +1330,18 @@ class FightLog:
                     self.apply_damage(entity, entity, source_state.hp + 1000)
 
         elif calculated_side.effect_type == EffectType.DAMAGE:
-            self.apply_damage(entity, target, value)
+            # Build target list based on CLEAVE/DESCEND keywords
+            damage_targets = [target]
+            if calculated_side.has_keyword(Keyword.CLEAVE):
+                # Cleave hits both above and below
+                damage_targets.extend(self._get_adjacent_entities(target, above=1, below=1))
+            elif calculated_side.has_keyword(Keyword.DESCEND):
+                # Descend hits only below
+                damage_targets.extend(self._get_adjacent_entities(target, above=0, below=1))
+
+            # Apply damage to all targets
+            for dmg_target in damage_targets:
+                self.apply_damage(entity, dmg_target, value)
 
             # If has MANA keyword (e.g., from copycat), also grant mana
             if calculated_side.has_keyword(Keyword.MANA):
@@ -1333,6 +1352,13 @@ class FightLog:
                 target_now_dead = self.get_state(target, Temporality.PRESENT).is_dead
                 if target_was_alive and target_now_dead:
                     self.apply_damage(entity, entity, source_state.hp + 1000)
+
+            # FIERCE: target flees if HP <= N after damage (N = pip value)
+            if calculated_side.has_keyword(Keyword.FIERCE):
+                target_current_state = self.get_state(target, Temporality.PRESENT)
+                if not target_current_state.is_dead and target_current_state.hp <= value:
+                    # Target flees (remove from combat)
+                    self._update_state(target, hp=0)
 
         elif calculated_side.effect_type == EffectType.HEAL:
             self.apply_heal(target, value)
@@ -1406,6 +1432,10 @@ class FightLog:
         if calculated_side.has_keyword(Keyword.PAIN):
             # Pain damage is dealt to the source (can be blocked by shields)
             self.apply_damage(entity, entity, value, is_pending=False)
+
+        # MANACOST: costs N mana to use (N = pip value)
+        if calculated_side.has_keyword(Keyword.MANACOST):
+            self._total_mana -= value  # Deduct mana after use
 
         # DEATH: I die after using this side
         if calculated_side.has_keyword(Keyword.DEATH):
@@ -1888,6 +1918,59 @@ class FightLog:
             if pending.target == entity:
                 total += pending.amount
         return total
+
+    def _get_adjacent_entities(self, target: Entity, above: int, below: int) -> list[Entity]:
+        """Get entities adjacent to target.
+
+        Args:
+            target: The target entity
+            above: Number of entities above to include (0 for none)
+            below: Number of entities below to include (0 for none)
+
+        Returns:
+            List of adjacent entities (not including target itself)
+        """
+        team_list = self.heroes if target.team == Team.HERO else self.monsters
+        target_pos = target.position
+        result = []
+
+        # Get alive entities sorted by position
+        alive = [e for e in team_list if not self._states[e].is_dead]
+        alive.sort(key=lambda e: e.position)
+
+        # Find target index in sorted list
+        try:
+            target_idx = alive.index(target)
+        except ValueError:
+            return result
+
+        # Get entities above (lower index = above)
+        for i in range(1, above + 1):
+            idx = target_idx - i
+            if idx >= 0:
+                result.append(alive[idx])
+
+        # Get entities below (higher index = below)
+        for i in range(1, below + 1):
+            idx = target_idx + i
+            if idx < len(alive):
+                result.append(alive[idx])
+
+        return result
+
+    def _get_entities_attacking(self, target: Entity) -> list[Entity]:
+        """Get all entities with pending damage targeting the given entity.
+
+        Used by REPEL keyword to deal damage to attackers.
+
+        Returns:
+            List of unique entities that have pending damage on target
+        """
+        attackers = set()
+        for pending in self._pending:
+            if pending.target == target and pending.source is not None:
+                attackers.add(pending.source)
+        return list(attackers)
 
     def _is_consecutive_run(self, n: int, current_value: int) -> bool:
         """Check if previous n-1 dice plus current form a consecutive run.

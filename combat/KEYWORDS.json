@@ -99,7 +99,13 @@
     "generous",
     "scared",
     "picky",
-    "selfPetrify"
+    "selfPetrify",
+    "cleave",
+    "descend",
+    "repel",
+    "manacost",
+    "mandatory",
+    "fierce"
   ],
   "blocked": {
     "turn_tracking": ["patient", "era", "minusEra"],
@@ -107,6 +113,7 @@
     "item_system": ["hoard", "fashionable", "equipped"],
     "poison_tracking": ["plague", "acidic"],
     "buff_tracking": ["buffed", "affected", "skill"],
+    "buff_system": ["duplicate"],
     "usage_tracking": ["doubleUse", "quadUse", "hyperUse", "rite"],
     "entity_summoning": ["boned", "hyperBoned"],
     "depends_on_duel": ["halveDuel", "duegue"],

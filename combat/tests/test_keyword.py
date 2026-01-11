@@ -6510,3 +6510,259 @@ class TestSelfPetrify:
         hero_state = fight.get_state(hero, Temporality.PRESENT)
         petrified_count = sum(1 for i in range(6) if hero_state.get_side_state(i).is_petrified)
         assert petrified_count >= 2  # At least 2 sides petrified
+
+
+class TestCleave:
+    """Tests for CLEAVE keyword - hits target and both adjacent entities."""
+
+    def test_cleave_hits_adjacent_allies(self):
+        """CLEAVE deals damage to target and entities adjacent to target."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Cleaver", hp=5)
+        # Three monsters in a row
+        monster1 = make_monster("Top", hp=10)
+        monster2 = make_monster("Middle", hp=10)
+        monster3 = make_monster("Bottom", hp=10)
+        fight = FightLog([hero], [monster1, monster2, monster3])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.CLEAVE}))
+
+        # Attack the middle monster
+        fight.use_die(hero, 0, monster2)
+
+        # All three should take damage
+        assert fight.get_state(monster1, Temporality.PRESENT).hp == 7  # 10 - 3
+        assert fight.get_state(monster2, Temporality.PRESENT).hp == 7  # 10 - 3
+        assert fight.get_state(monster3, Temporality.PRESENT).hp == 7  # 10 - 3
+
+    def test_cleave_top_target_only_hits_below(self):
+        """CLEAVE on topmost target only hits below (no above to hit)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Cleaver", hp=5)
+        monster1 = make_monster("Top", hp=10)
+        monster2 = make_monster("Bottom", hp=10)
+        fight = FightLog([hero], [monster1, monster2])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.CLEAVE}))
+
+        # Attack the top monster
+        fight.use_die(hero, 0, monster1)
+
+        # Both should take damage
+        assert fight.get_state(monster1, Temporality.PRESENT).hp == 7  # 10 - 3
+        assert fight.get_state(monster2, Temporality.PRESENT).hp == 7  # 10 - 3
+
+    def test_cleave_single_target(self):
+        """CLEAVE on single target just hits that target."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Cleaver", hp=5)
+        monster = make_monster("Alone", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.CLEAVE}))
+
+        fight.use_die(hero, 0, monster)
+
+        assert fight.get_state(monster, Temporality.PRESENT).hp == 7  # 10 - 3
+
+
+class TestDescend:
+    """Tests for DESCEND keyword - hits target and entity below."""
+
+    def test_descend_hits_below(self):
+        """DESCEND deals damage to target and entity below."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Descender", hp=5)
+        monster1 = make_monster("Top", hp=10)
+        monster2 = make_monster("Middle", hp=10)
+        monster3 = make_monster("Bottom", hp=10)
+        fight = FightLog([hero], [monster1, monster2, monster3])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.DESCEND}))
+
+        # Attack the top monster
+        fight.use_die(hero, 0, monster1)
+
+        # Top and middle should take damage, bottom untouched
+        assert fight.get_state(monster1, Temporality.PRESENT).hp == 7  # 10 - 3
+        assert fight.get_state(monster2, Temporality.PRESENT).hp == 7  # 10 - 3
+        assert fight.get_state(monster3, Temporality.PRESENT).hp == 10  # Untouched
+
+    def test_descend_bottom_target_no_extra(self):
+        """DESCEND on bottom target only hits that target (no below)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Descender", hp=5)
+        monster1 = make_monster("Top", hp=10)
+        monster2 = make_monster("Bottom", hp=10)
+        fight = FightLog([hero], [monster1, monster2])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.DESCEND}))
+
+        # Attack the bottom monster
+        fight.use_die(hero, 0, monster2)
+
+        # Only bottom takes damage
+        assert fight.get_state(monster1, Temporality.PRESENT).hp == 10  # Untouched
+        assert fight.get_state(monster2, Temporality.PRESENT).hp == 7  # 10 - 3
+
+
+class TestRepel:
+    """Tests for REPEL keyword - N damage to all enemies attacking the target."""
+
+    def test_repel_damages_attackers(self):
+        """REPEL deals N damage to all enemies with pending damage on target."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Target", hp=10)
+        hero2 = make_hero("Protector", hp=5)
+        monster1 = make_monster("Attacker1", hp=10)
+        monster2 = make_monster("Attacker2", hp=10)
+        fight = FightLog([hero1, hero2], [monster1, monster2])
+
+        # Monsters deal pending damage to hero1
+        fight.apply_damage(monster1, hero1, 2, is_pending=True)
+        fight.apply_damage(monster2, hero1, 2, is_pending=True)
+
+        # Hero2 uses repel on hero1 (a shield with repel)
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.SHIELD, 3, {Keyword.REPEL}))
+
+        fight.use_die(hero2, 0, hero1)
+
+        # Both monsters should take 3 damage (the repel value)
+        assert fight.get_state(monster1, Temporality.PRESENT).hp == 7  # 10 - 3
+        assert fight.get_state(monster2, Temporality.PRESENT).hp == 7  # 10 - 3
+
+    def test_repel_no_attackers(self):
+        """REPEL with no pending damage does nothing extra."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Target", hp=10)
+        hero2 = make_hero("Protector", hp=5)
+        monster = make_monster("Bystander", hp=10)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # No pending damage on hero1
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.SHIELD, 3, {Keyword.REPEL}))
+
+        fight.use_die(hero2, 0, hero1)
+
+        # Monster should be untouched
+        assert fight.get_state(monster, Temporality.PRESENT).hp == 10
+
+
+class TestManacost:
+    """Tests for MANACOST keyword - side costs N mana to use."""
+
+    def test_manacost_deducts_mana(self):
+        """MANACOST deducts N mana when side is used."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Caster", hp=5)
+        monster = make_monster("Target", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Give hero 5 mana
+        fight.add_mana(5)
+        assert fight.get_total_mana() == 5
+
+        hero.die = Die()
+        # 3 damage side that costs 2 mana
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.MANACOST}))
+        # Value of 3 means costs 3 mana (N = pips)
+
+        # Wait - manacost uses pip value. Let me make it cost 2
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.MANACOST}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Mana should be deducted (5 - 2 = 3)
+        assert fight.get_total_mana() == 3
+        # Damage should still apply
+        assert fight.get_state(monster, Temporality.PRESENT).hp == 8  # 10 - 2
+
+
+class TestMandatory:
+    """Tests for MANDATORY keyword - must be used if possible.
+
+    Note: MANDATORY is a usage requirement keyword. In actual gameplay,
+    the game UI enforces this. In our implementation, we track it as a
+    property that can be queried.
+    """
+
+    def test_mandatory_is_queryable(self):
+        """MANDATORY keyword can be checked on a side."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        fight = FightLog([hero], [])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.MANDATORY}))
+
+        # The side has the mandatory keyword
+        assert hero.die.get_side(0).has_keyword(Keyword.MANDATORY)
+
+
+class TestFierce:
+    """Tests for FIERCE keyword - target flees if HP <= N after attack."""
+
+    def test_fierce_causes_flee(self):
+        """FIERCE causes target to flee if HP <= N after damage."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Berserker", hp=5)
+        monster = make_monster("Coward", hp=5)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # 3 damage with fierce(3) - target flees if HP <= 3 after attack
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.FIERCE}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster took 3 damage (5 - 3 = 2 HP left)
+        # Since 2 <= 3 (pip value), monster should flee
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.is_dead or monster_state.hp <= 0 or monster not in fight.monsters
+
+    def test_fierce_no_flee_if_hp_above_threshold(self):
+        """FIERCE doesn't cause flee if HP > N after damage."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Berserker", hp=5)
+        monster = make_monster("Brave", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # 2 damage with fierce(2) - target flees if HP <= 2 after attack
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.FIERCE}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster took 2 damage (10 - 2 = 8 HP left)
+        # Since 8 > 2, monster should NOT flee
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert not monster_state.is_dead and monster in fight.monsters

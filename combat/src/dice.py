@@ -126,6 +126,14 @@ class Keyword(Enum):
     PICKY = auto()       # Target must have exactly N HP (N = pips)
     # Self-targeting keywords
     SELF_PETRIFY = auto()  # Petrify myself
+    # Multi-target effect keywords
+    CLEAVE = auto()        # Also hits both sides of the target
+    DESCEND = auto()       # Also hits below the target
+    REPEL = auto()         # N damage to all enemies attacking the target
+    # Usage/cost keywords
+    MANACOST = auto()      # Costs N mana to use
+    MANDATORY = auto()     # Must be used if possible
+    FIERCE = auto()        # Target flees if they have N or less HP after attack
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
