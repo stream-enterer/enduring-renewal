@@ -1,7 +1,7 @@
 {
   "current": {
     "file": "TestKeyword",
-    "method": "regen",
+    "method": "pain",
     "status": "analyzing",
     "hypothesis": null,
     "verified": null
@@ -51,6 +51,14 @@
     }
   ],
   "completed": [
+    {
+      "file": "TestKeyword",
+      "method": "regen",
+      "hypothesis": "healRegen(N) heals N immediately AND applies a persistent regen buff. The buff heals N HP at the start of each subsequent turn. Healing is capped at max HP.",
+      "verified": "Confirmed.",
+      "test": "tests/test_keyword.py::TestRegen",
+      "timestamp": "2025-01-10T21:45:00Z"
+    },
     {
       "file": "TestKeyword",
       "method": "lifestealVsInvincible",

@@ -741,3 +741,126 @@ class TestLifestealVsInvincible:
         fight.apply_drain_damage(hero, monster, 1)
         state = fight.get_state(hero, Temporality.PRESENT)
         assert state.hp == hero_max - 1, "hero should still heal additional damage"
+
+
+class TestRegen:
+    """Tests for Regen keyword.
+
+    healRegen(N) heals N immediately AND applies a persistent regen buff.
+    The buff heals N HP at the start of each subsequent turn.
+    Healing is capped at max HP.
+
+    Verified: Confirmed.
+    """
+
+    def test_regen_heals_immediately(self):
+        """Regen heals immediately."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Damage hero first
+        fight.apply_damage(monster, hero, 3, is_pending=False)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 2, "Hero should be at 2 HP"
+
+        # Apply regen
+        fight.apply_heal_regen(hero, 1)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 3, "Regen should heal immediately"
+
+    def test_regen_heals_each_turn(self):
+        """Regen heals at the start of each turn."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Damage hero first
+        fight.apply_damage(monster, hero, 3, is_pending=False)
+
+        # Apply regen
+        fight.apply_heal_regen(hero, 1)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 3, "Should heal 1 immediately"
+
+        # Next turn - regen triggers
+        fight.next_turn()
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 4, "Should regen 1 HP"
+
+        # Another turn - regen triggers again
+        fight.next_turn()
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 5, "Should regen to full HP"
+
+    def test_regen_capped_at_max_hp(self):
+        """Regen healing is capped at max HP."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Damage hero a bit
+        fight.apply_damage(monster, hero, 1, is_pending=False)
+
+        # Apply regen
+        fight.apply_heal_regen(hero, 1)
+
+        # Multiple turns - should not exceed max HP
+        fight.next_turn()
+        fight.next_turn()
+        fight.next_turn()
+        fight.next_turn()
+        fight.next_turn()
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 5, "Should not regen past max HP"
+
+    def test_regen_full_scenario(self):
+        """Full regen test matching original Java test.
+
+        Setup: 1 Fighter hero (5 HP) vs 1 Goblin monster (4 HP)
+        - Monster damages hero for 3 (with pain) -> hero at 2 HP
+        - healRegen(1) -> heals 1, hero at 3 HP
+        - nextTurn -> regen 1, hero at 4 HP
+        - nextTurn -> regen 1, hero at 5 HP (full)
+        - 5 more turns -> still at 5 HP (capped)
+
+        Verified: Confirmed.
+        """
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+        hero_max = 5
+
+        # Monster damages hero for 3
+        fight.apply_damage(monster, hero, 3, is_pending=False)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == hero_max - 3, "hero should damaged for 3"
+
+        # healRegen(1)
+        fight.apply_heal_regen(hero, 1)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == hero_max - 2, "hero should heal 1"
+
+        # Next turn - regen triggers
+        fight.next_turn()
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == hero_max - 1, "hero should regen 1"
+
+        # Next turn - regen triggers again
+        fight.next_turn()
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == hero_max, "hero should regen 2 (total, now full)"
+
+        # 5 more turns - should stay at max
+        fight.next_turn()
+        fight.next_turn()
+        fight.next_turn()
+        fight.next_turn()
+        fight.next_turn()
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == hero_max, "hero should not regen past full"
