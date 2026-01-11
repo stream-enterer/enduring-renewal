@@ -704,3 +704,31 @@ class FightLog:
             state.shield, state.spiky, state.self_heal, state.damage_blocked,
             state.keep_shields, state.stone_hp
         )
+
+    def count_damaged_enemies(self) -> int:
+        """Count enemies (monsters) that are damaged but not dead.
+
+        An enemy is "damaged" if HP < maxHP but HP > 0.
+        Dead enemies don't count as damaged.
+        Used by Bloodlust keyword to calculate bonus damage.
+        """
+        count = 0
+        for monster in self.monsters:
+            state = self._states[monster]
+            if not state.is_dead and state.hp < state.max_hp:
+                count += 1
+        return count
+
+    def apply_bloodlust_damage(self, source: Entity, target: Entity, base_damage: int, is_pending: bool = False):
+        """Apply damage with Bloodlust keyword.
+
+        Bloodlust gains +N bonus damage where N = number of currently damaged enemies.
+        The count is evaluated at time of attack.
+        Damaging a new enemy increases future bonus; killing an enemy decreases it.
+        """
+        # Calculate bonus BEFORE this attack (count of already-damaged enemies)
+        bonus = self.count_damaged_enemies()
+        total_damage = base_damage + bonus
+
+        # Apply the damage (uses standard damage logic)
+        self.apply_damage(source, target, total_damage, is_pending)
