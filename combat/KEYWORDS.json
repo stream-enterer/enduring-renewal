@@ -92,7 +92,14 @@
     "groupGroooooowth",
     "echo",
     "resonate",
-    "nothing"
+    "nothing",
+    "defy",
+    "eliminate",
+    "heavy",
+    "generous",
+    "scared",
+    "picky",
+    "selfPetrify"
   ],
   "blocked": {
     "turn_tracking": ["patient", "era", "minusEra"],

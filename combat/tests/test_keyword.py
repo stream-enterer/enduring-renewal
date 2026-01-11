@@ -6241,3 +6241,272 @@ class TestNothing:
         state = fight.get_state(monster, Temporality.PRESENT)
         # Should deal 6 damage (3 * 2 for engage)
         assert state.hp == 4  # 10 - 6
+
+
+class TestDefy:
+    """Tests for DEFY keyword - +N pips where N = incoming damage to source."""
+
+    def test_defy_no_bonus_without_pending_damage(self):
+        """DEFY gives no bonus when source has no pending damage."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.DEFY}))
+
+        # No pending damage - should deal base damage
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8  # 10 - 2 (no bonus)
+
+    def test_defy_bonus_with_pending_damage(self):
+        """DEFY gives +N where N = pending damage to source."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # Add pending damage to the hero (3 damage)
+        fight.apply_damage(monster, hero, 3, is_pending=True)
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.DEFY}))
+
+        # Should deal 2 + 3 = 5 damage (base + pending)
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 15  # 20 - 5
+
+    def test_defy_stacks_with_multiple_pending(self):
+        """DEFY bonus sums all pending damage to source."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster1 = make_monster("Goblin1", hp=10)
+        monster2 = make_monster("Goblin2", hp=20)
+        fight = FightLog([hero], [monster1, monster2])
+
+        # Multiple pending damages from different sources
+        fight.apply_damage(monster1, hero, 2, is_pending=True)
+        fight.apply_damage(monster2, hero, 3, is_pending=True)
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.DEFY}))
+
+        # Should deal 1 + 5 = 6 damage (base + total pending)
+        fight.use_die(hero, 0, monster1)
+        state = fight.get_state(monster1, Temporality.PRESENT)
+        assert state.hp == 4  # 10 - 6
+
+
+class TestTargetingKeywords:
+    """Tests for targeting restriction keywords: ELIMINATE, HEAVY, GENEROUS, SCARED, PICKY."""
+
+    def test_eliminate_valid_target_least_hp(self):
+        """ELIMINATE allows targeting entity with least HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster1 = make_monster("Strong", hp=10)
+        monster2 = make_monster("Weak", hp=3)  # Has least HP
+        fight = FightLog([hero], [monster1, monster2])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.ELIMINATE}))
+
+        # Can target the weakest monster
+        assert fight.is_valid_target(hero, monster2, hero.die.get_side(0))
+
+    def test_eliminate_invalid_target_not_least_hp(self):
+        """ELIMINATE prevents targeting entities not at least HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster1 = make_monster("Strong", hp=10)  # More HP
+        monster2 = make_monster("Weak", hp=3)  # Has least HP
+        fight = FightLog([hero], [monster1, monster2])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.ELIMINATE}))
+
+        # Cannot target stronger monster
+        assert not fight.is_valid_target(hero, monster1, hero.die.get_side(0))
+
+    def test_heavy_valid_target_5_or_more_hp(self):
+        """HEAVY allows targeting entity with 5+ HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Beefy", hp=6)  # Has 6 HP
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.HEAVY}))
+
+        # Can target 6 HP monster
+        assert fight.is_valid_target(hero, monster, hero.die.get_side(0))
+
+    def test_heavy_invalid_target_less_than_5_hp(self):
+        """HEAVY prevents targeting entity with less than 5 HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Weak", hp=4)  # Has 4 HP
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.HEAVY}))
+
+        # Cannot target 4 HP monster
+        assert not fight.is_valid_target(hero, monster, hero.die.get_side(0))
+
+    def test_generous_cannot_target_self(self):
+        """GENEROUS prevents targeting self."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.HEAL, 2, {Keyword.GENEROUS}))
+
+        # Cannot target self
+        assert not fight.is_valid_target(hero, hero, hero.die.get_side(0))
+        # Can target other (even enemy, for test purposes)
+        assert fight.is_valid_target(hero, monster, hero.die.get_side(0))
+
+    def test_scared_valid_target_n_or_less_hp(self):
+        """SCARED allows targeting entity with N or less HP (N = pips)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Weak", hp=3)  # Has 3 HP
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Side with 4 pips - can target entities with 4 or less HP
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 4, {Keyword.SCARED}))
+
+        # Can target 3 HP monster (3 <= 4)
+        assert fight.is_valid_target(hero, monster, hero.die.get_side(0))
+
+    def test_scared_invalid_target_more_than_n_hp(self):
+        """SCARED prevents targeting entity with more than N HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Strong", hp=6)  # Has 6 HP
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Side with 4 pips - can only target entities with 4 or less HP
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 4, {Keyword.SCARED}))
+
+        # Cannot target 6 HP monster (6 > 4)
+        assert not fight.is_valid_target(hero, monster, hero.die.get_side(0))
+
+    def test_picky_valid_target_exactly_n_hp(self):
+        """PICKY allows targeting entity with exactly N HP (N = pips)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Exact", hp=4)  # Has exactly 4 HP
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Side with 4 pips - can only target entities with exactly 4 HP
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 4, {Keyword.PICKY}))
+
+        # Can target 4 HP monster
+        assert fight.is_valid_target(hero, monster, hero.die.get_side(0))
+
+    def test_picky_invalid_target_not_exactly_n_hp(self):
+        """PICKY prevents targeting entity not at exactly N HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster1 = make_monster("TooLow", hp=3)  # Has 3 HP
+        monster2 = make_monster("TooHigh", hp=5)  # Has 5 HP
+        fight = FightLog([hero], [monster1, monster2])
+
+        hero.die = Die()
+        # Side with 4 pips - can only target entities with exactly 4 HP
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 4, {Keyword.PICKY}))
+
+        # Cannot target 3 HP monster
+        assert not fight.is_valid_target(hero, monster1, hero.die.get_side(0))
+        # Cannot target 5 HP monster
+        assert not fight.is_valid_target(hero, monster2, hero.die.get_side(0))
+
+
+class TestSelfPetrify:
+    """Tests for SELF_PETRIFY keyword - applies petrify to self after use."""
+
+    def test_self_petrify_basic(self):
+        """SELF_PETRIFY petrifies one of the user's own sides."""
+        from src.dice import Die, Side, Keyword, PETRIFY_ORDER
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Set up hero's die - all damage sides, side 0 has SELF_PETRIFY
+        hero.die = Die([
+            Side(EffectType.DAMAGE, 3, {Keyword.SELF_PETRIFY}),  # Side 0 with SELF_PETRIFY
+            Side(EffectType.DAMAGE, 2),  # Side 1
+            Side(EffectType.DAMAGE, 2),  # Side 2
+            Side(EffectType.DAMAGE, 2),  # Side 3
+            Side(EffectType.DAMAGE, 2),  # Side 4
+            Side(EffectType.DAMAGE, 2),  # Side 5
+        ])
+
+        # Use the side
+        fight.use_die(hero, 0, monster)
+
+        # Effect should work (deal damage)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 7  # 10 - 3
+
+        # First side in PETRIFY_ORDER (side 0) should be petrified
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        side_state = hero_state.get_side_state(PETRIFY_ORDER[0])
+        assert side_state.is_petrified or side_state.effect_type == EffectType.BLANK
+
+    def test_self_petrify_stacks(self):
+        """Using SELF_PETRIFY multiple times petrifies multiple sides."""
+        from src.dice import Die, Side, Keyword, PETRIFY_ORDER
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # All sides have SELF_PETRIFY
+        hero.die = Die([Side(EffectType.DAMAGE, 2, {Keyword.SELF_PETRIFY}) for _ in range(6)])
+
+        # Use twice
+        fight.use_die(hero, 0, monster)
+        fight.use_die(hero, 1, monster)
+
+        # Count petrified sides via state
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        petrified_count = sum(1 for i in range(6) if hero_state.get_side_state(i).is_petrified)
+        assert petrified_count >= 2  # At least 2 sides petrified

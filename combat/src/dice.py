@@ -116,6 +116,16 @@ class Keyword(Enum):
     RESONATE = auto()    # Copy effect from previous die, retaining pips and resonate keyword
     # No-effect keywords
     NOTHING = auto()     # This keyword has no effect
+    # Conditional bonus keywords
+    DEFY = auto()        # +N pips where N = incoming damage to me
+    # Targeting restriction keywords
+    ELIMINATE = auto()   # Can only target enemies with least HP
+    HEAVY = auto()       # Can only target enemies with 5+ HP
+    GENEROUS = auto()    # Cannot target myself
+    SCARED = auto()      # Target must have N or less HP (N = pips)
+    PICKY = auto()       # Target must have exactly N HP (N = pips)
+    # Self-targeting keywords
+    SELF_PETRIFY = auto()  # Petrify myself
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom

@@ -1397,6 +1397,10 @@ class FightLog:
         if calculated_side.has_keyword(Keyword.SELF_HEAL):
             self.apply_heal(entity, value)
 
+        # SELF_PETRIFY: petrify myself (one side)
+        if calculated_side.has_keyword(Keyword.SELF_PETRIFY):
+            self.apply_petrify(entity, 1)
+
         # === COST KEYWORDS (applied after main effect) ===
         # PAIN: I take N damage (N = pip value)
         if calculated_side.has_keyword(Keyword.PAIN):
@@ -1549,6 +1553,10 @@ class FightLog:
         # FIZZ: +N where N = abilities used this turn (before this one)
         if side.has_keyword(Keyword.FIZZ):
             value += self._dice_used_this_turn
+
+        # DEFY: +N where N = pending damage to source
+        if side.has_keyword(Keyword.DEFY):
+            value += self._get_pending_damage_to(source_entity)
 
         # x2 multiplier keywords (applied after +N bonuses)
         # Note: with TREBLE keyword, these become x3 instead of x2 (mult variable)
@@ -1870,6 +1878,17 @@ class FightLog:
                 max_hp = max(max_hp, state.hp)
         return max_hp
 
+    def _get_pending_damage_to(self, entity: Entity) -> int:
+        """Get total pending damage targeting an entity.
+
+        Used by DEFY keyword to get +N bonus where N = incoming damage.
+        """
+        total = 0
+        for pending in self._pending:
+            if pending.target == entity:
+                total += pending.amount
+        return total
+
     def _is_consecutive_run(self, n: int, current_value: int) -> bool:
         """Check if previous n-1 dice plus current form a consecutive run.
 
@@ -1918,6 +1937,52 @@ class FightLog:
             if side and side.effect_type == EffectType.BLANK:
                 count += 1
         return count
+
+    def is_valid_target(self, source: Entity, target: Entity, side: "Side") -> bool:
+        """Check if target is valid given the side's targeting restriction keywords.
+
+        Targeting keywords:
+        - ELIMINATE: can only target enemy with least HP
+        - HEAVY: can only target enemies with 5+ HP
+        - GENEROUS: cannot target self
+        - SCARED: target must have N or less HP (N = side value)
+        - PICKY: target must have exactly N HP (N = side value)
+
+        Returns True if target is valid, False otherwise.
+        """
+        from .dice import Keyword
+
+        target_state = self._states.get(target)
+        if not target_state or target_state.is_dead:
+            return False
+
+        # ELIMINATE: can only target entity with least HP among enemies
+        if side.has_keyword(Keyword.ELIMINATE):
+            min_hp = self._get_min_hp_of_all()
+            if target_state.hp != min_hp:
+                return False
+
+        # HEAVY: can only target entities with 5+ HP
+        if side.has_keyword(Keyword.HEAVY):
+            if target_state.hp < 5:
+                return False
+
+        # GENEROUS: cannot target self
+        if side.has_keyword(Keyword.GENEROUS):
+            if source == target:
+                return False
+
+        # SCARED: target must have N or less HP (N = side value)
+        if side.has_keyword(Keyword.SCARED):
+            if target_state.hp > side.calculated_value:
+                return False
+
+        # PICKY: target must have exactly N HP (N = side value)
+        if side.has_keyword(Keyword.PICKY):
+            if target_state.hp != side.calculated_value:
+                return False
+
+        return True
 
     def apply_petrify(self, target: Entity, amount: int):
         """Apply petrification to target's die sides.
