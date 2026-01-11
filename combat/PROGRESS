@@ -1,12 +1,30 @@
 {
   "current": {
-    "file": "TestKeyword",
-    "method": "pain",
-    "status": "analyzing",
+    "file": "TestParty",
+    "method": null,
+    "status": "not_started",
     "hypothesis": null,
     "verified": null
   },
   "blocked": [
+    {
+      "file": "TestKeyword",
+      "method": "rampageHeroKill",
+      "reason": "Requires die/sides system (turnInto) and isUsed() state tracking. Tests that Rampage keyword keeps die unused when it kills something.",
+      "timestamp": "2025-01-10T22:00:00Z"
+    },
+    {
+      "file": "TestKeyword",
+      "method": "testComboCruelWand",
+      "reason": "Requires die/sides system (turnInto) and copycat keyword. Tests copycat picks up keywords from wandFire.",
+      "timestamp": "2025-01-10T22:00:00Z"
+    },
+    {
+      "file": "TestKeyword",
+      "method": "testComboCruel",
+      "reason": "Requires die/sides system (turnInto) and copycat keyword. Tests copycat picks up keywords from copied effects.",
+      "timestamp": "2025-01-10T22:00:00Z"
+    },
     {
       "file": "TestKeyword",
       "method": "precisePlusMagic",
@@ -51,6 +69,30 @@
     }
   ],
   "completed": [
+    {
+      "file": "TestKeywordSpell",
+      "method": "cruel",
+      "hypothesis": "Cruel keyword applies x2 multiplier to HEALS when target is at <= half HP (HP <= maxHP/2).",
+      "verified": "Confirmed.",
+      "test": "tests/test_keyword.py::TestCruelHeal",
+      "timestamp": "2025-01-10T22:20:00Z"
+    },
+    {
+      "file": "TestKeywordSpell",
+      "method": "engage",
+      "hypothesis": "Engage keyword works with spells the same way as with dice (x2 vs full HP targets).",
+      "verified": "Already covered - our implementation is source-agnostic. Effects work the same whether from dice or spells. Engage verified in TestKeyword.precise.",
+      "test": "tests/test_keyword.py::TestEngage",
+      "timestamp": "2025-01-10T22:10:00Z"
+    },
+    {
+      "file": "TestKeyword",
+      "method": "pain",
+      "hypothesis": "dmgPain(N) deals damage to target AND damages the user for N.",
+      "verified": "Already verified and implemented in TestStrangeScenarios.painShouldKill.",
+      "test": "tests/test_strange_scenarios.py::test_pain_damages_user, test_pain_can_kill_user",
+      "timestamp": "2025-01-10T22:00:00Z"
+    },
     {
       "file": "TestKeyword",
       "method": "regen",
@@ -317,6 +359,24 @@
     }
   ],
   "skipped": [
+    {
+      "file": "TestKeyword",
+      "method": "noLightKeywordsWithoutIcon",
+      "reason": "@Skip annotation. Icon validation test, not combat mechanics.",
+      "timestamp": "2025-01-10T22:00:00Z"
+    },
+    {
+      "file": "TestKeyword",
+      "method": "testCantripAllKeywords",
+      "reason": "@Slow integration smoke test. Iterates all abilities with cantrip keyword to check game doesn't crash. Not testing specific combat mechanics.",
+      "timestamp": "2025-01-10T22:00:00Z"
+    },
+    {
+      "file": "TestKeyword",
+      "method": "testAllAbilitiesAllKeywords",
+      "reason": "@Slow integration smoke test. Iterates all keywords × all abilities to check game doesn't crash. Not testing specific combat mechanics.",
+      "timestamp": "2025-01-10T22:00:00Z"
+    },
     {
       "file": "TestStrangeScenarios",
       "method": "ironHelmDiedLastTurn",

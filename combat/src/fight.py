@@ -790,6 +790,31 @@ class FightLog:
 
         self.apply_damage(source, target, total_damage, is_pending)
 
+    def apply_cruel_heal(self, target: Entity, base_heal: int):
+        """Apply heal with Cruel keyword.
+
+        Cruel heals x2 when target is at half HP or less (HP <= maxHP/2).
+        Same condition as cruel damage - applies to any effect type.
+
+        Note: The cruel check uses target's current HP, not future HP.
+        """
+        self._record_action()
+        state = self._states[target]
+
+        # Calculate cruel multiplier based on target's current HP
+        half_hp = state.max_hp / 2.0  # Use float division like Java
+        multiplier = 2 if state.hp <= half_hp else 1
+        total_heal = base_heal * multiplier
+
+        # Heal capped at max HP
+        new_hp = min(state.hp + total_heal, state.max_hp)
+        self._states[target] = EntityState(
+            target, new_hp, state.max_hp,
+            state.shield, state.spiky, state.self_heal, state.damage_blocked,
+            state.keep_shields, state.stone_hp, state.fled,
+            state.dodge, state.regen
+        )
+
     def apply_weaken_damage(self, source: Entity, target: Entity, amount: int):
         """Apply damage with Weaken keyword.
 

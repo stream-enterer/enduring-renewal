@@ -743,6 +743,91 @@ class TestLifestealVsInvincible:
         assert state.hp == hero_max - 1, "hero should still heal additional damage"
 
 
+class TestCruelHeal:
+    """Tests for Cruel keyword on heals.
+
+    Cruel applies x2 multiplier to heals when target is at <= half HP (HP <= maxHP/2).
+    This is the same condition as cruel damage.
+
+    Verified: Confirmed (from TestKeywordSpell.cruel).
+    """
+
+    def test_cruel_heal_doubles_at_half_or_less(self):
+        """Cruel heal doubles when target is at half HP or less."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Damage hero to at or below half HP (ceil(5/2) = 3 damage -> 2 HP)
+        fight.apply_damage(monster, hero, 3, is_pending=False)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 2, "Hero should be at 2 HP"
+        # 2 HP <= 2.5 (half of 5), so cruel should trigger
+
+        # Cruel heal(1) should heal for 2
+        fight.apply_cruel_heal(hero, 1)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 4, "Cruel heal should heal x2 when at half HP or less"
+
+    def test_cruel_heal_no_bonus_above_half(self):
+        """Cruel heal has no bonus when target is above half HP."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Damage hero to at or below half HP
+        fight.apply_damage(monster, hero, 3, is_pending=False)
+
+        # First cruel heal(1) = heal 2, hero now at 4 HP
+        fight.apply_cruel_heal(hero, 1)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 4, "Hero at 4 HP"
+
+        # 4 HP > 2.5 (half of 5), so no bonus
+        # Second cruel heal(1) should heal for 1 (no bonus)
+        fight.apply_cruel_heal(hero, 1)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 5, "Cruel heal should heal normally when above half HP"
+
+    def test_cruel_heal_full_scenario(self):
+        """Full cruel heal test matching original Java test.
+
+        Setup: 1 Fighter hero (5 HP) vs 1 Goblin monster
+        - Damage hero for ceil(5/2) = 3 -> hero at 2 HP
+        - hp = 2, half = 2.5, so hp <= half (cruel triggers)
+        - heal(1) with cruel -> heals 2, hero at hp + 2 = 4 HP
+        - Now at 4 HP which is > 2.5, so no bonus
+        - heal(1) with cruel -> heals 1, hero at hp + 3 = 5 HP
+
+        Verified: Confirmed.
+        """
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+        import math
+        hero_max = 5
+
+        # Damage hero to at or below half HP
+        damage = math.ceil(hero_max / 2.0)  # 3
+        fight.apply_damage(monster, hero, damage, is_pending=False)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        hp_after_damage = state.hp
+        assert hp_after_damage <= hero_max / 2.0, "hp should be less than half"
+
+        # First cruel heal
+        fight.apply_cruel_heal(hero, 1)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == hp_after_damage + 2, "hero should be healed for 2"
+
+        # Second cruel heal (now above half HP)
+        fight.apply_cruel_heal(hero, 1)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == hp_after_damage + 3, "hero should be healed for 1 more"
+
+
 class TestRegen:
     """Tests for Regen keyword.
 
