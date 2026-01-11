@@ -652,6 +652,15 @@ def _worker_test_combination(args: tuple) -> TestResult:
     return test_keyword_combination(keywords, effect_type, scenario=scenario)
 
 
+def _worker_test_chunk(chunk: list) -> list[TestResult]:
+    """Worker function that processes a chunk of test cases. Reduces IPC overhead."""
+    results = []
+    for keywords, effect_type, scenario_dict in chunk:
+        scenario = TestScenario(**scenario_dict)
+        results.append(test_keyword_combination(keywords, effect_type, scenario=scenario))
+    return results
+
+
 def _run_parallel_batch(test_cases: list, workers: int) -> list[TestResult]:
     """Run a batch of test cases in parallel.
 
@@ -684,6 +693,60 @@ def _run_parallel_batch(test_cases: list, workers: int) -> list[TestResult]:
                         scenario="unknown"
                     )
                 ))
+    return results
+
+
+# Worker chunk size - tests per worker call (higher = less IPC, but less granular progress)
+WORKER_CHUNK_SIZE = 200
+
+
+def _run_parallel_chunked(test_cases: list, workers: int, progress_callback=None) -> list[TestResult]:
+    """Run test cases using chunked workers for reduced IPC overhead.
+
+    Args:
+        test_cases: List of (keywords, effect_type, scenario_dict) tuples
+        workers: Number of worker processes
+        progress_callback: Optional callback(completed_count) for progress updates
+
+    Returns:
+        List of TestResult objects
+    """
+    # Split into chunks
+    chunks = [test_cases[i:i + WORKER_CHUNK_SIZE] for i in range(0, len(test_cases), WORKER_CHUNK_SIZE)]
+
+    results = []
+    completed = 0
+
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(_worker_test_chunk, chunk): len(chunk) for chunk in chunks}
+
+        for future in as_completed(futures):
+            chunk_size = futures[future]
+            try:
+                chunk_results = future.result()
+                results.extend(chunk_results)
+            except Exception as e:
+                # Worker crashed - create error results for entire chunk
+                for _ in range(chunk_size):
+                    results.append(TestResult(
+                        crash=CrashReport(
+                            timestamp=datetime.now().isoformat(),
+                            level="parallel_error",
+                            keywords=["UNKNOWN"],
+                            effect_type="UNKNOWN",
+                            pip_value=0,
+                            phase="parallel_worker",
+                            error_type=type(e).__name__,
+                            error_message=str(e),
+                            traceback=traceback.format_exc(),
+                            scenario="unknown"
+                        )
+                    ))
+
+            completed += chunk_size
+            if progress_callback:
+                progress_callback(completed)
+
     return results
 
 
@@ -818,7 +881,7 @@ def run_level(level: int, workers: int = 0, effect_types: list[EffectType] = Non
     if effect_types is None:
         effect_types = [EffectType.DAMAGE, EffectType.HEAL, EffectType.SHIELD]
 
-    # Auto-detect workers if not specified
+    # Auto-detect workers if not specified (chunked mode scales well with cores)
     if workers == 0:
         workers = CPU_COUNT
     use_parallel = workers > 1
@@ -862,40 +925,41 @@ def run_level(level: int, workers: int = 0, effect_types: list[EffectType] = Non
     print(f"Testing {len(test_cases)} combinations...")
 
     if use_parallel and len(test_cases) > 100:
-        # Parallel execution for large test sets
-        print(f"Using {workers} parallel workers...")
+        # Parallel execution for large test sets using chunked workers
+        print(f"Using {workers} parallel workers (chunked)...")
 
-        batch_size = PARALLEL_BATCH_SIZE
-        for batch_start in range(0, len(test_cases), batch_size):
-            batch_end = min(batch_start + batch_size, len(test_cases))
-            batch = test_cases[batch_start:batch_end]
+        last_progress = [0]  # Use list for closure mutability
 
-            results = _run_parallel_batch(batch, workers)
+        def progress_callback(completed):
+            nonlocal tested
+            # Print progress every 1000 tests
+            if completed - last_progress[0] >= 1000 or completed == len(test_cases):
+                elapsed = time.time() - start_time
+                rate = completed / elapsed if elapsed > 0 else 0
+                remaining = (len(test_cases) - completed) / rate if rate > 0 else 0
+                print(f"  Progress: {completed}/{len(test_cases)} ({completed/len(test_cases)*100:.1f}%) - {rate:.1f}/s - ETA: {remaining:.0f}s")
+                last_progress[0] = completed
 
-            for result in results:
-                tested += 1
-                if result.crash:
-                    is_new = skip_list.add(result.crash)
-                    if is_new:
-                        new_crashes.append(result.crash)
-                        seen_signatures.add(result.crash.signature)
-                        cause_str = f" [{result.crash.likely_cause}]" if result.crash.likely_cause != "unknown" else ""
-                        java_str = " ⚠️ NEEDS JAVA REVIEW" if result.crash.needs_java_review else ""
-                        print(f"  NEW CRASH: {result.crash.signature}{cause_str}{java_str}")
-                        print(f"    Keywords: {result.crash.keywords} ({result.crash.effect_type})")
-                        print(f"    Location: {result.crash.source_location}")
+        results = _run_parallel_chunked(test_cases, workers, progress_callback)
 
-                if result.no_effect_warning:
-                    no_effect_warnings.append(result.no_effect_warning)
+        for result in results:
+            tested += 1
+            if result.crash:
+                is_new = skip_list.add(result.crash)
+                if is_new:
+                    new_crashes.append(result.crash)
+                    seen_signatures.add(result.crash.signature)
+                    cause_str = f" [{result.crash.likely_cause}]" if result.crash.likely_cause != "unknown" else ""
+                    java_str = " ⚠️ NEEDS JAVA REVIEW" if result.crash.needs_java_review else ""
+                    print(f"  NEW CRASH: {result.crash.signature}{cause_str}{java_str}")
+                    print(f"    Keywords: {result.crash.keywords} ({result.crash.effect_type})")
+                    print(f"    Location: {result.crash.source_location}")
 
-            # Progress update after each batch
-            elapsed = time.time() - start_time
-            rate = tested / elapsed if elapsed > 0 else 0
-            remaining = (len(test_cases) - tested) / rate if rate > 0 else 0
-            print(f"  Progress: {tested}/{len(test_cases)} ({tested/len(test_cases)*100:.1f}%) - {rate:.1f}/s - ETA: {remaining:.0f}s")
+            if result.no_effect_warning:
+                no_effect_warnings.append(result.no_effect_warning)
 
-            # Save skip list after each batch
-            save_skip_list(skip_list)
+        # Save skip list after all tests
+        save_skip_list(skip_list)
     else:
         # Single-threaded execution for small test sets
         for i, (keywords, effect_type, scenario_dict) in enumerate(test_cases):
