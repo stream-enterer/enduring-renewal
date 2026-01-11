@@ -77,6 +77,21 @@ class Keyword(Enum):
     DEATHLUST = auto()  # deathwish + bloodlust: x2 if source at 1HP, +N damaged enemy pips
     # Minus variants
     MINUS_FLESH = auto()  # -N pips where N = my current HP
+    # Dice count conditionals
+    FIRST = auto()    # x2 if no dice used this turn
+    SIXTH = auto()    # x2 if this is the 6th die used this turn
+    FIZZ = auto()     # +N pips where N = abilities used this turn
+    # Consecutive value conditionals
+    STEP = auto()     # x2 if previous 2 dice form a consecutive run
+    RUN = auto()      # x2 if previous 3 dice form a consecutive run
+    SPRINT = auto()   # x2 if previous 5 dice form a consecutive run
+    # Blank side comparison
+    SLOTH = auto()    # x2 if I have more blank sides than target
+    # Growth variants
+    HYPER_GROWTH = auto()  # After use, this side gets +N pips (N = value)
+    UNDERGROWTH = auto()   # After use, the opposite side gets +1 pip
+    GROOOOOOWTH = auto()   # After use, all my sides get +1 pip
+    DECAY = auto()         # After use, this side gets -1 pip
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
@@ -120,6 +135,10 @@ class Side:
         """Apply growth: increase the side's value by 1."""
         self.growth_bonus += 1
 
+    def apply_growth_n(self, n: int):
+        """Apply growth of N pips (can be negative for decay)."""
+        self.growth_bonus += n
+
 
 @dataclass
 class Die:
@@ -142,6 +161,10 @@ class Die:
     def set_all_sides(self, side: Side):
         """Replace all sides with copies of the given side."""
         self.sides = [side.copy() for _ in range(6)]
+
+    def set_side(self, index: int, side: Side):
+        """Set a specific side by index."""
+        self.sides[index] = side
 
     def add_keyword_to_all(self, keyword: Keyword):
         """Add a keyword to all sides."""

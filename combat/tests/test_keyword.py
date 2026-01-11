@@ -4474,3 +4474,618 @@ class TestMinusFlesh:
         # Let's assume it becomes 0 or the test shows actual behavior
         # For now, let's just verify the calculation happened
         assert state.hp >= 20  # No damage dealt (0 or healing)
+
+
+class TestFirst:
+    """Tests for First keyword.
+
+    First: x2 effect if no dice have been used this turn.
+    """
+
+    def test_first_doubles_when_first_die(self):
+        """First doubles damage when this is the first die used."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 3, {Keyword.FIRST})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 3 * 2 = 6 damage
+        assert state.hp == 14
+
+    def test_first_no_bonus_after_first_die(self):
+        """First does not double when a die has already been used."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter1", hp=5)
+        hero2 = make_hero("Fighter2", hp=5)
+        monster = make_monster("Goblin", hp=30)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Setup hero1 with a plain damage die
+        hero1.die = Die()
+        plain_side = Side(EffectType.DAMAGE, 2, set())
+        hero1.die.set_all_sides(plain_side)
+
+        # Setup hero2 with first keyword
+        hero2.die = Die()
+        first_side = Side(EffectType.DAMAGE, 3, {Keyword.FIRST})
+        hero2.die.set_all_sides(first_side)
+
+        # Use hero1's die first
+        fight.use_die(hero1, 0, monster)
+        # 30 - 2 = 28
+
+        # Use hero2's die (not the first anymore)
+        fight.use_die(hero2, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 28 - 3 = 25 (no x2 bonus)
+        assert state.hp == 25
+
+
+class TestSixth:
+    """Tests for Sixth keyword.
+
+    Sixth: x2 effect if this is the 6th die used this turn.
+    """
+
+    def test_sixth_doubles_when_sixth_die(self):
+        """Sixth doubles damage when this is the 6th die used."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        heroes = [make_hero(f"Fighter{i}", hp=5) for i in range(6)]
+        monster = make_monster("Dragon", hp=100)
+        fight = FightLog(heroes, [monster])
+
+        # Setup first 5 heroes with plain damage dice
+        for i in range(5):
+            heroes[i].die = Die()
+            plain_side = Side(EffectType.DAMAGE, 1, set())
+            heroes[i].die.set_all_sides(plain_side)
+
+        # Setup 6th hero with sixth keyword
+        heroes[5].die = Die()
+        sixth_side = Side(EffectType.DAMAGE, 5, {Keyword.SIXTH})
+        heroes[5].die.set_all_sides(sixth_side)
+
+        # Use first 5 dice
+        for i in range(5):
+            fight.use_die(heroes[i], 0, monster)
+        # 100 - 5 = 95
+
+        # Use 6th die
+        fight.use_die(heroes[5], 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 95 - (5 * 2) = 85
+        assert state.hp == 85
+
+    def test_sixth_no_bonus_when_not_sixth(self):
+        """Sixth does not double on die 1-5 or 7+."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        heroes = [make_hero(f"Fighter{i}", hp=5) for i in range(3)]
+        monster = make_monster("Dragon", hp=100)
+        fight = FightLog(heroes, [monster])
+
+        # Setup first hero with sixth keyword (but used first)
+        heroes[0].die = Die()
+        sixth_side = Side(EffectType.DAMAGE, 5, {Keyword.SIXTH})
+        heroes[0].die.set_all_sides(sixth_side)
+
+        fight.use_die(heroes[0], 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 100 - 5 = 95 (no x2 bonus since it's die #1)
+        assert state.hp == 95
+
+
+class TestFizz:
+    """Tests for Fizz keyword.
+
+    Fizz: +N pips where N = abilities used this turn (before this one).
+    """
+
+    def test_fizz_first_use_no_bonus(self):
+        """Fizz has no bonus when no abilities used yet."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 3, {Keyword.FIZZ})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 3 + 0 = 3 damage
+        assert state.hp == 17
+
+    def test_fizz_bonus_increases_with_uses(self):
+        """Fizz bonus increases with each ability used."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        heroes = [make_hero(f"Fighter{i}", hp=5) for i in range(4)]
+        monster = make_monster("Dragon", hp=100)
+        fight = FightLog(heroes, [monster])
+
+        # Setup first 3 heroes with plain damage dice
+        for i in range(3):
+            heroes[i].die = Die()
+            plain_side = Side(EffectType.DAMAGE, 1, set())
+            heroes[i].die.set_all_sides(plain_side)
+
+        # Setup 4th hero with fizz keyword
+        heroes[3].die = Die()
+        fizz_side = Side(EffectType.DAMAGE, 2, {Keyword.FIZZ})
+        heroes[3].die.set_all_sides(fizz_side)
+
+        # Use first 3 dice
+        for i in range(3):
+            fight.use_die(heroes[i], 0, monster)
+        # 100 - 3 = 97
+
+        # Use 4th die with fizz
+        fight.use_die(heroes[3], 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 97 - (2 + 3) = 92
+        assert state.hp == 92
+
+
+class TestStep:
+    """Tests for Step keyword.
+
+    Step: x2 if previous 2 dice values form a consecutive run (sorted).
+    """
+
+    def test_step_doubles_with_consecutive_run(self):
+        """Step doubles when previous value + current form a consecutive pair."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        heroes = [make_hero(f"Fighter{i}", hp=5) for i in range(2)]
+        monster = make_monster("Dragon", hp=100)
+        fight = FightLog(heroes, [monster])
+
+        # First die: value 2
+        heroes[0].die = Die()
+        side1 = Side(EffectType.DAMAGE, 2, set())
+        heroes[0].die.set_all_sides(side1)
+
+        # Second die: value 3 with step (2,3 = consecutive)
+        heroes[1].die = Die()
+        side2 = Side(EffectType.DAMAGE, 3, {Keyword.STEP})
+        heroes[1].die.set_all_sides(side2)
+
+        fight.use_die(heroes[0], 0, monster)
+        fight.use_die(heroes[1], 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 100 - 2 - (3 * 2) = 92
+        assert state.hp == 92
+
+    def test_step_works_descending(self):
+        """Step works for descending consecutive (3,2)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        heroes = [make_hero(f"Fighter{i}", hp=5) for i in range(2)]
+        monster = make_monster("Dragon", hp=100)
+        fight = FightLog(heroes, [monster])
+
+        # First die: value 3
+        heroes[0].die = Die()
+        side1 = Side(EffectType.DAMAGE, 3, set())
+        heroes[0].die.set_all_sides(side1)
+
+        # Second die: value 2 with step (3,2 = consecutive)
+        heroes[1].die = Die()
+        side2 = Side(EffectType.DAMAGE, 2, {Keyword.STEP})
+        heroes[1].die.set_all_sides(side2)
+
+        fight.use_die(heroes[0], 0, monster)
+        fight.use_die(heroes[1], 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 100 - 3 - (2 * 2) = 93
+        assert state.hp == 93
+
+    def test_step_no_bonus_non_consecutive(self):
+        """Step does not double when values aren't consecutive."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        heroes = [make_hero(f"Fighter{i}", hp=5) for i in range(2)]
+        monster = make_monster("Dragon", hp=100)
+        fight = FightLog(heroes, [monster])
+
+        # First die: value 2
+        heroes[0].die = Die()
+        side1 = Side(EffectType.DAMAGE, 2, set())
+        heroes[0].die.set_all_sides(side1)
+
+        # Second die: value 5 with step (2,5 = not consecutive)
+        heroes[1].die = Die()
+        side2 = Side(EffectType.DAMAGE, 5, {Keyword.STEP})
+        heroes[1].die.set_all_sides(side2)
+
+        fight.use_die(heroes[0], 0, monster)
+        fight.use_die(heroes[1], 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 100 - 2 - 5 = 93 (no x2)
+        assert state.hp == 93
+
+
+class TestRun:
+    """Tests for Run keyword.
+
+    Run: x2 if previous 3 dice values form a consecutive run (sorted).
+    """
+
+    def test_run_doubles_with_consecutive_run(self):
+        """Run doubles when previous 2 + current form a consecutive triple."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        heroes = [make_hero(f"Fighter{i}", hp=5) for i in range(3)]
+        monster = make_monster("Dragon", hp=100)
+        fight = FightLog(heroes, [monster])
+
+        # Die 1: value 1
+        heroes[0].die = Die()
+        heroes[0].die.set_all_sides(Side(EffectType.DAMAGE, 1, set()))
+
+        # Die 2: value 3
+        heroes[1].die = Die()
+        heroes[1].die.set_all_sides(Side(EffectType.DAMAGE, 3, set()))
+
+        # Die 3: value 2 with run (1,3,2 sorted = 1,2,3 = consecutive)
+        heroes[2].die = Die()
+        heroes[2].die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.RUN}))
+
+        for i in range(3):
+            fight.use_die(heroes[i], 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 100 - 1 - 3 - (2 * 2) = 92
+        assert state.hp == 92
+
+    def test_run_no_bonus_not_enough_dice(self):
+        """Run does not double if fewer than 2 previous dice."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        heroes = [make_hero(f"Fighter{i}", hp=5) for i in range(2)]
+        monster = make_monster("Dragon", hp=100)
+        fight = FightLog(heroes, [monster])
+
+        # Die 1: value 1
+        heroes[0].die = Die()
+        heroes[0].die.set_all_sides(Side(EffectType.DAMAGE, 1, set()))
+
+        # Die 2: value 2 with run (only 1 previous, need 2)
+        heroes[1].die = Die()
+        heroes[1].die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.RUN}))
+
+        fight.use_die(heroes[0], 0, monster)
+        fight.use_die(heroes[1], 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 100 - 1 - 2 = 97 (no x2)
+        assert state.hp == 97
+
+
+class TestSprint:
+    """Tests for Sprint keyword.
+
+    Sprint: x2 if previous 5 dice values form a consecutive run (sorted).
+    """
+
+    def test_sprint_doubles_with_consecutive_run(self):
+        """Sprint doubles when previous 4 + current form a consecutive 5."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        heroes = [make_hero(f"Fighter{i}", hp=5) for i in range(5)]
+        monster = make_monster("Dragon", hp=100)
+        fight = FightLog(heroes, [monster])
+
+        # Values: 5, 3, 1, 4, 2 (sorted: 1,2,3,4,5 = consecutive)
+        values = [5, 3, 1, 4, 2]
+        for i in range(4):
+            heroes[i].die = Die()
+            heroes[i].die.set_all_sides(Side(EffectType.DAMAGE, values[i], set()))
+
+        heroes[4].die = Die()
+        heroes[4].die.set_all_sides(Side(EffectType.DAMAGE, values[4], {Keyword.SPRINT}))
+
+        for i in range(5):
+            fight.use_die(heroes[i], 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 100 - 5 - 3 - 1 - 4 - (2 * 2) = 83
+        assert state.hp == 83
+
+
+class TestSloth:
+    """Tests for Sloth keyword.
+
+    Sloth: x2 if source has more blank sides than target.
+    """
+
+    def test_sloth_doubles_when_more_blanks(self):
+        """Sloth doubles when source has more blank sides than target."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # Hero die: 2 blanks, 4 damage sides (use set_all_sides first)
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.SLOTH}))
+        hero.die.set_side(0, Side(EffectType.BLANK, 0, set()))
+        hero.die.set_side(1, Side(EffectType.BLANK, 0, set()))
+
+        # Monster die: 1 blank, 5 damage sides
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2, set()))
+        monster.die.set_side(0, Side(EffectType.BLANK, 0, set()))
+
+        # Use side 2 (a damage side with sloth)
+        fight.use_die(hero, 2, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # Hero has 2 blanks, monster has 1 blank -> x2
+        # 20 - (3 * 2) = 14
+        assert state.hp == 14
+
+    def test_sloth_no_bonus_when_fewer_blanks(self):
+        """Sloth does not double when source has fewer blanks."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # Hero die: 1 blank
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.SLOTH}))
+        hero.die.set_side(0, Side(EffectType.BLANK, 0, set()))
+
+        # Monster die: 2 blanks
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2, set()))
+        monster.die.set_side(0, Side(EffectType.BLANK, 0, set()))
+        monster.die.set_side(1, Side(EffectType.BLANK, 0, set()))
+
+        fight.use_die(hero, 1, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # Hero has 1 blank, monster has 2 blanks -> no x2
+        # 20 - 3 = 17
+        assert state.hp == 17
+
+    def test_sloth_no_bonus_when_equal_blanks(self):
+        """Sloth does not double when same number of blanks."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # Both have 2 blanks
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.SLOTH}))
+        hero.die.set_side(0, Side(EffectType.BLANK, 0, set()))
+        hero.die.set_side(1, Side(EffectType.BLANK, 0, set()))
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2, set()))
+        monster.die.set_side(0, Side(EffectType.BLANK, 0, set()))
+        monster.die.set_side(1, Side(EffectType.BLANK, 0, set()))
+
+        fight.use_die(hero, 2, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # Equal blanks -> no x2
+        # 20 - 3 = 17
+        assert state.hp == 17
+
+
+class TestHyperGrowth:
+    """Tests for HyperGrowth keyword.
+
+    HyperGrowth: After use, this side gains +N pips where N = calculated value.
+    """
+
+    def test_hyper_growth_adds_value(self):
+        """HyperGrowth adds the calculated value to the side after use."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 3, {Keyword.HYPER_GROWTH})
+        hero.die.set_all_sides(side)
+
+        # First use: 3 damage, then gains +3 growth
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 17  # 20 - 3
+
+        # Check the side has grown by 3
+        assert hero.die.get_side(0).growth_bonus == 3
+        assert hero.die.get_side(0).calculated_value == 6  # 3 + 3 = 6
+
+    def test_hyper_growth_compounds(self):
+        """HyperGrowth compounds: second use adds more growth."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Dragon", hp=100)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 2, {Keyword.HYPER_GROWTH})
+        hero.die.set_all_sides(side)
+
+        # First use: 2 damage, gains +2 growth -> now 4
+        fight.use_die(hero, 0, monster)
+        assert hero.die.get_side(0).calculated_value == 4
+
+        # Recharge die for second use
+        fight.recharge_die(hero)
+
+        # Second use: 4 damage, gains +4 growth -> now 8
+        fight.use_die(hero, 0, monster)
+        assert hero.die.get_side(0).calculated_value == 8
+
+
+class TestUndergrowth:
+    """Tests for Undergrowth keyword.
+
+    Undergrowth: After use, the opposite side gains +1 pip.
+    Opposite side = index 5 - current_index (wraps around).
+    """
+
+    def test_undergrowth_grows_opposite_side(self):
+        """Undergrowth grows the opposite side by 1."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Side 0 has undergrowth, opposite is side 5
+        side = Side(EffectType.DAMAGE, 2, {Keyword.UNDERGROWTH})
+        hero.die.set_all_sides(side)
+
+        # Use side 0
+        fight.use_die(hero, 0, monster)
+
+        # Side 0 should not have grown
+        assert hero.die.get_side(0).growth_bonus == 0
+        # Side 5 (opposite) should have +1
+        assert hero.die.get_side(5).growth_bonus == 1
+
+    def test_undergrowth_different_indices(self):
+        """Undergrowth works for different side indices."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 2, {Keyword.UNDERGROWTH})
+        hero.die.set_all_sides(side)
+
+        # Use side 2, opposite is 5 - 2 = 3
+        fight.use_die(hero, 2, monster)
+
+        assert hero.die.get_side(2).growth_bonus == 0
+        assert hero.die.get_side(3).growth_bonus == 1
+
+
+class TestGroooooowth:
+    """Tests for Groooooowth keyword.
+
+    Groooooowth: After use, ALL sides gain +1 pip.
+    """
+
+    def test_groooooowth_grows_all_sides(self):
+        """Groooooowth grows all 6 sides by 1."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 2, {Keyword.GROOOOOOWTH})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # All 6 sides should have +1 growth
+        for i in range(6):
+            assert hero.die.get_side(i).growth_bonus == 1
+            assert hero.die.get_side(i).calculated_value == 3
+
+
+class TestDecay:
+    """Tests for Decay keyword.
+
+    Decay: After use, this side loses -1 pip.
+    """
+
+    def test_decay_decreases_pip(self):
+        """Decay decreases the side by 1 after use."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 3, {Keyword.DECAY})
+        hero.die.set_all_sides(side)
+
+        # First use: 3 damage, then decays to 2
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 17  # 20 - 3
+
+        assert hero.die.get_side(0).growth_bonus == -1
+        assert hero.die.get_side(0).calculated_value == 2
+
+    def test_decay_can_go_to_zero(self):
+        """Decay can reduce a side to 0 value."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 1, {Keyword.DECAY})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        assert hero.die.get_side(0).calculated_value == 0  # 1 - 1 = 0

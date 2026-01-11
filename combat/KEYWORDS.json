@@ -64,9 +64,27 @@
     "cruesh",
     "pristeel",
     "deathlust",
-    "minusFlesh"
+    "minusFlesh",
+    "first",
+    "sixth",
+    "fizz",
+    "step",
+    "run",
+    "sprint",
+    "sloth",
+    "hyperGrowth",
+    "undergrowth",
+    "groooooowth",
+    "decay"
   ],
   "blocked": {
+    "turn_tracking": ["patient", "era", "minusEra"],
+    "target_tracking": ["focus", "duel"],
+    "item_system": ["hoard", "fashionable", "equipped"],
+    "poison_tracking": ["plague", "acidic"],
+    "buff_tracking": ["buffed", "affected", "skill"],
+    "usage_tracking": ["doubleUse", "quadUse", "hyperUse", "rite"],
+    "entity_summoning": ["boned", "hyperBoned"]
   },
   "all": [
     "heal", "shield", "damage", "manaGain",

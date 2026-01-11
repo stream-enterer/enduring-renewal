@@ -345,6 +345,9 @@ class FightLog:
         # History of die effects (for trio/quin/sept keywords)
         self._die_effect_history: list[SideState] = []
 
+        # Counter for dice used this turn (for first, sixth, fizz keywords)
+        self._dice_used_this_turn: int = 0
+
     def _update_state(self, entity: Entity, **kwargs) -> EntityState:
         """Update entity state with specific fields while preserving all others.
 
@@ -902,6 +905,9 @@ class FightLog:
         # Clear pending damage
         self._pending = []
 
+        # Reset per-turn dice tracking
+        self._dice_used_this_turn = 0
+
         # Process each entity's turn transition
         for entity, state in list(self._states.items()):
             new_shield = state.shield if state.keep_shields else 0
@@ -1318,6 +1324,7 @@ class FightLog:
         # Store this side state as the most recently used (for copycat)
         self._most_recent_die_effect = side_state
         self._die_effect_history.append(side_state)
+        self._dice_used_this_turn += 1
 
         # Mark die as used
         self.mark_die_used(entity)
@@ -1326,6 +1333,27 @@ class FightLog:
         original_side = die.get_side(side_index)
         if original_side.has_keyword(Keyword.GROWTH) or calculated_side.has_keyword(Keyword.GROWTH):
             original_side.apply_growth()
+
+        # Apply growth variants
+        # HYPER_GROWTH: gains +N pips where N = calculated value
+        if original_side.has_keyword(Keyword.HYPER_GROWTH) or calculated_side.has_keyword(Keyword.HYPER_GROWTH):
+            original_side.apply_growth_n(value)
+
+        # UNDERGROWTH: opposite side gains +1 pip
+        if original_side.has_keyword(Keyword.UNDERGROWTH) or calculated_side.has_keyword(Keyword.UNDERGROWTH):
+            opposite_index = 5 - side_index
+            opposite_side = die.get_side(opposite_index)
+            opposite_side.apply_growth()
+
+        # GROOOOOOWTH: all sides gain +1 pip
+        if original_side.has_keyword(Keyword.GROOOOOOWTH) or calculated_side.has_keyword(Keyword.GROOOOOOWTH):
+            for i in range(6):
+                side_to_grow = die.get_side(i)
+                side_to_grow.apply_growth()
+
+        # DECAY: this side loses -1 pip
+        if original_side.has_keyword(Keyword.DECAY) or calculated_side.has_keyword(Keyword.DECAY):
+            original_side.apply_growth_n(-1)
 
     def get_most_recent_die_effect(self) -> Optional[SideState]:
         """Get the most recently used die's side state (for copycat keyword)."""
@@ -1401,6 +1429,10 @@ class FightLog:
         # VIGIL: +N where N = defeated allies
         if side.has_keyword(Keyword.VIGIL):
             value += self.count_dead_allies(source_entity)
+
+        # FIZZ: +N where N = abilities used this turn (before this one)
+        if side.has_keyword(Keyword.FIZZ):
+            value += self._dice_used_this_turn
 
         # x2 multiplier keywords (applied after +N bonuses)
         # ENGAGE: x2 vs full HP targets
@@ -1526,6 +1558,38 @@ class FightLog:
             if previous is not None:
                 if previous.calculated_effect.calculated_value > side.calculated_value:
                     value *= 2
+
+        # FIRST: x2 if no dice used this turn (before this one)
+        if side.has_keyword(Keyword.FIRST):
+            if self._dice_used_this_turn == 0:
+                value *= 2
+
+        # SIXTH: x2 if this is the 6th die used this turn
+        if side.has_keyword(Keyword.SIXTH):
+            if self._dice_used_this_turn == 5:
+                value *= 2
+
+        # STEP: x2 if previous 2 dice values form a consecutive run
+        if side.has_keyword(Keyword.STEP):
+            if self._is_consecutive_run(2, side.calculated_value):
+                value *= 2
+
+        # RUN: x2 if previous 3 dice values form a consecutive run
+        if side.has_keyword(Keyword.RUN):
+            if self._is_consecutive_run(3, side.calculated_value):
+                value *= 2
+
+        # SPRINT: x2 if previous 5 dice values form a consecutive run
+        if side.has_keyword(Keyword.SPRINT):
+            if self._is_consecutive_run(5, side.calculated_value):
+                value *= 2
+
+        # SLOTH: x2 if source has more blank sides than target
+        if side.has_keyword(Keyword.SLOTH):
+            source_blanks = self._count_blank_sides(source_entity)
+            target_blanks = self._count_blank_sides(target_entity)
+            if source_blanks > target_blanks:
+                value *= 2
 
         # === ANTI* VARIANTS (inverted condition) ===
         # ANTI_ENGAGE: x2 if target NOT at full HP
@@ -1675,6 +1739,55 @@ class FightLog:
             if state and not state.is_dead:
                 max_hp = max(max_hp, state.hp)
         return max_hp
+
+    def _is_consecutive_run(self, n: int, current_value: int) -> bool:
+        """Check if previous n-1 dice plus current form a consecutive run.
+
+        A consecutive run is a sequence of values that are all consecutive
+        (e.g., 1-2-3 or 3-2-1 both count as runs).
+
+        Args:
+            n: Total length of run to check (including current die)
+            current_value: The value of the current die being used
+
+        Returns:
+            True if the last n-1 dice values plus current form a consecutive run.
+        """
+        if n <= 1:
+            return True
+
+        # Get last n-1 die effects
+        previous = self.get_last_n_die_effects(n - 1)
+        if len(previous) < n - 1:
+            return False  # Not enough previous dice
+
+        # Build list of values: previous dice + current
+        values = [p.calculated_effect.calculated_value for p in previous]
+        values.append(current_value)
+
+        # Sort and check if consecutive
+        sorted_vals = sorted(values)
+        for i in range(1, len(sorted_vals)):
+            if sorted_vals[i] != sorted_vals[i - 1] + 1:
+                return False
+        return True
+
+    def _count_blank_sides(self, entity: Entity) -> int:
+        """Count the number of blank sides on an entity's die.
+
+        A blank side has EffectType.BLANK.
+        """
+        from .effects import EffectType
+
+        if entity.die is None:
+            return 0
+
+        count = 0
+        for i in range(6):
+            side = entity.die.get_side(i)
+            if side and side.effect_type == EffectType.BLANK:
+                count += 1
+        return count
 
     def apply_petrify(self, target: Entity, amount: int):
         """Apply petrification to target's die sides.
