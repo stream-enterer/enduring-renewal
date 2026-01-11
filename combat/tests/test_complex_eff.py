@@ -393,3 +393,84 @@ class TestResurrect:
         # Resurrect 3 -> 4 alive
         fight.apply_resurrect(3)
         assert len(fight.get_alive_heroes(Temporality.PRESENT)) == 4
+
+
+class TestVitality:
+    """Tests for Vitality keyword on heal.
+
+    healVitality(N) heals by N AND increases max HP by N.
+    HP capped at new max (can exceed old max).
+    """
+
+    def test_vitality_heals_and_increases_max(self):
+        """Vitality heals by N and increases max HP by N.
+
+        Verified: 2/4 + healVitality(3) = 5/7
+        """
+        hero = make_hero("Fighter", hp=4)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        # Damage hero to 2/4
+        fight.apply_damage(monster, hero, 2, is_pending=False)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 2, "Hero should be at 2 HP"
+        assert state.max_hp == 4, "Hero should have 4 max HP"
+
+        # healVitality(3) -> 5/7
+        fight.apply_heal_vitality(hero, 3)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 5, "Hero should be at 5 HP after vitality heal"
+        assert state.max_hp == 7, "Hero should have 7 max HP after vitality heal"
+
+    def test_vitality_at_full_hp(self):
+        """Vitality on full HP hero increases both HP and max HP.
+
+        Verified: 7/7 + healVitality(2) = 9/9
+        """
+        hero = make_hero("Fighter", hp=7)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 7 and state.max_hp == 7
+
+        # healVitality(2) -> 9/9
+        fight.apply_heal_vitality(hero, 2)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 9, "Hero should be at 9 HP"
+        assert state.max_hp == 9, "Hero should have 9 max HP"
+
+    def test_fortitude_heal_scenario(self):
+        """Test based on original fortitudeHeal test.
+
+        Hero at 5 max HP, damaged for 3 -> 2/5
+        healVitality(2) -> 4/7
+        healVitality(5) -> 9/12 (based on confirmed mechanic)
+
+        Note: Original test expected 12/12, but confirmed mechanic gives 9/12.
+        """
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+        hero_max = 5
+
+        # Damage hero for 3 -> 2/5
+        fight.apply_damage(monster, hero, 3, is_pending=False)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == hero_max - 3, "Hero should have lost 3 HP"
+
+        # healVitality(2) -> 4/7
+        fight.apply_heal_vitality(hero, 2)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 4, "Hero should be at 4 HP"
+        assert state.max_hp == hero_max + 2, "Hero should have +2 max HP"
+
+        # healVitality(5) -> 9/12 (hp + 5, max + 5, capped at new max)
+        fight.apply_heal_vitality(hero, 5)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 9, "Hero HP should be 4+5=9"
+        assert state.max_hp == hero_max + 2 + 5, "Hero max HP should be 5+2+5=12"

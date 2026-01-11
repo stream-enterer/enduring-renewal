@@ -646,3 +646,28 @@ class FightLog:
             if state.is_dead:
                 dead.append(hero)
         return dead
+
+    def apply_heal_vitality(self, target: Entity, amount: int):
+        """Apply heal with Vitality keyword - heals AND increases max HP.
+
+        Vitality:
+        - Heals by N
+        - Increases max HP by N
+        - HP capped at new max (can exceed old max, up to new max)
+
+        Example: 2/4 + healVitality(3) = 5/7
+        """
+        self._record_action()
+        state = self._states[target]
+
+        # Increase max HP first
+        new_max_hp = state.max_hp + amount
+
+        # Heal by amount, capped at new max
+        new_hp = min(state.hp + amount, new_max_hp)
+
+        self._states[target] = EntityState(
+            target, new_hp, new_max_hp,
+            state.shield, state.spiky, state.self_heal, state.damage_blocked,
+            state.keep_shields, state.stone_hp
+        )
