@@ -358,3 +358,98 @@ class TestEngage:
         fight.apply_engage_damage(hero, monsters[0], 1)
         state0 = fight.get_state(monsters[0], Temporality.PRESENT)
         assert state0.hp == monster_max - 3, "First monster should take normal damage now"
+
+
+class TestCruel:
+    """Tests for Cruel keyword.
+
+    Cruel deals x2 damage vs targets at half HP or less (HP <= maxHP/2).
+
+    Note: The original Java test is named "fierce" but uses dmgCruel.
+    Fierce is a separate keyword (target flees if HP <= N).
+
+    Verified: Confirmed. When monster at half HP, cruel triggers x2.
+    """
+
+    def test_cruel_no_bonus_above_half(self):
+        """Cruel deals normal damage when target is above half HP."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=6)  # Half = 3
+
+        fight = FightLog([hero], [monster])
+
+        # At 6 HP (above half) -> no x2
+        fight.apply_cruel_damage(hero, monster, 1)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 5, "Should deal 1 damage (above half HP)"
+
+        # At 5 HP (above half) -> no x2
+        fight.apply_cruel_damage(hero, monster, 1)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 4, "Should deal 1 damage (above half HP)"
+
+        # At 4 HP (above half) -> no x2
+        fight.apply_cruel_damage(hero, monster, 1)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 3, "Should deal 1 damage (above half HP)"
+
+    def test_cruel_doubles_at_half_or_less(self):
+        """Cruel deals x2 damage when target is at half HP or less."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=6)  # Half = 3
+
+        fight = FightLog([hero], [monster])
+
+        # Damage to 3 HP (half)
+        fight.apply_damage(hero, monster, 3, is_pending=False)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 3, "Should be at half HP"
+
+        # At 3 HP (= half) -> x2
+        fight.apply_cruel_damage(hero, monster, 1)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 1, "Should deal 2 damage (at half HP)"
+
+    def test_cruel_full_scenario(self):
+        """Full cruel test matching original Java test (named 'fierce').
+
+        Setup: 1 hero vs 1 testGoblin (6 HP, half = 3)
+        - dmgCruel(1) x3 -> 3 damage total, monster at 3 HP
+        - dmgCruel(1) -> monster at half, x2 -> 2 damage, total 5
+
+        Verified: Confirmed.
+        """
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=6)
+
+        fight = FightLog([hero], [monster])
+        monster_max = 6
+
+        # First 3 attacks - above half HP
+        fight.apply_cruel_damage(hero, monster, 1)
+        fight.apply_cruel_damage(hero, monster, 1)
+        fight.apply_cruel_damage(hero, monster, 1)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max - 3, "should be damaged for 3"
+
+        # 4th attack - now at half HP (3 = 6/2) -> x2
+        fight.apply_cruel_damage(hero, monster, 1)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max - 5, "should be damaged for 5 total (attack 4 did x2)"
+
+    def test_cruel_at_one_hp(self):
+        """Cruel still works at very low HP."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)  # Half = 2
+
+        fight = FightLog([hero], [monster])
+
+        # Damage to 1 HP
+        fight.apply_damage(hero, monster, 3, is_pending=False)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 1, "Should be at 1 HP"
+
+        # At 1 HP (< half of 4) -> x2
+        fight.apply_cruel_damage(hero, monster, 1)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == -1, "Should deal 2 damage (well below half HP)"

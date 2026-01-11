@@ -1,7 +1,7 @@
 {
   "current": {
     "file": "TestKeyword",
-    "method": "fierce",
+    "method": "weaken",
     "status": "analyzing",
     "hypothesis": null,
     "verified": null
@@ -45,6 +45,14 @@
     }
   ],
   "completed": [
+    {
+      "file": "TestKeyword",
+      "method": "fierce",
+      "hypothesis": "Test is misnamed - actually tests Cruel keyword. Cruel deals x2 damage vs targets at half HP or less (HP <= maxHP/2).",
+      "verified": "Confirmed. When monster at half HP, cruel triggers x2.",
+      "test": "tests/test_keyword.py::TestCruel",
+      "timestamp": "2025-01-10T20:00:00Z"
+    },
     {
       "file": "TestKeyword",
       "method": "precise",

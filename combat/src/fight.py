@@ -762,3 +762,18 @@ class FightLog:
         total_damage = base_damage * multiplier
 
         self.apply_damage(source, target, total_damage, is_pending)
+
+    def apply_cruel_damage(self, source: Entity, target: Entity, base_damage: int, is_pending: bool = False):
+        """Apply damage with Cruel keyword.
+
+        Cruel deals x2 damage against targets at half HP or less (HP <= maxHP/2).
+
+        Note: Cruel also works on heals/shields, but this method is for damage.
+        Not to be confused with Fierce (target flees if HP <= N).
+        """
+        state = self._states[target]
+        half_hp = state.max_hp // 2
+        multiplier = 2 if state.hp <= half_hp else 1
+        total_damage = base_damage * multiplier
+
+        self.apply_damage(source, target, total_damage, is_pending)
