@@ -571,6 +571,10 @@ class FightLog:
         # Maps turn_number -> entity -> list of SideState
         self._sides_used_per_turn: dict[int, dict[Entity, list[SideState]]] = {}
 
+        # Party inventory - unequipped items (for hoard keyword)
+        # These are items owned by the party but not equipped to any hero
+        self._party_unequipped_items: list = []  # list[Item]
+
     def get_shifter_seed(self, side_index: int, entity: Entity) -> int:
         """Generate a deterministic seed for turn-start processing keywords.
 
@@ -2223,6 +2227,18 @@ class FightLog:
         if side.has_keyword(Keyword.MINUS_ERA):
             value -= source_state.turns_elapsed
 
+        # HOARD: +N where N = unequipped items in party
+        if side.has_keyword(Keyword.HOARD):
+            value += self.get_unequipped_item_count()
+
+        # EQUIPPED: +N where N = number of items equipped on me
+        if side.has_keyword(Keyword.EQUIPPED):
+            value += self.get_equipped_item_count(source_entity)
+
+        # FASHIONABLE: +N where N = total tier of equipped items on me
+        if side.has_keyword(Keyword.FASHIONABLE):
+            value += self.get_total_equipped_tier(source_entity)
+
         # x2 multiplier keywords (applied after +N bonuses)
         # Note: with TREBLE keyword, these become x3 instead of x2 (mult variable)
 
@@ -3155,6 +3171,31 @@ class FightLog:
         # TODO: Implement proper tier tracking when hero system is added
         # For now, return 1 as default tier
         return getattr(entity.entity_type, 'tier', 1)
+
+    def get_unequipped_item_count(self) -> int:
+        """Get count of unequipped items in party (for hoard keyword)."""
+        return len(self._party_unequipped_items)
+
+    def set_party_unequipped_items(self, items: list):
+        """Set the party's unequipped items (for hoard keyword testing)."""
+        self._party_unequipped_items = list(items)
+
+    def get_equipped_item_count(self, entity: Entity) -> int:
+        """Get count of items equipped on an entity (for equipped keyword)."""
+        hero = self._hero_registry.get(entity)
+        if hero is not None:
+            return len(hero.get_items())
+        return 0
+
+    def get_total_equipped_tier(self, entity: Entity) -> int:
+        """Get sum of tiers of all equipped items (for fashionable keyword)."""
+        hero = self._hero_registry.get(entity)
+        if hero is not None:
+            total = 0
+            for item in hero.get_items():
+                total += getattr(item, 'tier', 1)
+            return total
+        return 0
 
     def get_side_state(self, entity: Entity, side_index: int) -> SideState:
         """Get the calculated state for a side of an entity's die.

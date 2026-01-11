@@ -97,6 +97,7 @@ class IncomingEffBonus:
 class Item:
     """An item that can be equipped to a hero."""
     name: str
+    tier: int = 1  # Item tier (1-5), used by fashionable keyword
     modifiers: list[SideModifier] = field(default_factory=list)
     triggers: list[ItemTrigger] = field(default_factory=list)
     incoming_bonuses: list[IncomingEffBonus] = field(default_factory=list)

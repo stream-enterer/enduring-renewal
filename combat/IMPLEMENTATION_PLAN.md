@@ -19,8 +19,9 @@
 | `meta_copy_buff` | duplicate | 1 |
 | `group_buff_system` | lead | 1 |
 | `trait_system` | dispel | 1 |
+| `item_system` | hoard, fashionable, equipped | 3 |
 
-**Total implemented: 59 keywords**
+**Total implemented: 62 keywords**
 
 ### Dependency Graph
 
@@ -36,7 +37,7 @@ Buff System Tree (depends on buff_system ✅):
 Independent Systems (no prerequisites):
     ├─► #7 trait_system (dispel)                   [1 kw] ✅
     ├─► #8 spell_tracking (singleCast, cooldown...)  [6 kw, needs spell infra]
-    └─► #9 item_system (hoard, fashionable...)     [3 kw, needs item mocking]
+    └─► #9 item_system (hoard, fashionable...)     [3 kw] ✅
 ```
 
 ### Implementation Order
@@ -89,7 +90,7 @@ Independent Systems (no prerequisites):
    - Dependencies: Spell infrastructure (currently minimal)
    - Complexity: HIGH - Needs spell system integration
 
-9. **item_system** (3 keywords: hoard, fashionable, equipped)
+9. **item_system** (3 keywords: hoard, fashionable, equipped) ✅ DONE
    - Java: ConditionalBonusType.java:95-96,123-133
    - Requires: Item mocking in tests; conditional bonus reading unequipped count, equipped count, total tier
    - Dependencies: Item/inventory mocking
@@ -98,19 +99,22 @@ Independent Systems (no prerequisites):
 ### Permanently Blocked
 
 - **roll_phase** (2 keywords: cantrip, sticky): Requires graphics/rolling UI layer; cantrip activates during dice animation, sticky prevents reroll at UI level - not combat logic
+- **spell_tracking** (6 keywords: singleCast, cooldown, deplete, channel, spellRescue, future): Requires full spell system (Spell class, casting mechanics, cost calculation, ability tracking per turn/fight)
 - **tactic_system** (1 keyword: tactical): Requires tactic ability system with dice cost selection UI - game-level feature, not combat calculation
 - **validation_only** (1 keyword: permissive): Generator constraint only; allows any keyword on blank sides during item creation - no combat effect
 - **item_system/potion** (1 keyword): Requires inventory modification during combat - out of combat-only scope
 - **not_implementable** (1 keyword: removed): Deprecated
 
-**Total blocked: 6 keywords**
+**Total blocked: 12 keywords** (6 permanently, 6 require spell infrastructure)
 
 ### Current
 
 <!-- Format: "Next: #N (name)" or "COMPLETE - Only permanently blocked remain" -->
 
-**Next: #8 (spell_tracking)**
-- Implement 6 keywords: singleCast, cooldown, deplete, channel, spellRescue, future
-- Java: Keyword.java:351-356, Snapshot.java:63,167,278-279 (future ability system)
-- Requires: Per-spell usage tracking (fight/turn level); spell cost modifiers; future ability queue
-- Complexity: HIGH - Needs spell system integration
+**COMPLETE** - Only permanently blocked keywords remain:
+- cantrip, sticky (roll_phase - UI level)
+- singleCast, cooldown, deplete, channel, spellRescue, future (spell_tracking - needs spell infrastructure)
+- tactical (tactic_system - UI level)
+- permissive (validation_only - generation constraint)
+- potion (item_system - combat-only scope violation)
+- removed (deprecated)

@@ -165,3 +165,209 @@ def test_bonus_incoming_with_heal_shields():
     # Warrior should have 2 shields
     assert hero_state.shield == 2, \
         f"Warrior should have 2 shields, got {hero_state.shield}"
+
+
+# =============================================================================
+# Item-related keyword tests
+# =============================================================================
+
+class TestHoardKeyword:
+    """Tests for HOARD keyword: +N pips where N = unequipped items in party."""
+
+    def test_hoard_with_no_unequipped_items(self):
+        """Hoard adds 0 pips when party has no unequipped items."""
+        from src.dice import Side, Keyword, Die
+
+        hero = Hero(FIGHTER_TYPE, 0)
+        monsters = [Entity(GOBLIN, Team.MONSTER, 0)]
+        fight = FightLog([hero.entity], monsters)
+        fight.register_hero(hero)
+        monster = monsters[0]
+
+        # No unequipped items by default
+        assert fight.get_unequipped_item_count() == 0
+
+        # Set up a damage(2) side with HOARD
+        hoard_side = Side(EffectType.DAMAGE, 2, {Keyword.HOARD})
+        hero_die = Die()
+        hero_die.set_all_sides(hoard_side)
+        hero.entity.die = hero_die
+
+        # Use die - should deal 2 damage (no bonus)
+        initial_hp = fight.get_state(monster, Temporality.PRESENT).hp
+        fight.use_die(hero.entity, 0, monster)
+
+        final_hp = fight.get_state(monster, Temporality.PRESENT).hp
+        assert initial_hp - final_hp == 2, \
+            f"Hoard with 0 unequipped items should deal base 2 damage"
+
+    def test_hoard_with_unequipped_items(self):
+        """Hoard adds +N pips where N = number of unequipped items."""
+        from src.dice import Side, Keyword, Die
+
+        hero = Hero(FIGHTER_TYPE, 0)
+        monsters = [Entity(GOBLIN, Team.MONSTER, 0)]
+        fight = FightLog([hero.entity], monsters)
+        fight.register_hero(hero)
+        monster = monsters[0]
+
+        # Add 3 unequipped items to party
+        unequipped_items = [
+            Item("Sword", tier=1),
+            Item("Shield", tier=2),
+            Item("Ring", tier=3)
+        ]
+        fight.set_party_unequipped_items(unequipped_items)
+        assert fight.get_unequipped_item_count() == 3
+
+        # Set up a damage(1) side with HOARD
+        hoard_side = Side(EffectType.DAMAGE, 1, {Keyword.HOARD})
+        hero_die = Die()
+        hero_die.set_all_sides(hoard_side)
+        hero.entity.die = hero_die
+
+        # Use die - should deal 4 damage (1 + 3 from hoard)
+        initial_hp = fight.get_state(monster, Temporality.PRESENT).hp
+        fight.use_die(hero.entity, 0, monster)
+
+        final_hp = fight.get_state(monster, Temporality.PRESENT).hp
+        assert initial_hp - final_hp == 4, \
+            f"Hoard with 3 unequipped items should deal 4 damage (1+3)"
+
+
+class TestEquippedKeyword:
+    """Tests for EQUIPPED keyword: +N pips where N = equipped items on me."""
+
+    def test_equipped_with_no_items(self):
+        """Equipped adds 0 pips when hero has no equipped items."""
+        from src.dice import Side, Keyword, Die
+
+        hero = Hero(FIGHTER_TYPE, 0)
+        monsters = [Entity(GOBLIN, Team.MONSTER, 0)]
+        fight = FightLog([hero.entity], monsters)
+        fight.register_hero(hero)
+        monster = monsters[0]
+
+        # No items equipped by default
+        assert fight.get_equipped_item_count(hero.entity) == 0
+
+        # Set up a damage(2) side with EQUIPPED
+        equipped_side = Side(EffectType.DAMAGE, 2, {Keyword.EQUIPPED})
+        hero_die = Die()
+        hero_die.set_all_sides(equipped_side)
+        hero.entity.die = hero_die
+
+        # Use die - should deal 2 damage (no bonus)
+        initial_hp = fight.get_state(monster, Temporality.PRESENT).hp
+        fight.use_die(hero.entity, 0, monster)
+
+        final_hp = fight.get_state(monster, Temporality.PRESENT).hp
+        assert initial_hp - final_hp == 2, \
+            f"Equipped with 0 items should deal base 2 damage"
+
+    def test_equipped_with_items(self):
+        """Equipped adds +N pips where N = number of equipped items."""
+        from src.dice import Side, Keyword, Die
+
+        hero = Hero(FIGHTER_TYPE, 0)
+        monsters = [Entity(GOBLIN, Team.MONSTER, 0)]
+        fight = FightLog([hero.entity], monsters)
+        fight.register_hero(hero)
+        monster = monsters[0]
+
+        # Equip 2 items
+        hero.add_item(Item("Sword", tier=1))
+        hero.add_item(Item("Ring", tier=3))
+        assert fight.get_equipped_item_count(hero.entity) == 2
+
+        # Set up a damage(1) side with EQUIPPED
+        equipped_side = Side(EffectType.DAMAGE, 1, {Keyword.EQUIPPED})
+        hero_die = Die()
+        hero_die.set_all_sides(equipped_side)
+        hero.entity.die = hero_die
+
+        # Use die - should deal 3 damage (1 + 2 from equipped)
+        initial_hp = fight.get_state(monster, Temporality.PRESENT).hp
+        fight.use_die(hero.entity, 0, monster)
+
+        final_hp = fight.get_state(monster, Temporality.PRESENT).hp
+        assert initial_hp - final_hp == 3, \
+            f"Equipped with 2 items should deal 3 damage (1+2)"
+
+
+class TestFashionableKeyword:
+    """Tests for FASHIONABLE keyword: +N pips where N = total tier of equipped items."""
+
+    def test_fashionable_with_no_items(self):
+        """Fashionable adds 0 pips when hero has no equipped items."""
+        from src.dice import Side, Keyword, Die
+
+        hero = Hero(FIGHTER_TYPE, 0)
+        monsters = [Entity(GOBLIN, Team.MONSTER, 0)]
+        fight = FightLog([hero.entity], monsters)
+        fight.register_hero(hero)
+        monster = monsters[0]
+
+        # No items equipped by default
+        assert fight.get_total_equipped_tier(hero.entity) == 0
+
+        # Set up a damage(2) side with FASHIONABLE
+        fashionable_side = Side(EffectType.DAMAGE, 2, {Keyword.FASHIONABLE})
+        hero_die = Die()
+        hero_die.set_all_sides(fashionable_side)
+        hero.entity.die = hero_die
+
+        # Use die - should deal 2 damage (no bonus)
+        initial_hp = fight.get_state(monster, Temporality.PRESENT).hp
+        fight.use_die(hero.entity, 0, monster)
+
+        final_hp = fight.get_state(monster, Temporality.PRESENT).hp
+        assert initial_hp - final_hp == 2, \
+            f"Fashionable with 0 tier should deal base 2 damage"
+
+    def test_fashionable_with_items(self):
+        """Fashionable adds +N pips where N = total tier of equipped items."""
+        from src.dice import Side, Keyword, Die
+
+        hero = Hero(FIGHTER_TYPE, 0)
+        monsters = [Entity(GOBLIN, Team.MONSTER, 0)]
+        fight = FightLog([hero.entity], monsters)
+        fight.register_hero(hero)
+        monster = monsters[0]
+
+        # Equip 2 items with tiers 2 and 3 (total 5)
+        hero.add_item(Item("Sword", tier=2))
+        hero.add_item(Item("Ring", tier=3))
+        assert fight.get_total_equipped_tier(hero.entity) == 5
+
+        # Set up a damage(1) side with FASHIONABLE
+        fashionable_side = Side(EffectType.DAMAGE, 1, {Keyword.FASHIONABLE})
+        hero_die = Die()
+        hero_die.set_all_sides(fashionable_side)
+        hero.entity.die = hero_die
+
+        # Use die - should deal 6 damage (1 + 5 from fashionable)
+        initial_hp = fight.get_state(monster, Temporality.PRESENT).hp
+        fight.use_die(hero.entity, 0, monster)
+
+        final_hp = fight.get_state(monster, Temporality.PRESENT).hp
+        assert initial_hp - final_hp == 6, \
+            f"Fashionable with 5 total tier should deal 6 damage (1+5)"
+
+    def test_fashionable_tier_calculation(self):
+        """Fashionable correctly sums up tier from multiple items."""
+        from src.dice import Side, Keyword, Die
+
+        hero = Hero(FIGHTER_TYPE, 0)
+
+        # Equip 3 items with different tiers
+        hero.add_item(Item("Common Sword", tier=1))
+        hero.add_item(Item("Rare Ring", tier=3))
+        hero.add_item(Item("Epic Helm", tier=5))
+
+        monsters = [Entity(GOBLIN, Team.MONSTER, 0)]
+        fight = FightLog([hero.entity], monsters)
+        fight.register_hero(hero)
+
+        # Total tier should be 1 + 3 + 5 = 9
+        assert fight.get_total_equipped_tier(hero.entity) == 9

@@ -180,12 +180,15 @@
     "possessed",
     "duplicate",
     "lead",
-    "dispel"
+    "dispel",
+    "hoard",
+    "fashionable",
+    "equipped"
   ],
   "blocked": {
     "roll_phase": ["cantrip", "sticky"],
     "spell_tracking": ["singleCast", "cooldown", "deplete", "channel", "spellRescue", "future"],
-    "item_system": ["hoard", "fashionable", "equipped", "potion"],
+    "item_system": ["potion"],
     "tactic_system": ["tactical"],
     "validation_only": ["permissive"],
     "not_implementable": ["removed"]

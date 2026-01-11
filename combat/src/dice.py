@@ -230,6 +230,10 @@ class Keyword(Enum):
     SHARE = auto()       # Targets gain all my keywords this turn (except share)
     ANNUL = auto()       # Targets lose all keywords this turn
     POSSESSED = auto()   # Targets as if used by the other side (inverts friendly flag)
+    # Item-related conditional bonuses
+    HOARD = auto()       # +N pips where N = unequipped items in party
+    FASHIONABLE = auto() # +N pips where N = total tier of equipped items on me
+    EQUIPPED = auto()    # +N pips where N = number of items equipped on me
 
 
 # Map from inflict keyword to the keyword it inflicts
