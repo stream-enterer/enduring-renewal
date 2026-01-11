@@ -2,10 +2,10 @@
   "phase": 2,
   "infrastructure": {
     "current": {
-      "component": "mana",
+      "component": "triggers",
       "status": "not_started",
       "target_test": "TestKeyword.precisePlusMagic",
-      "unblocks": ["precisePlusMagic"],
+      "unblocks": ["precisePlusMagic", "testBuffReplacedSides", "testBrainGrips", "testCreakyJointsSword", "TestCleanse.all"],
       "design": null
     },
     "completed": [
@@ -29,6 +29,13 @@
         "tests_added": ["TestRescue (3 tests)", "TestRampage (5 tests)"],
         "tests_unblocked": ["TestKeyword.rescue", "TestKeyword.rampageHeroKill"],
         "summary": "Added used_die/times_used_this_turn to EntityState, is_used(), mark_die_used(), recharge_die(), RESCUE keyword (apply_heal_rescue), RAMPAGE keyword (apply_rampage_damage_all)"
+      },
+      {
+        "component": "mana",
+        "timestamp": "2026-01-10",
+        "tests_added": [],
+        "tests_unblocked": [],
+        "summary": "Mana infrastructure already complete from die_sides phase (_total_mana, add_mana, get_total_mana, Keyword.MANA, shield_mana helper). Test precisePlusMagic reclassified as needing triggers (uses AffectSides+AddKeyword), not mana."
       }
     ],
     "order": [
@@ -48,10 +55,10 @@
   "phase2_summary": {
     "tests_added": 18,
     "total_python_tests": 95,
-    "components_completed": 3
+    "components_completed": 4
   },
   "blocked": [
-    {"test": "TestKeyword.precisePlusMagic", "needs": "mana", "reason": "shieldMana, getTotalMana - partially done"},
+    {"test": "TestKeyword.precisePlusMagic", "needs": "triggers", "reason": "AffectSides + AddKeyword to add engage keyword to sides"},
     {"test": "TestKeyword.testComboCruel", "needs": "copycat", "reason": "turnInto, copycat keyword"},
     {"test": "TestKeyword.testComboCruelWand", "needs": "copycat", "reason": "turnInto, copycat keyword"},
     {"test": "TestComplexEff.copycatManagain", "needs": "copycat", "reason": "mana + copycat"},
