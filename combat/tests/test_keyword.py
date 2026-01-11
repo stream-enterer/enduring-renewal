@@ -8209,3 +8209,179 @@ class TestDamageKeyword:
         # Monster takes 5 damage (3 + 2 vulnerable)
         monster_state = fight.get_state(monster, Temporality.PRESENT)
         assert monster_state.hp == 15  # 20 - 5
+
+
+class TestVitality:
+    """Test vitality keyword - grants target +N empty max HP."""
+
+    def test_vitality_increases_max_hp(self):
+        """Vitality should increase target's max HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Heal 3 with vitality - increases target's max HP by 3
+        side = Side(EffectType.HEAL, 3, {Keyword.VITALITY})
+        hero.die.set_all_sides(side)
+
+        # Check initial state
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.max_hp == 4
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster's max HP should increase by 3
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.max_hp == 7  # 4 + 3
+        # HP should NOT increase (vitality grants "empty" HP)
+        assert monster_state.hp == 4
+
+    def test_vitality_does_not_heal(self):
+        """Vitality should not heal the target (empty HP slots only)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=6)  # Start with 6/6 HP
+        fight = FightLog([hero], [monster])
+
+        # Damage monster to 3 HP
+        fight.apply_damage(hero, monster, 3)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 3
+        assert monster_state.max_hp == 6
+
+        hero.die = Die()
+        # Shield 2 with vitality - shields for 2 and increases max HP by 2
+        # Current HP stays at 3 (not healed)
+        side = Side(EffectType.SHIELD, 2, {Keyword.VITALITY})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster's max HP increases by 2 but current HP unchanged (not healed)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.max_hp == 8  # 6 + 2
+        assert monster_state.hp == 3  # Still 3 HP (vitality doesn't heal)
+        assert monster_state.shield == 2  # Got shields from base effect
+
+    def test_vitality_stacks(self):
+        """Multiple vitality applications should stack."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.SHIELD, 2, {Keyword.VITALITY})
+        hero.die.set_all_sides(side)
+
+        # Apply vitality twice
+        fight.use_die(hero, 0, monster)
+        fight.use_die(hero, 0, monster)
+
+        # Monster's max HP should increase by 4 (2 + 2)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.max_hp == 8  # 4 + 2 + 2
+
+
+class TestWither:
+    """Test wither keyword - grants target -N max HP."""
+
+    def test_wither_decreases_max_hp(self):
+        """Wither should decrease target's max HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Damage 3 with wither - decreases target's max HP by 3
+        side = Side(EffectType.DAMAGE, 3, {Keyword.WITHER})
+        hero.die.set_all_sides(side)
+
+        # Check initial state
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.max_hp == 10
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster takes 3 damage and max HP decreases by 3
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.max_hp == 7  # 10 - 3
+        assert monster_state.hp == 7  # 10 - 3 damage
+
+    def test_wither_caps_current_hp(self):
+        """If current HP > new max HP after wither, HP should be capped."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Shield 4 with wither - shields for 4, reduces max HP by 4
+        side = Side(EffectType.SHIELD, 4, {Keyword.WITHER})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster gets 4 shields, max HP drops to 6
+        # HP should be capped at 6 (new max HP)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.max_hp == 6  # 10 - 4
+        assert monster_state.hp == 6  # Capped at new max
+        assert monster_state.shield == 4
+
+    def test_wither_min_max_hp_is_one(self):
+        """Max HP should never go below 1 from wither."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=3)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Heal 5 with wither - heals for 5, tries to reduce max HP by 5
+        side = Side(EffectType.HEAL, 5, {Keyword.WITHER})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster healed to max (3), max HP reduced to 1 (minimum)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.max_hp == 1  # 3 - 5 = -2, floored at 1
+        assert monster_state.hp == 1  # Capped at new max
+
+    def test_wither_stacks(self):
+        """Multiple wither applications should stack."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.SHIELD, 2, {Keyword.WITHER})
+        hero.die.set_all_sides(side)
+
+        # Apply wither twice
+        fight.use_die(hero, 0, monster)
+        fight.use_die(hero, 0, monster)
+
+        # Monster's max HP should decrease by 4 (2 + 2)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.max_hp == 6  # 10 - 2 - 2
+        # HP is capped at 6 after each wither
+        assert monster_state.hp == 6

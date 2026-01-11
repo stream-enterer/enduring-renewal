@@ -1680,6 +1680,17 @@ class FightLog:
         if calculated_side.has_keyword(Keyword.SELF_VULNERABLE):
             self.apply_vulnerable(entity, value)
 
+        # === MAX HP MODIFICATION KEYWORDS ===
+        # VITALITY: grant target +N max HP (as empty HP) this fight
+        # "Empty HP" means max HP increases but current HP does not
+        if calculated_side.has_keyword(Keyword.VITALITY):
+            self.apply_vitality(target, value)
+
+        # WITHER: grant target -N max HP this fight
+        # Reduces max HP (min of 1), current HP is also reduced if above new max
+        if calculated_side.has_keyword(Keyword.WITHER):
+            self.apply_wither(target, value)
+
         # === COST KEYWORDS (applied after main effect) ===
         # PAIN: I take N damage (N = pip value)
         if calculated_side.has_keyword(Keyword.PAIN):
@@ -2692,6 +2703,36 @@ class FightLog:
         state_copy = replace(state, buffs=new_buffs)
         state_copy.add_buff(buff)
         self._states[target] = state_copy
+
+    def apply_vitality(self, target: Entity, amount: int):
+        """Apply vitality to target - increase max HP by N (as empty HP).
+
+        Vitality increases max HP but does NOT increase current HP.
+        This creates "empty" HP slots that can be healed into.
+        This lasts for the entire fight.
+        """
+        self._record_action()
+
+        state = self._states[target]
+        # Increase max HP only, leave current HP unchanged
+        new_max_hp = state.max_hp + amount
+        self._update_state(target, max_hp=new_max_hp)
+
+    def apply_wither(self, target: Entity, amount: int):
+        """Apply wither to target - decrease max HP by N.
+
+        Wither decreases max HP (minimum 1).
+        If current HP is higher than new max HP, current HP is reduced to new max.
+        This lasts for the entire fight.
+        """
+        self._record_action()
+
+        state = self._states[target]
+        # Decrease max HP (floor at 1)
+        new_max_hp = max(1, state.max_hp - amount)
+        # Cap current HP at new max HP
+        new_hp = min(state.hp, new_max_hp)
+        self._update_state(target, hp=new_hp, max_hp=new_max_hp)
 
     def get_vulnerable_bonus(self, target: Entity) -> int:
         """Get total vulnerable bonus on an entity.

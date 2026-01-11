@@ -198,6 +198,9 @@ class Keyword(Enum):
     # Combined keywords with duel
     DUEGUE = auto()        # duel + plague: x2 vs enemies who targeted me + total poison bonus
     UNDEROCUS = auto()     # underdog + focus: x2 vs higher HP targets who I focused
+    # Max HP modification keywords
+    VITALITY = auto()      # Grant target +N max HP (as empty HP) this fight
+    WITHER = auto()        # Grant target -N max HP this fight
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
