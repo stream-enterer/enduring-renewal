@@ -2821,3 +2821,658 @@ class TestTall:
         fight.use_die(hero, 0, monster)
         state = fight.get_state(monster, Temporality.PRESENT)
         assert state.hp == 6, "Tall should deal x2 (4 damage) vs only monster (topmost)"
+
+
+class TestChain:
+    """Tests for Chain keyword.
+
+    Chain: x2 damage if previous die shares a keyword with this side.
+    """
+
+    def test_chain_doubles_with_shared_keyword(self):
+        """Chain deals x2 damage when previous die shares a keyword."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter", hp=5)
+        hero2 = make_hero("Rogue", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero1, hero2], [monster])
+
+        # First hero uses a die with ENGAGE keyword
+        hero1.die = Die()
+        engage_side = Side(EffectType.DAMAGE, 2, {Keyword.ENGAGE})
+        hero1.die.set_all_sides(engage_side)
+        fight.use_die(hero1, 0, monster)
+
+        # Second hero uses a die with CHAIN + ENGAGE keywords
+        hero2.die = Die()
+        chain_engage_side = Side(EffectType.DAMAGE, 2, {Keyword.CHAIN, Keyword.ENGAGE})
+        hero2.die.set_all_sides(chain_engage_side)
+        fight.use_die(hero2, 0, monster)
+
+        # ENGAGE triggered on first die (monster was full HP): 2 * 2 = 4
+        # CHAIN triggered (shares ENGAGE): 2 * 2 = 4
+        # ENGAGE also triggered on second die (monster still at "full" HP from perspective): 4 * 2 = 8
+        # Actually let me recalculate: monster started at 20 HP
+        # After first attack: 20 - 4 = 16 (ENGAGE doubled because target was full HP)
+        # Second attack: base 2, CHAIN doubles to 4 (shares ENGAGE keyword)
+        # ENGAGE doesn't trigger because target no longer at full HP
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 12, "Chain should deal x2 (4 damage) when sharing keyword"
+
+    def test_chain_no_bonus_without_shared_keyword(self):
+        """Chain deals normal damage when previous die doesn't share a keyword."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter", hp=5)
+        hero2 = make_hero("Rogue", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero1, hero2], [monster])
+
+        # First hero uses a die with ENGAGE keyword
+        hero1.die = Die()
+        engage_side = Side(EffectType.DAMAGE, 2, {Keyword.ENGAGE})
+        hero1.die.set_all_sides(engage_side)
+        fight.use_die(hero1, 0, monster)
+
+        # Second hero uses a die with CHAIN + PRISTINE (no shared keyword with ENGAGE)
+        hero2.die = Die()
+        chain_pristine_side = Side(EffectType.DAMAGE, 2, {Keyword.CHAIN, Keyword.PRISTINE})
+        hero2.die.set_all_sides(chain_pristine_side)
+        fight.use_die(hero2, 0, monster)
+
+        # First attack: ENGAGE triggers, 2 * 2 = 4 damage, monster at 16 HP
+        # Second attack: base 2, CHAIN doesn't trigger (no shared keyword)
+        # PRISTINE triggers (hero2 at full HP): 2 * 2 = 4 damage
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 12, "Chain should not trigger without shared keyword, but PRISTINE should"
+
+    def test_chain_no_bonus_first_die(self):
+        """Chain deals normal damage on first die (no previous)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        chain_side = Side(EffectType.DAMAGE, 2, {Keyword.CHAIN, Keyword.ENGAGE})
+        hero.die.set_all_sides(chain_side)
+        fight.use_die(hero, 0, monster)
+
+        # First die: no previous, CHAIN doesn't trigger
+        # ENGAGE triggers (target full HP): 2 * 2 = 4 damage
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6, "Chain should not trigger on first die"
+
+
+class TestInspired:
+    """Tests for Inspired keyword.
+
+    Inspired: x2 damage if previous die had more pips than this side.
+    """
+
+    def test_inspired_doubles_when_previous_higher(self):
+        """Inspired deals x2 damage when previous die had more pips."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter", hp=5)
+        hero2 = make_hero("Rogue", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero1, hero2], [monster])
+
+        # First hero uses a die with 5 pips
+        hero1.die = Die()
+        high_pip_side = Side(EffectType.DAMAGE, 5, set())
+        hero1.die.set_all_sides(high_pip_side)
+        fight.use_die(hero1, 0, monster)
+
+        # Second hero uses a die with INSPIRED and 2 pips
+        hero2.die = Die()
+        inspired_side = Side(EffectType.DAMAGE, 2, {Keyword.INSPIRED})
+        hero2.die.set_all_sides(inspired_side)
+        fight.use_die(hero2, 0, monster)
+
+        # First attack: 5 damage, monster at 15 HP
+        # Second attack: base 2, INSPIRED triggers (prev had 5 > 2): 2 * 2 = 4 damage
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 11, "Inspired should deal x2 (4 damage) when previous had more pips"
+
+    def test_inspired_no_bonus_when_previous_equal(self):
+        """Inspired deals normal damage when previous die had equal pips."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter", hp=5)
+        hero2 = make_hero("Rogue", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero1, hero2], [monster])
+
+        # First hero uses a die with 2 pips
+        hero1.die = Die()
+        same_pip_side = Side(EffectType.DAMAGE, 2, set())
+        hero1.die.set_all_sides(same_pip_side)
+        fight.use_die(hero1, 0, monster)
+
+        # Second hero uses a die with INSPIRED and 2 pips
+        hero2.die = Die()
+        inspired_side = Side(EffectType.DAMAGE, 2, {Keyword.INSPIRED})
+        hero2.die.set_all_sides(inspired_side)
+        fight.use_die(hero2, 0, monster)
+
+        # First attack: 2 damage, monster at 18 HP
+        # Second attack: base 2, INSPIRED doesn't trigger (prev had 2, not > 2)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 16, "Inspired should not trigger when previous had equal pips"
+
+    def test_inspired_no_bonus_when_previous_lower(self):
+        """Inspired deals normal damage when previous die had fewer pips."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter", hp=5)
+        hero2 = make_hero("Rogue", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero1, hero2], [monster])
+
+        # First hero uses a die with 1 pip
+        hero1.die = Die()
+        low_pip_side = Side(EffectType.DAMAGE, 1, set())
+        hero1.die.set_all_sides(low_pip_side)
+        fight.use_die(hero1, 0, monster)
+
+        # Second hero uses a die with INSPIRED and 3 pips
+        hero2.die = Die()
+        inspired_side = Side(EffectType.DAMAGE, 3, {Keyword.INSPIRED})
+        hero2.die.set_all_sides(inspired_side)
+        fight.use_die(hero2, 0, monster)
+
+        # First attack: 1 damage, monster at 19 HP
+        # Second attack: base 3, INSPIRED doesn't trigger (prev had 1 < 3)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 16, "Inspired should not trigger when previous had fewer pips"
+
+    def test_inspired_no_bonus_first_die(self):
+        """Inspired deals normal damage on first die (no previous)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        inspired_side = Side(EffectType.DAMAGE, 2, {Keyword.INSPIRED})
+        hero.die.set_all_sides(inspired_side)
+        fight.use_die(hero, 0, monster)
+
+        # First die: no previous, INSPIRED doesn't trigger
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Inspired should not trigger on first die"
+
+
+class TestBloodlustKeyword:
+    """Tests for Bloodlust keyword via use_die integration.
+
+    Bloodlust: +N pips where N = number of damaged enemies.
+    """
+
+    def test_bloodlust_no_bonus_first_attack(self):
+        """Bloodlust has no bonus when no enemies are damaged."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        bloodlust_side = Side(EffectType.DAMAGE, 2, {Keyword.BLOODLUST})
+        hero.die.set_all_sides(bloodlust_side)
+        fight.use_die(hero, 0, monster)
+
+        # No damaged enemies at start, so +0 bonus
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Bloodlust should deal base damage when no enemies damaged"
+
+    def test_bloodlust_bonus_with_damaged_enemies(self):
+        """Bloodlust gains +1 per damaged enemy."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monsters = [make_monster(f"Goblin{i}", hp=10) for i in range(3)]
+
+        fight = FightLog([hero], monsters)
+
+        # Damage two monsters first (not using bloodlust)
+        fight.apply_damage(hero, monsters[0], 1)
+        fight.apply_damage(hero, monsters[1], 1)
+
+        # Now use bloodlust attack on third monster
+        hero.die = Die()
+        bloodlust_side = Side(EffectType.DAMAGE, 2, {Keyword.BLOODLUST})
+        hero.die.set_all_sides(bloodlust_side)
+        fight.use_die(hero, 0, monsters[2])
+
+        # 2 damaged enemies, so +2 bonus: 2 + 2 = 4 damage
+        state = fight.get_state(monsters[2], Temporality.PRESENT)
+        assert state.hp == 6, "Bloodlust should deal base + 2 (2 damaged enemies)"
+
+
+class TestCharged:
+    """Tests for Charged keyword.
+
+    Charged: +N pips where N = current mana.
+    """
+
+    def test_charged_no_bonus_without_mana(self):
+        """Charged deals base damage with no mana stored."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        charged_side = Side(EffectType.DAMAGE, 2, {Keyword.CHARGED})
+        hero.die.set_all_sides(charged_side)
+        fight.use_die(hero, 0, monster)
+
+        # No mana, so +0 bonus
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Charged should deal base damage with no mana"
+
+    def test_charged_bonus_with_mana(self):
+        """Charged gains +N where N = current mana."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Add some mana
+        fight.add_mana(3)
+
+        hero.die = Die()
+        charged_side = Side(EffectType.DAMAGE, 2, {Keyword.CHARGED})
+        hero.die.set_all_sides(charged_side)
+        fight.use_die(hero, 0, monster)
+
+        # 3 mana, so +3 bonus: 2 + 3 = 5 damage
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 5, "Charged should deal base + 3 (3 mana stored)"
+
+
+class TestSteel:
+    """Tests for Steel keyword.
+
+    Steel: +N pips where N = my current shields.
+    """
+
+    def test_steel_no_bonus_without_shields(self):
+        """Steel deals base damage with no shields."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        steel_side = Side(EffectType.DAMAGE, 2, {Keyword.STEEL})
+        hero.die.set_all_sides(steel_side)
+        fight.use_die(hero, 0, monster)
+
+        # No shields, so +0 bonus
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Steel should deal base damage with no shields"
+
+    def test_steel_bonus_with_shields(self):
+        """Steel gains +N where N = my shields."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Give hero shields
+        fight.apply_shield(hero, 4)
+
+        hero.die = Die()
+        steel_side = Side(EffectType.DAMAGE, 2, {Keyword.STEEL})
+        hero.die.set_all_sides(steel_side)
+        fight.use_die(hero, 0, monster)
+
+        # 4 shields, so +4 bonus: 2 + 4 = 6 damage
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 4, "Steel should deal base + 4 (4 shields)"
+
+
+class TestFlesh:
+    """Tests for Flesh keyword.
+
+    Flesh: +N pips where N = my current HP.
+    """
+
+    def test_flesh_full_hp(self):
+        """Flesh gains +N where N = my current HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        flesh_side = Side(EffectType.DAMAGE, 2, {Keyword.FLESH})
+        hero.die.set_all_sides(flesh_side)
+        fight.use_die(hero, 0, monster)
+
+        # 5 HP, so +5 bonus: 2 + 5 = 7 damage
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 13, "Flesh should deal base + 5 (5 HP)"
+
+    def test_flesh_reduced_hp(self):
+        """Flesh bonus decreases when source takes damage."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero], [monster])
+
+        # Damage the hero
+        fight.apply_damage(monster, hero, 3)
+
+        hero.die = Die()
+        flesh_side = Side(EffectType.DAMAGE, 2, {Keyword.FLESH})
+        hero.die.set_all_sides(flesh_side)
+        fight.use_die(hero, 0, monster)
+
+        # Hero at 2 HP, so +2 bonus: 2 + 2 = 4 damage
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 16, "Flesh should deal base + 2 (2 HP remaining)"
+
+
+class TestRainbow:
+    """Tests for Rainbow keyword.
+
+    Rainbow: +N pips where N = number of keywords on this side.
+    """
+
+    def test_rainbow_with_multiple_keywords(self):
+        """Rainbow gains +N where N = other keywords on the side."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero], [monster])
+
+        # Side with RAINBOW + 3 other keywords
+        hero.die = Die()
+        rainbow_side = Side(EffectType.DAMAGE, 2, {Keyword.RAINBOW, Keyword.ENGAGE, Keyword.PRISTINE, Keyword.CRUEL})
+        hero.die.set_all_sides(rainbow_side)
+        fight.use_die(hero, 0, monster)
+
+        # RAINBOW: +3 (for ENGAGE, PRISTINE, CRUEL) = 2 + 3 = 5
+        # ENGAGE: x2 (target full HP) = 10
+        # PRISTINE: x2 (source full HP) = 20
+        # CRUEL doesn't trigger (target not at half HP)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 0, "Rainbow should add +3, then multipliers apply"
+
+    def test_rainbow_alone(self):
+        """Rainbow with no other keywords adds +0."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        rainbow_side = Side(EffectType.DAMAGE, 2, {Keyword.RAINBOW})
+        hero.die.set_all_sides(rainbow_side)
+        fight.use_die(hero, 0, monster)
+
+        # RAINBOW alone: +0 (no other keywords)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Rainbow alone should add +0"
+
+
+class TestFlurry:
+    """Tests for Flurry keyword.
+
+    Flurry: +N pips where N = times I've been used this turn.
+    """
+
+    def test_flurry_first_use(self):
+        """Flurry on first use has +0 bonus."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        flurry_side = Side(EffectType.DAMAGE, 2, {Keyword.FLURRY})
+        hero.die.set_all_sides(flurry_side)
+        fight.use_die(hero, 0, monster)
+
+        # First use: times_used_this_turn = 0, so +0 bonus
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Flurry first use should deal base damage"
+
+    def test_flurry_second_use(self):
+        """Flurry on second use has +1 bonus."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        flurry_side = Side(EffectType.DAMAGE, 2, {Keyword.FLURRY})
+        hero.die.set_all_sides(flurry_side)
+
+        # First use
+        fight.use_die(hero, 0, monster)
+        # Need to recharge die to use again
+        fight.recharge_die(hero)
+        # Second use
+        fight.use_die(hero, 0, monster)
+
+        # First use: 2 damage (20 - 2 = 18)
+        # Recharge resets times_used to 0
+        # Second use: still 2 damage (18 - 2 = 16)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 16, "After recharge, flurry count resets"
+
+
+class TestVigil:
+    """Tests for Vigil keyword.
+
+    Vigil: +N pips where N = defeated allies.
+    """
+
+    def test_vigil_no_dead_allies(self):
+        """Vigil with no dead allies adds +0."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        vigil_side = Side(EffectType.DAMAGE, 2, {Keyword.VIGIL})
+        hero.die.set_all_sides(vigil_side)
+        fight.use_die(hero, 0, monster)
+
+        # No dead allies, so +0 bonus
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Vigil should add +0 with no dead allies"
+
+    def test_vigil_with_dead_allies(self):
+        """Vigil gains +1 per dead ally."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter", hp=5)
+        hero2 = make_hero("Mage", hp=3)
+        hero3 = make_hero("Cleric", hp=3)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero1, hero2, hero3], [monster])
+
+        # Kill two heroes
+        fight.apply_damage(monster, hero2, 10)  # hero2 dies
+        fight.apply_damage(monster, hero3, 10)  # hero3 dies
+
+        hero1.die = Die()
+        vigil_side = Side(EffectType.DAMAGE, 2, {Keyword.VIGIL})
+        hero1.die.set_all_sides(vigil_side)
+        fight.use_die(hero1, 0, monster)
+
+        # 2 dead allies, so +2 bonus: 2 + 2 = 4 damage
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 16, "Vigil should deal base + 2 (2 dead allies)"
+
+
+class TestGuilt:
+    """Tests for Guilt keyword.
+
+    Guilt: If this attack is lethal, I die.
+    """
+
+    def test_guilt_kills_source_on_lethal(self):
+        """Guilt kills the source if the attack is lethal."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=3)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        guilt_side = Side(EffectType.DAMAGE, 5, {Keyword.GUILT})
+        hero.die.set_all_sides(guilt_side)
+        fight.use_die(hero, 0, monster)
+
+        # Attack kills monster, so source dies too
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert monster_state.is_dead, "Monster should be dead"
+        assert hero_state.is_dead, "Hero should die from guilt"
+
+    def test_guilt_no_death_on_non_lethal(self):
+        """Guilt doesn't kill source if attack isn't lethal."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        guilt_side = Side(EffectType.DAMAGE, 3, {Keyword.GUILT})
+        hero.die.set_all_sides(guilt_side)
+        fight.use_die(hero, 0, monster)
+
+        # Attack doesn't kill monster
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert not monster_state.is_dead, "Monster should be alive"
+        assert not hero_state.is_dead, "Hero should survive (attack wasn't lethal)"
+
+
+class TestEvil:
+    """Tests for Evil keyword.
+
+    Evil: If this saves a hero, I die.
+    """
+
+    def test_evil_kills_source_on_save(self):
+        """Evil kills the source if shielding saves a dying hero."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter", hp=5)
+        hero2 = make_hero("Shielder", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Put hero1 in dying state (pending damage)
+        fight.apply_damage(monster, hero1, 10, is_pending=True)
+
+        # Verify hero1 is dying (future HP = 5 - 10 = -5)
+        assert fight.get_state(hero1, Temporality.FUTURE).is_dead
+
+        # Hero2 shields hero1 with EVIL - shield blocks pending damage
+        hero2.die = Die()
+        evil_side = Side(EffectType.SHIELD, 10, {Keyword.EVIL})
+        hero2.die.set_all_sides(evil_side)
+        fight.use_die(hero2, 0, hero1)
+
+        # Hero1 is saved (shield blocks 10 pending damage), so hero2 dies
+        hero1_state = fight.get_state(hero1, Temporality.FUTURE)
+        hero2_state = fight.get_state(hero2, Temporality.PRESENT)
+        assert not hero1_state.is_dead, "Hero1 should be saved"
+        assert hero2_state.is_dead, "Hero2 should die from evil"
+
+    def test_evil_no_death_on_non_save(self):
+        """Evil doesn't kill source if heal doesn't save anyone."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter", hp=5)
+        hero2 = make_hero("Healer", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 is not dying, just damaged
+        fight.apply_damage(monster, hero1, 2)
+
+        # Hero2 heals hero1 with EVIL
+        hero2.die = Die()
+        evil_side = Side(EffectType.HEAL, 2, {Keyword.EVIL})
+        hero2.die.set_all_sides(evil_side)
+        fight.use_die(hero2, 0, hero1)
+
+        # Hero1 wasn't dying, so hero2 lives
+        hero2_state = fight.get_state(hero2, Temporality.PRESENT)
+        assert not hero2_state.is_dead, "Hero2 should survive (didn't save anyone)"

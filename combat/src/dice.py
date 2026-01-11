@@ -38,6 +38,17 @@ class Keyword(Enum):
     DOG = auto()         # x2 effect vs targets with equal HP to me
     HYENA = auto()       # x2 effect vs targets whose HP is coprime with mine
     TALL = auto()        # x2 effect vs topmost target
+    CHAIN = auto()       # x2 effect if previous die shares a keyword
+    INSPIRED = auto()    # x2 effect if previous die had more pips
+    BLOODLUST = auto()   # +N pips where N = damaged enemies
+    CHARGED = auto()     # +N pips where N = current mana
+    STEEL = auto()       # +N pips where N = my shields
+    FLESH = auto()       # +N pips where N = my current HP
+    RAINBOW = auto()     # +N pips where N = number of keywords on this side
+    FLURRY = auto()      # +N pips where N = times I've been used this turn
+    VIGIL = auto()       # +N pips where N = defeated allies
+    GUILT = auto()       # If this is lethal, I die
+    EVIL = auto()        # If this saves a hero, I die
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom

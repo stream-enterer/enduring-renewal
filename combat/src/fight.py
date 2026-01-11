@@ -1010,6 +1010,22 @@ class FightLog:
                 count += 1
         return count
 
+    def count_dead_allies(self, entity: Entity) -> int:
+        """Count dead allies of the given entity.
+
+        For heroes, counts dead heroes.
+        For monsters, counts dead monsters.
+        Used by Vigil keyword to calculate bonus.
+        """
+        count = 0
+        team = self.heroes if entity.team == Team.HERO else self.monsters
+        for ally in team:
+            if ally != entity:  # Don't count self
+                state = self._states.get(ally)
+                if state and state.is_dead:
+                    count += 1
+        return count
+
     def apply_bloodlust_damage(self, source: Entity, target: Entity, base_damage: int, is_pending: bool = False):
         """Apply damage with Bloodlust keyword.
 
@@ -1224,6 +1240,10 @@ class FightLog:
         target_state = self._states[target]
         value = self._apply_conditional_keyword_bonuses(value, calculated_side, source_state, target_state, entity, target)
 
+        # Check for death trigger keywords before effect
+        target_was_alive = not target_state.is_dead
+        target_was_dying = self.get_state(target, Temporality.FUTURE).is_dead
+
         # Apply the effect based on type
         if calculated_side.effect_type == EffectType.SHIELD:
             self.apply_shield(target, value)
@@ -1232,6 +1252,12 @@ class FightLog:
             if calculated_side.has_keyword(Keyword.MANA):
                 self.add_mana(value)
 
+            # EVIL: If shielding saved a dying hero, I die
+            if calculated_side.has_keyword(Keyword.EVIL):
+                now_surviving = not self.get_state(target, Temporality.FUTURE).is_dead
+                if target_was_dying and now_surviving:
+                    self.apply_damage(entity, entity, source_state.hp + 1000)
+
         elif calculated_side.effect_type == EffectType.DAMAGE:
             self.apply_damage(entity, target, value)
 
@@ -1239,12 +1265,24 @@ class FightLog:
             if calculated_side.has_keyword(Keyword.MANA):
                 self.add_mana(value)
 
+            # GUILT: If damage was lethal, I die
+            if calculated_side.has_keyword(Keyword.GUILT):
+                target_now_dead = self.get_state(target, Temporality.PRESENT).is_dead
+                if target_was_alive and target_now_dead:
+                    self.apply_damage(entity, entity, source_state.hp + 1000)
+
         elif calculated_side.effect_type == EffectType.HEAL:
             self.apply_heal(target, value)
 
             # If has MANA keyword (e.g., from copycat), also grant mana
             if calculated_side.has_keyword(Keyword.MANA):
                 self.add_mana(value)
+
+            # EVIL: If healing saved a dying hero, I die
+            if calculated_side.has_keyword(Keyword.EVIL):
+                now_surviving = not self.get_state(target, Temporality.FUTURE).is_dead
+                if target_was_dying and now_surviving:
+                    self.apply_damage(entity, entity, source_state.hp + 1000)
 
         elif calculated_side.effect_type == EffectType.MANA:
             # Pure mana effect - just grant mana, no other action
@@ -1295,6 +1333,38 @@ class FightLog:
         """
         from .dice import Keyword
 
+        # +N pip bonus keywords (applied before x2 multipliers)
+        # BLOODLUST: +N where N = damaged enemies
+        if side.has_keyword(Keyword.BLOODLUST):
+            value += self.count_damaged_enemies()
+
+        # CHARGED: +N where N = current mana
+        if side.has_keyword(Keyword.CHARGED):
+            value += self.get_total_mana()
+
+        # STEEL: +N where N = my shields
+        if side.has_keyword(Keyword.STEEL):
+            value += source_state.shield
+
+        # FLESH: +N where N = my current HP
+        if side.has_keyword(Keyword.FLESH):
+            value += source_state.hp
+
+        # RAINBOW: +N where N = number of keywords on this side
+        if side.has_keyword(Keyword.RAINBOW):
+            # Count keywords excluding RAINBOW itself to avoid infinite bonus
+            keyword_count = len(side.keywords) - 1
+            value += keyword_count
+
+        # FLURRY: +N where N = times I've been used this turn
+        if side.has_keyword(Keyword.FLURRY):
+            value += source_state.times_used_this_turn
+
+        # VIGIL: +N where N = defeated allies
+        if side.has_keyword(Keyword.VIGIL):
+            value += self.count_dead_allies(source_entity)
+
+        # x2 multiplier keywords (applied after +N bonuses)
         # ENGAGE: x2 vs full HP targets
         if side.has_keyword(Keyword.ENGAGE):
             if target_state.hp == target_state.max_hp:
@@ -1401,6 +1471,23 @@ class FightLog:
             team_list = self.heroes if target_entity.team == Team.HERO else self.monsters
             if team_list and team_list[0] == target_entity:
                 value *= 2
+
+        # CHAIN: x2 if previous die shares a keyword with this side
+        if side.has_keyword(Keyword.CHAIN):
+            previous = self.get_most_recent_die_effect()
+            if previous is not None:
+                prev_keywords = previous.calculated_effect.keywords
+                # Check if any keyword is shared (excluding CHAIN itself)
+                current_keywords = side.keywords - {Keyword.CHAIN}
+                if current_keywords & prev_keywords:  # Set intersection
+                    value *= 2
+
+        # INSPIRED: x2 if previous die had more pips than this side
+        if side.has_keyword(Keyword.INSPIRED):
+            previous = self.get_most_recent_die_effect()
+            if previous is not None:
+                if previous.calculated_effect.calculated_value > side.calculated_value:
+                    value *= 2
 
         return value
 
