@@ -41,6 +41,8 @@ After ALL keywords implemented → human runs funnel sieve verification (see bel
 
 ## On "continue"
 
+**Token efficiency:** Do NOT read fight.py, dice.py, or test_keyword.py in full. Patterns below are sufficient. Only grep/read specific sections if debugging.
+
 1. Read `combat/KEYWORDS.json`, compute remaining keywords
 2. Pick next keyword using **soft priority**:
    - **First**: Base keywords before variants (implement `engage` before `antiEngage`)
