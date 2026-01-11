@@ -1382,14 +1382,13 @@ class FightLog:
         """
         effect = spell.effect
 
-        # For spellRescue, track if we save a hero
-        heroes_before_cast = []
-        if spell.has_keyword(Keyword.SPELL_RESCUE):
-            # Track which heroes are alive and about to die
+        # For spellRescue, track which heroes would die BEFORE the spell
+        dying_heroes_before: set[Entity] = set()
+        if spell.has_keyword(Keyword.SPELL_RESCUE) and cost_paid > 0:
             for hero in self.heroes:
-                state = self._states[hero]
-                if not state.is_dead:
-                    heroes_before_cast.append((hero, state.hp))
+                future_state = self.get_state(hero, Temporality.FUTURE)
+                if future_state.is_dead:
+                    dying_heroes_before.add(hero)
 
         # Apply effect based on type
         if effect.target_friendly:
@@ -1402,17 +1401,14 @@ class FightLog:
                 self._apply_hostile_spell(spell, target, effect.value)
 
         # Check for spellRescue - did we save a dying hero?
-        if spell.has_keyword(Keyword.SPELL_RESCUE):
-            for hero, hp_before in heroes_before_cast:
-                state = self._states[hero]
-                # If hero was about to die (low HP) and is now alive with more HP,
-                # we "saved" them - refund the mana cost
-                if hp_before <= 0 and not state.is_dead:
-                    # This shouldn't happen if they were dead before...
-                    pass
-                # A hero is "saved" if they would have died but the spell kept them alive
-                # This is complex to detect - simplified: if heal brought them above 0
-                # from a state where they would die from pending effects
+        if spell.has_keyword(Keyword.SPELL_RESCUE) and cost_paid > 0 and dying_heroes_before:
+            # Check which heroes would die AFTER the spell
+            for hero in dying_heroes_before:
+                future_state = self.get_state(hero, Temporality.FUTURE)
+                if not future_state.is_dead:
+                    # This hero was saved! Refund the mana cost
+                    self._total_mana += cost_paid
+                    return  # Only refund once per spell
 
     def _apply_friendly_spell(self, spell: Spell, target: Entity, value: int):
         """Apply a friendly spell effect (heal/shield)."""

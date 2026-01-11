@@ -188,11 +188,11 @@
     "cooldown",
     "deplete",
     "channel",
-    "future"
+    "future",
+    "spellRescue"
   ],
   "blocked": {
     "roll_phase": ["cantrip", "sticky"],
-    "spell_tracking": ["spellRescue"],
     "item_system": ["potion"],
     "tactic_system": ["tactical"],
     "validation_only": ["permissive"],

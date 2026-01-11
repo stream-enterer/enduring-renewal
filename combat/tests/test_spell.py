@@ -477,3 +477,138 @@ class TestQueuedSpell:
 
         assert queued.turns_remaining == 0
         assert result is True  # Ready to execute
+
+
+class TestSpellRescue:
+    """Test spellRescue keyword - mana refunded if spell saves a hero."""
+
+    def test_spell_rescue_refunds_when_heal_saves_hero(self):
+        """spellRescue refunds mana when heal saves a hero from pending damage."""
+        hero = make_hero("Fighter", hp=10)  # Higher max HP so heal isn't capped
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+        fight._total_mana = 5
+
+        # Damage hero first so they have room to heal
+        fight.apply_damage(monster, hero, 5)  # Hero now at 5 HP
+
+        # Monster attacks hero again - pending damage will kill them
+        fight.apply_damage(monster, hero, 6, is_pending=True)
+
+        # Verify hero would die from pending damage (5 - 6 = -1)
+        from src.fight import Temporality
+        future_state = fight.get_state(hero, Temporality.FUTURE)
+        assert future_state.is_dead  # Would die from pending damage
+
+        # Cast spellRescue heal to save the hero
+        spell = make_heal_spell("Rescue Heal", 2, 3, {Keyword.SPELL_RESCUE})
+        fight.cast_spell(hero, spell, hero)
+
+        # Hero should now survive in future (5 HP + 3 heal - 6 damage = 2 HP)
+        future_state = fight.get_state(hero, Temporality.FUTURE)
+        assert not future_state.is_dead
+
+        # Mana should be refunded: started with 5, spent 2, refunded 2 = 5
+        assert fight._total_mana == 5
+
+    def test_spell_rescue_refunds_when_shield_saves_hero(self):
+        """spellRescue refunds mana when shield saves a hero from pending damage."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+        fight._total_mana = 5
+
+        # Monster attacks hero - pending damage will kill them
+        fight.apply_damage(monster, hero, 6, is_pending=True)
+
+        # Verify hero would die from pending damage
+        from src.fight import Temporality
+        future_state = fight.get_state(hero, Temporality.FUTURE)
+        assert future_state.is_dead
+
+        # Cast spellRescue shield to save the hero
+        spell = make_shield_spell("Rescue Shield", 2, 3, {Keyword.SPELL_RESCUE})
+        fight.cast_spell(hero, spell, hero)
+
+        # Hero should now survive (shield blocks pending damage)
+        future_state = fight.get_state(hero, Temporality.FUTURE)
+        assert not future_state.is_dead
+
+        # Mana should be refunded
+        assert fight._total_mana == 5
+
+    def test_spell_rescue_no_refund_when_hero_wasnt_dying(self):
+        """spellRescue does not refund when hero wasn't going to die."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+        fight._total_mana = 5
+
+        # No pending damage - hero is safe
+        from src.fight import Temporality
+        future_state = fight.get_state(hero, Temporality.FUTURE)
+        assert not future_state.is_dead
+
+        # Cast spellRescue heal (but hero didn't need saving)
+        spell = make_heal_spell("Rescue Heal", 2, 3, {Keyword.SPELL_RESCUE})
+        fight.cast_spell(hero, spell, hero)
+
+        # Mana should NOT be refunded: started with 5, spent 2 = 3
+        assert fight._total_mana == 3
+
+    def test_spell_rescue_no_refund_when_heal_not_enough(self):
+        """spellRescue does not refund when heal wasn't enough to save hero."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+        fight._total_mana = 5
+
+        # Monster attacks hero - pending damage will kill them (massive damage)
+        fight.apply_damage(monster, hero, 10, is_pending=True)
+
+        # Verify hero would die from pending damage
+        from src.fight import Temporality
+        future_state = fight.get_state(hero, Temporality.FUTURE)
+        assert future_state.is_dead  # 5 HP - 10 damage = -5
+
+        # Cast spellRescue heal (but only 3 heal isn't enough to save from 10 damage)
+        spell = make_heal_spell("Rescue Heal", 2, 3, {Keyword.SPELL_RESCUE})
+        fight.cast_spell(hero, spell, hero)
+
+        # Hero still dies (5 + 3 - 10 = -2)
+        future_state = fight.get_state(hero, Temporality.FUTURE)
+        assert future_state.is_dead
+
+        # Mana should NOT be refunded
+        assert fight._total_mana == 3
+
+    def test_regular_heal_does_not_refund_mana(self):
+        """Regular heal spell (without spellRescue) never refunds mana."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+        fight._total_mana = 5
+
+        # Monster attacks hero - pending damage will kill them
+        fight.apply_damage(monster, hero, 6, is_pending=True)
+
+        # Cast regular heal (no spellRescue keyword)
+        spell = make_heal_spell("Regular Heal", 2, 3)  # No SPELL_RESCUE
+        fight.cast_spell(hero, spell, hero)
+
+        # Mana should NOT be refunded even though we saved the hero
+        assert fight._total_mana == 3
+
+
+def make_shield_spell(name: str, cost: int, shield: int, keywords: set = None) -> Spell:
+    """Create a shield spell for testing."""
+    return Spell(
+        name=name,
+        base_cost=cost,
+        effect=SpellEffect(
+            effect_type=EffectType.SHIELD,
+            value=shield,
+            keywords=keywords or set(),
+            target_friendly=True
+        )
+    )

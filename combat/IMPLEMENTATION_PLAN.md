@@ -2,16 +2,14 @@
 
 ### Current Phase
 
-**Phase 1: Spell System** - 6 keywords to unblock
-
-Keywords: `singleCast`, `cooldown`, `deplete`, `channel`, `spellRescue`, `future`
+**Phase 2: Verification Pass** - Gameplay-verify implemented keywords
 
 ### Phase Overview
 
 | Phase | Goal | Keywords | Status |
 |-------|------|----------|--------|
-| 1. Spell System | Complete keyword coverage | +6 | **Current** |
-| 2. Verification | Gameplay-verify implementations | - | Blocked |
+| 1. Spell System | Complete keyword coverage | +6 | **Complete** |
+| 2. Verification | Gameplay-verify implementations | - | **Current** |
 | 3. API Design | Clean public interface | - | Blocked |
 | 4. Combat Loop | Full fight simulation | - | Blocked |
 
@@ -69,9 +67,9 @@ def _process_future_queue(self): ...     # Called at turn start
 - [x] Implement `cooldown` with tests
 - [x] Implement `deplete` with tests
 - [x] Implement `channel` with tests
-- [ ] Implement `spellRescue` with tests (requires rescue detection logic)
+- [x] Implement `spellRescue` with tests
 - [x] Implement `future` with tests (requires QueuedAbility)
-- [x] Update KEYWORDS.json (5/6 keywords moved from blocked → implemented)
+- [x] Update KEYWORDS.json (6/6 keywords moved from blocked → implemented)
 
 ---
 
