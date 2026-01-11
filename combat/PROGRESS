@@ -2,12 +2,12 @@
   "phase": 2,
   "infrastructure": {
     "current": {
-      "component": null,
-      "status": "complete",
-      "target_test": null,
+      "component": "poison_cleanse",
+      "status": "not_started",
+      "target_test": "TestCleanse.all",
       "design": null,
-      "unblocks": [],
-      "notes": "All targeted blocked tests now unblocked. Remaining blocked tests require more complex infrastructure (ModifierLib, Poison Personal, save/load)."
+      "unblocks": ["TestCleanse.testPoisonCombine", "TestCleanse.testPoisonCleanse", "TestCleanse.testPoisonCleanseWithRecalculate", "TestCleanse.testPoisonPartialCleanse", "TestCleanse.testMultiPoisonPartialCleanse", "TestCleanse.testMultiPoisonPartialCleanseNextTurn"],
+      "notes": "Poison as Personal trigger: added on dmgPoison hit, multiple stacks combine into one trigger, getPoisonDamageTaken() returns total. Poison deals double damage at end of turn (2 poison = 4 damage). Cleanse (shieldCleanse) removes poison stacks. Partial cleanse supported. Needs proper undo support."
     },
     "completed": [
       {
