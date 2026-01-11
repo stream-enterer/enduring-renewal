@@ -1,6 +1,170 @@
-## Master Implementation Plan
+## Library Completion Roadmap
 
-### Completed Systems
+### Current Phase
+
+**Phase 1: Spell System** - 6 keywords to unblock
+
+Keywords: `singleCast`, `cooldown`, `deplete`, `channel`, `spellRescue`, `future`
+
+### Phase Overview
+
+| Phase | Goal | Keywords | Status |
+|-------|------|----------|--------|
+| 1. Spell System | Complete keyword coverage | +6 | **Current** |
+| 2. Verification | Gameplay-verify implementations | - | Blocked |
+| 3. API Design | Clean public interface | - | Blocked |
+| 4. Combat Loop | Full fight simulation | - | Blocked |
+
+---
+
+## Phase 1: Spell System
+
+**Goal:** Implement spell infrastructure to unblock 6 remaining keywords.
+
+### Keywords
+
+| Keyword | Behavior | Complexity |
+|---------|----------|------------|
+| `singleCast` | Spell can only be cast once per fight | LOW |
+| `cooldown` | N turns between casts | LOW |
+| `deplete` | Spell removed after casting | MEDIUM |
+| `channel` | Effect continues over multiple turns | MEDIUM |
+| `spellRescue` | Trigger when spell would be depleted | MEDIUM |
+| `future` | Queue ability for future turn | HIGH |
+
+### Infrastructure Required
+
+```python
+@dataclass
+class SpellState:
+    cast_count_this_fight: int = 0
+    cast_count_this_turn: int = 0
+    cooldown_remaining: int = 0
+    is_depleted: bool = False
+    channel_turns_remaining: int = 0
+
+# FightLog additions:
+spells: dict[Entity, list[SpellState]]
+future_queue: list[QueuedAbility]
+
+def cast_spell(self, caster: Entity, spell_index: int, target: Entity): ...
+def _process_spell_cooldowns(self): ...  # Called in next_turn()
+def _process_future_queue(self): ...     # Called at turn start
+```
+
+### Java References
+
+| File | Purpose |
+|------|---------|
+| `Spell.java` | Core spell class |
+| `SpellLib.java` | Spell definitions |
+| `SpellUtils.java` | Casting utilities |
+| `Keyword.java:351-356` | Spell keyword definitions |
+| `Snapshot.java:63,167,278-279` | Future ability system |
+
+### Implementation Steps
+
+- [ ] Add Spell infrastructure (study Java, design SpellState class, add to FightLog)
+- [ ] Implement `singleCast` with tests
+- [ ] Implement `cooldown` with tests
+- [ ] Implement `deplete` with tests
+- [ ] Implement `channel` with tests
+- [ ] Implement `spellRescue` with tests
+- [ ] Implement `future` with tests (requires QueuedAbility)
+- [ ] Update KEYWORDS.json (move from blocked → implemented)
+
+---
+
+## Phase 2: Verification Pass
+
+**Goal:** Gameplay-verify implemented keywords to build confidence.
+
+### Categories
+
+| Category | Examples | Priority |
+|----------|----------|----------|
+| Combined keywords | engine, paxin, engarged, cruesh | HIGH |
+| Variant prefixes | anti*, halve*, swap*, group*, minus* | HIGH |
+| Death triggers | rampage, rescue, deathwish | HIGH |
+| Multi-keyword stacking | Multiple keywords on same side | MEDIUM |
+| Parameterized keywords | N from pips | MEDIUM |
+| Self-targeting | selfHeal, selfShield, selfPoison | LOW |
+
+### Process
+
+1. Set up scenario in real game
+2. Observe behavior
+3. Compare to implementation
+4. Mark as `verified` in KEYWORDS.json or fix discrepancy
+
+### Deliverable
+
+Move keywords from `implemented` → `verified` in KEYWORDS.json.
+
+---
+
+## Phase 3: API Design
+
+**Goal:** Clean public interface for game integration.
+
+### Deliverables
+
+- [ ] Define public API surface (what consumers can call)
+- [ ] Hide internal implementation details
+- [ ] Add comprehensive type annotations
+- [ ] Write usage examples
+- [ ] Document integration patterns
+
+### Considerations
+
+- Immutability guarantees for EntityState
+- Error handling patterns
+- Event/callback hooks for UI integration
+- Serialization support for save/load
+
+---
+
+## Phase 4: Combat Loop
+
+**Goal:** Full fight simulation capability.
+
+### Components
+
+- [ ] Turn ordering / initiative system
+- [ ] Monster AI (action selection)
+- [ ] Win/lose condition detection
+- [ ] Multi-round state management
+- [ ] Fight result reporting
+
+### Enables
+
+- Automated regression testing against real scenarios
+- Monte Carlo simulation for balance analysis
+- Full game integration
+
+---
+
+## Permanently Blocked
+
+These keywords will never be implemented in the combat library:
+
+| Category | Keywords | Reason |
+|----------|----------|--------|
+| `roll_phase` | cantrip, sticky | UI layer (dice animation/reroll) |
+| `tactic_system` | tactical | UI layer (dice cost selection) |
+| `validation_only` | permissive | Generation constraint only |
+| `potion` | potion | Inventory modification (scope violation) |
+| `deprecated` | removed | No longer in game |
+
+**Total: 6 keywords**
+
+---
+
+## Historical: Keyword Phase (Complete)
+
+The keyword implementation phase completed with 179 keywords implemented across 16 infrastructure systems.
+
+### Systems Implemented
 
 | System | Keywords | Count |
 |--------|----------|-------|
@@ -14,107 +178,13 @@
 | `entity_summoning` | boned, hyperBoned | 2 |
 | `side_modification` | hypnotise | 1 |
 | `side_replacement` | stasis, enduring, dogma, resilient | 4 |
-| `side_injection` | inflictSelfShield, inflictBoned, inflictExert, inflictPain, inflictDeath, inflictSingleUse, inflictNothing, inflictInflictNothing, inflictInflictDeath | 9 |
+| `side_injection` | inflict* (9 keywords) | 9 |
 | `meta_copy_advanced` | share, spy, dejavu, annul, possessed | 5 |
 | `meta_copy_buff` | duplicate | 1 |
 | `group_buff_system` | lead | 1 |
 | `trait_system` | dispel | 1 |
 | `item_system` | hoard, fashionable, equipped | 3 |
 
-**Total implemented: 62 keywords**
+Plus ~117 keywords implemented as conditionals, meta keywords, post-effects, and turn-timing effects.
 
-### Dependency Graph
-
-```
-Buff System Tree (depends on buff_system ✅):
-    ├─► #1 side_modification (hypnotise)           [1 kw] ✅
-    ├─► #2 side_replacement (stasis, enduring...)  [4 kw] ✅
-    ├─► #3 side_injection (inflict*)               [9 kw] ✅
-    ├─► #4 meta_copy_advanced (share, spy...)      [5 kw] ✅
-    ├─► #5 meta_copy_buff (duplicate)              [1 kw] ✅
-    └─► #6 group_buff_system (lead)                [1 kw] ✅
-
-Independent Systems (no prerequisites):
-    ├─► #7 trait_system (dispel)                   [1 kw] ✅
-    ├─► #8 spell_tracking (singleCast, cooldown...)  [6 kw, needs spell infra]
-    └─► #9 item_system (hoard, fashionable...)     [3 kw] ✅
-```
-
-### Implementation Order
-
-1. **side_modification** (1 keyword: hypnotise)
-   - Java: EntState.java:512-514, AffectSides.java
-   - Requires: Buff with AffectSides(TypeCondition(DAMAGE), SetValue(0))
-   - Dependencies: buff_system (done)
-   - Complexity: LOW - Simple buff application, already patterned
-
-2. **side_replacement** (4 keywords: stasis, enduring, dogma, resilient)
-   - Java: ReplaceWith.java:109-145, EntSideState.java:106
-   - Requires: Hook in side replacement pipeline; stasis blocks all changes, enduring keeps keywords, dogma keeps all but pips, resilient keeps pips
-   - Dependencies: buff_system (done)
-   - Complexity: MEDIUM - Need ReplaceWith.replaceSide() logic
-
-3. **side_injection** (9 keywords: inflictSelfShield, inflictBoned, inflictExert, inflictPain, inflictDeath, inflictSingleUse, inflictNothing, inflictInflictNothing, inflictInflictDeath)
-   - Java: Inflicted.java:1-88, Keyword.java:342-350,678-679
-   - Requires: Inflicted trigger class that adds keyword to all target's sides via Buff
-   - Dependencies: buff_system (done)
-   - Complexity: MEDIUM - Straightforward buff + trigger pattern
-
-4. **meta_copy_advanced** (5 keywords: share, spy, dejavu, annul, possessed)
-   - Java: EntState.java:546-552, EntSideState.java:237-248
-   - Requires: share/annul use Buff+AffectSides+AddKeyword/RemoveAllKeywords; spy/dejavu already work in meta keyword recursion
-   - Dependencies: buff_system (done), meta keyword processing (exists)
-   - Complexity: MEDIUM - 4/5 already implemented in Java, need to port
-
-5. **meta_copy_buff** (1 keyword: duplicate)
-   - Java: Keyword.java:267-273
-   - Requires: Post-effect that applies Buff with AffectSides+AddKeyword to ALL allied sides
-   - Dependencies: buff_system (done), allied targeting
-   - Complexity: MEDIUM - Similar to share but targets all allies
-
-6. **group_buff_system** (1 keyword: lead)
-   - Java: Keyword.java:151-159
-   - Requires: Post-effect that gives +N pips to allied sides matching this side's EffType (damage/heal/shield)
-   - Dependencies: buff_system (done), effect type comparison, post-effect hooks
-   - Complexity: MEDIUM - Multi-target with type filtering
-
-7. **trait_system** (1 keyword: dispel)
-   - Java: Trait.java, EntState.java (removeTraits)
-   - Requires: Add `traits: list[Personal]` to Entity; TraitsRemoved trigger blocking trait application
-   - Dependencies: None (independent system)
-   - Complexity: MEDIUM - New infrastructure but isolated
-
-8. **spell_tracking** (6 keywords: singleCast, cooldown, deplete, channel, spellRescue, future)
-   - Java: Keyword.java:351-356, Snapshot.java:63,167,278-279 (future ability system)
-   - Requires: Per-spell usage tracking (fight/turn level); spell cost modifiers; future ability queue
-   - Dependencies: Spell infrastructure (currently minimal)
-   - Complexity: HIGH - Needs spell system integration
-
-9. **item_system** (3 keywords: hoard, fashionable, equipped) ✅ DONE
-   - Java: ConditionalBonusType.java:95-96,123-133
-   - Requires: Item mocking in tests; conditional bonus reading unequipped count, equipped count, total tier
-   - Dependencies: Item/inventory mocking
-   - Complexity: MEDIUM - Infrastructure exists in Java, need test scaffolding
-
-### Permanently Blocked
-
-- **roll_phase** (2 keywords: cantrip, sticky): Requires graphics/rolling UI layer; cantrip activates during dice animation, sticky prevents reroll at UI level - not combat logic
-- **spell_tracking** (6 keywords: singleCast, cooldown, deplete, channel, spellRescue, future): Requires full spell system (Spell class, casting mechanics, cost calculation, ability tracking per turn/fight)
-- **tactic_system** (1 keyword: tactical): Requires tactic ability system with dice cost selection UI - game-level feature, not combat calculation
-- **validation_only** (1 keyword: permissive): Generator constraint only; allows any keyword on blank sides during item creation - no combat effect
-- **item_system/potion** (1 keyword): Requires inventory modification during combat - out of combat-only scope
-- **not_implementable** (1 keyword: removed): Deprecated
-
-**Total blocked: 12 keywords** (6 permanently, 6 require spell infrastructure)
-
-### Current
-
-<!-- Format: "Next: #N (name)" or "COMPLETE - Only permanently blocked remain" -->
-
-**COMPLETE** - Only permanently blocked keywords remain:
-- cantrip, sticky (roll_phase - UI level)
-- singleCast, cooldown, deplete, channel, spellRescue, future (spell_tracking - needs spell infrastructure)
-- tactical (tactic_system - UI level)
-- permissive (validation_only - generation constraint)
-- potion (item_system - combat-only scope violation)
-- removed (deprecated)
+**Final state: 179 keywords implemented, 549 tests passing, ~20k lines of Python**

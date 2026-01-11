@@ -1,6 +1,8 @@
-# Slice & Dice Combat Reimplementation
+# Slice & Dice Combat Library
 
-Reverse engineering the combat system from Slice & Dice for a fangame.
+Reverse engineering the combat system from Slice & Dice as a standalone library.
+
+**Current Phase:** Phase 1 (Spell System) - See `combat/IMPLEMENTATION_PLAN.md`
 
 ## Methodology: Spec-As-Test
 
@@ -19,54 +21,80 @@ Workflow:
 
 ## State Tracking
 
-`combat/KEYWORDS.json` tracks:
-- `verified`: keywords confirmed correct via human gameplay testing (subset of implemented)
+`combat/KEYWORDS.json` tracks keyword implementation state:
+- `verified`: keywords confirmed via human gameplay testing (subset of implemented)
 - `implemented`: keywords with passing tests
-- `blocked`: keywords grouped by missing infrastructure (maps reason → keyword list)
-- `all`: complete enum (184 keywords) - **must match Java Keyword.java enum**
+- `blocked`: keywords grouped by missing infrastructure
+- `all`: complete enum - **must match Java Keyword.java enum**
 
 ```
 remaining = all - implemented - blocked
 verified ⊆ implemented (verified is always a subset)
 ```
 
+`combat/IMPLEMENTATION_PLAN.md` tracks library completion phases:
+- Phase 1: Spell System (6 keywords)
+- Phase 2: Verification Pass
+- Phase 3: API Design
+- Phase 4: Combat Loop
+
 ## Workflow
 
 When asked to "continue":
 
-1. **Read `combat/IMPLEMENTATION_PLAN.md`** - Check "Current" section for next task
-2. **Implement** using the process below
+1. **Read `combat/IMPLEMENTATION_PLAN.md`** - Check "Current Phase" section
+2. **Execute** the appropriate phase workflow below
 3. **Update state** and commit
 
-### Implementation Process
+### Phase 1: Spell System (Keyword Implementation)
 
-1. **Read "Current"** in `IMPLEMENTATION_PLAN.md`
-2. **Verify not already done** - Check if keywords already in KEYWORDS.json `implemented`
-   - If done: Update "Current" to next system, then re-read
-3. **Study Java** using strategic research (3 steps max):
-   - Read keyword's Keyword.java entry (identifies type: conditional/buff/trigger)
+1. **Check progress** - Read `IMPLEMENTATION_PLAN.md` Phase 1 "Implementation Steps"
+   - Find the first unchecked `[ ]` step
+   - If all checked, Phase 1 is complete → update "Current Phase" to Phase 2
+2. **Study Java** using strategic research (3 steps max):
+   - Read keyword's Keyword.java entry (identifies type)
    - Grep keyword name in `decompiled/` (finds implementation files)
-   - Read implementation (usually EntState.java case statement + trigger classes)
-4. **Implement** - batch edits by file:
+   - Read implementation (Spell.java, SpellLib.java, etc.)
+3. **Implement** - batch edits by file:
    - List all changes needed per file before editing
    - All changes to same file in single Edit call
-5. **Run tests** - `cd combat && uv run pytest` (all must pass)
-6. **Update state** (only after tests pass):
-   - `KEYWORDS.json`: Move keywords from `blocked` → `implemented`
-   - `IMPLEMENTATION_PLAN.md`: Add to "Completed Systems", update "Current" to next
-7. **Commit**: `Implement <system> infrastructure with <x>, <y>, <z> keywords`
+4. **Run tests** - `cd combat && uv run pytest` (all must pass)
+5. **Update state** (only after tests pass):
+   - `IMPLEMENTATION_PLAN.md`: Check off completed step `[ ]` → `[x]`
+   - `KEYWORDS.json`: Move keywords from `blocked` → `implemented` (if applicable)
+6. **Commit**: `Implement spell_system infrastructure with <x>, <y>, <z> keywords`
 
-**If blocked:** Pick different system, note dependency in plan
-**If complex:** Implement incrementally, update state as each piece lands
+**If blocked:** Note dependency, ask user
+**If complex:** Implement incrementally
 **If unclear:** Ask user about Java behavior
-**If all done:** "Current" should say `**COMPLETE** - Only permanently blocked keywords remain`
 
-## Blocked Infrastructure
+### Phase 2: Verification Pass
 
-See `combat/IMPLEMENTATION_PLAN.md` for:
-- Dependency graph and numbered implementation order
-- Per-system Java file references and complexity ratings
-- Permanently blocked keywords (6 total: cantrip, sticky, tactical, permissive, potion, removed)
+Human-driven gameplay testing. Claude assists by:
+- Generating test scenarios
+- Comparing observed vs expected behavior
+- Updating `verified` list in KEYWORDS.json
+
+### Phase 3: API Design
+
+Design work. Claude assists by:
+- Analyzing current public surface
+- Proposing interface changes
+- Writing documentation
+
+### Phase 4: Combat Loop
+
+New infrastructure. Same process as Phase 1 but building simulation capability.
+
+## Blocked Keywords
+
+**Permanently blocked (6 keywords):** cantrip, sticky, tactical, permissive, potion, removed
+
+These require UI layer or violate combat-only scope. See `combat/IMPLEMENTATION_PLAN.md` for details.
+
+**Being addressed in Phase 1 (6 keywords):** singleCast, cooldown, deplete, channel, spellRescue, future
+
+These require spell system infrastructure currently being implemented.
 
 ## Infrastructure Implementation Patterns
 
@@ -143,6 +171,43 @@ class FightLog:
 
     def record_target(self, source: Entity, target: Entity):
         self.last_target[source] = target
+```
+
+### Pattern 5: Spell Tracking (Phase 1)
+
+For `spell_system`:
+
+```python
+@dataclass
+class SpellState:
+    cast_count_this_fight: int = 0
+    cooldown_remaining: int = 0
+    is_depleted: bool = False
+    channel_remaining: int = 0
+
+# In FightLog:
+spell_states: dict[tuple[Entity, int], SpellState]  # (caster, spell_idx) -> state
+future_queue: list[QueuedAbility] = field(default_factory=list)
+
+def cast_spell(self, caster: Entity, spell_index: int, target: Entity):
+    state = self._get_spell_state(caster, spell_index)
+    spell = caster.spells[spell_index]
+
+    # singleCast check
+    if spell.has_keyword(Keyword.SINGLE_CAST) and state.cast_count_this_fight > 0:
+        return  # Already cast this fight
+
+    # cooldown check
+    if state.cooldown_remaining > 0:
+        return  # On cooldown
+
+    # ... apply spell effect ...
+    state.cast_count_this_fight += 1
+
+def _process_spell_cooldowns(self):  # Called in next_turn()
+    for key, state in self.spell_states.items():
+        if state.cooldown_remaining > 0:
+            state.cooldown_remaining -= 1
 ```
 
 ## Implementation Patterns (Keywords)
@@ -316,6 +381,10 @@ uv run pytest -k "keyword_name"     # Filter by name
 | `EntState.java` | Entity state snapshots (HP, shields, etc.) |
 | `conditionalBonus/*.java` | How keywords modify values |
 | `Poison.java`, `Buff.java`, etc. | Status/buff implementations |
+| `Spell.java` | Spell class (Phase 1) |
+| `SpellLib.java` | Spell definitions (Phase 1) |
+| `SpellUtils.java` | Casting utilities (Phase 1) |
+| `Snapshot.java` | Future ability system (Phase 1) |
 
 **How to read Keyword.java:**
 ```java
@@ -326,24 +395,26 @@ pristine(Colours.light, "have full hp", StateConditionType.FullHP, true),
 //                                                                 ^^^^ true = check SOURCE
 ```
 
-## Funnel Sieve Verification
+## Funnel Sieve Verification (Phase 2)
 
-After ALL keywords implemented, run gameplay tests:
+Gameplay testing categories for Phase 2 verification pass:
 
-**Layer 1: Combined/Variant keywords**
+**HIGH Priority**
 - Combined: engine, paxin, engarged, cruesh
 - Variants: antiEngage, halveEngage, swapCruel, groupGrowth
+- Death triggers: rampage, rescue, deathwish (ordering)
 
-**Layer 2: Edge Cases**
+**MEDIUM Priority**
 - Multiple keywords on same side (stacking)
 - Parameterized keywords (N from pips)
+
+**LOW Priority**
 - Self-targeting keywords (selfHeal, selfShield)
-- Death triggers (rampage, rescue, deathwish)
+- Simple conditionals (engage, pristine, cruel)
 
 ## Deferred Tests
 
 These tests need additional infrastructure beyond keyword implementation:
 
 - `TestTriggerOrdering.testTriggerHPOrdering` - needs ModifierLib
-- `TestTriggerOrdering.testCreakyJointsSword` - needs item_system
 - `TestStates.test2hpStates` - needs Save/Load
