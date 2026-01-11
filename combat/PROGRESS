@@ -1,8 +1,8 @@
 {
   "current": {
     "file": "TestItem",
-    "method": null,
-    "status": "not_started",
+    "method": "testSteelHeart",
+    "status": "analyzing",
     "hypothesis": null,
     "verified": null
   },
@@ -118,6 +118,14 @@
       "verified": "Confirmed via multiple spawn combinations. Almanac values match all empirical tests exactly.",
       "test": "tests/test_basic_eff.py::test_reinforcements",
       "timestamp": "2025-01-10T00:30:00Z"
+    },
+    {
+      "file": "TestItem",
+      "method": "testGauntlet",
+      "hypothesis": "Items with AffectSides + FlatBonus modify hero die sides. Gauntlet adds +1 to all damage sides.",
+      "verified": "Confirmed. All damage sides get +1 from Gauntlet. Game uses 'damage' as effect type name.",
+      "test": "tests/test_item.py::test_gauntlet",
+      "timestamp": "2025-01-10T16:05:00Z"
     }
   ],
   "skipped": [
