@@ -1,5 +1,13 @@
 # Slice & Dice Combat System Reverse Engineering
 
+## Current Status: Phase 2 (Infrastructure)
+
+**Phase 1 complete**: 36 test methods implemented, 77 passing Python tests.
+**Phase 2 active**: Building infrastructure to unblock 16 remaining tests.
+**On "Continue"**: Read PROGRESS, follow the infrastructure workflow below.
+
+---
+
 ## Goal
 
 Reverse engineer the combat system from Slice & Dice to create a fangame. We are reimplementing combat logic, not cloning the full game.
@@ -15,104 +23,15 @@ Documentation is lossy. Instead of writing prose docs that drift, we use executa
 
 Tests ARE the documentation. If it's not in a test, it's not verified.
 
-## Roadmap: Follow the Original Test Suite
+## Phase 1 (Complete): Test-Following
 
-We don't create our own roadmap or scope document - that's just more lossy documentation.
+We followed the original developer's test suite (`decompiled/test/`), processing each test method:
+1. **Analyze** - Read Java test, form hypothesis
+2. **Verify** - Human confirms behavior in real game
+3. **Implement** - Write Python test + code until green
+4. **Commit** - Update PROGRESS, git commit
 
-The original developer already wrote a test suite (`decompiled/test/`). It defines:
-- **Scope**: What they thought worth testing
-- **Ordering**: Simple → complex progression
-- **Verified behaviors**: These tests passed against real code
-
-### Test file order (from TestRunner.java)
-
-```
- 1. TestStrangeScenarios
- 2. TestBasicEff
- 3. TestItem
- 4. TestComplexEff
- 5. TestRandomBits
- 6. TestKeyword
- 7. TestKeywordSpell
- 8. TestParty
- 9. TestTriggerOrdering
-10. TestBugRepro
-11. TestBugReproIgnored
-12. TestScattershot
-13. TestBannedCombos
-14. TestModifierOffer
-15. TestUniqueness
-16. TestValidation
-17. TestCleanse
-18. TestFiles
-19. TestCollision
-20. TestPipe
-21. TestHeroes
-22. TestMusic
-23. TestBattleSim
-24. TestAbilities
-25. TestBook
-26. TestModding
-27. TestStates
-```
-
-No upfront filtering. When we reach a file, skim it. If clearly non-combat, skip with a note in `combat/PROGRESS`.
-
-### Workflow (per test method)
-
-Each test method follows this flow. Status transitions are tracked in PROGRESS.
-
-```
-┌─────────────────────────────────────────────────────────┐
-│ 1. ANALYZE                                    [agent]   │
-│    Read Java test, form hypothesis about behavior       │
-│    Status: analyzing                                    │
-└─────────────────────────────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────┐
-│ 2. VERIFY                                     [HUMAN]   │
-│    Agent presents hypothesis, human tests in real game  │
-│    Human confirms, corrects, or reports "can't test"    │
-│    Status: verifying                                    │
-└─────────────────────────────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────┐
-│ 3. IMPLEMENT                                  [agent]   │
-│    Write Python test encoding verified behavior         │
-│    Implement until pytest passes                        │
-│    Status: implementing                                 │
-└─────────────────────────────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────┐
-│ 4. COMMIT                                     [agent]   │
-│    Update PROGRESS (move to completed)                  │
-│    Git commit with test + implementation                │
-│    Advance to next method                               │
-└─────────────────────────────────────────────────────────┘
-```
-
-**The VERIFY step is a mandatory human gate.** The agent cannot proceed without human confirmation of the behavior.
-
-### Starting a new test file
-
-When `current.method` is `null`, we're at a file boundary. Before diving into methods:
-
-1. **Read the Java test file** - `decompiled/decompiled/test/Test<Name>.java`
-2. **List all `@Test` methods** in source order (top to bottom)
-3. **Skim for relevance** - If clearly non-combat (e.g., audio, file I/O), skip entire file
-4. **Set first method** as `current.method`, status to `analyzing`
-
-Methods are processed in **source order** (order they appear in the Java file).
-
-### File transitions
-
-When all methods in a file are in `completed` or `skipped`:
-
-1. Move to next file in the test file order list (1-27)
-2. Set `current.file` to new file, `current.method` to `null`
-3. Follow "Starting a new test file" above
-
-When we've worked through all 27 files, we have coverage of everything that mattered to them.
+**Results**: 36 tests implemented across 7 files. 18 files skipped (non-combat). 16 tests blocked (need infrastructure). Details in `combat/PROGRESS`.
 
 ## Project Structure
 
@@ -133,64 +52,9 @@ notes/            # Scratch space (gitignored)
 
 ## State Tracking: PROGRESS
 
-`combat/PROGRESS` is a JSON file tracking current position. This is the single source of truth for where we are.
+`combat/PROGRESS` is a JSON file tracking current position. Single source of truth.
 
-### Format
-
-```json
-{
-  "current": {
-    "file": "TestBasicEff",
-    "method": "attackEnemy",
-    "status": "verifying",
-    "hypothesis": "Attacking an enemy with 1 damage reduces their HP by 1",
-    "verified": null
-  },
-  "completed": [
-    {
-      "file": "TestBasicEff",
-      "method": "basicSanityTest",
-      "hypothesis": "setupFight creates 1 hero and 1 monster",
-      "verified": "Confirmed in game - Fighter vs Goblin",
-      "test": "tests/test_basic_eff.py::test_basic_sanity",
-      "timestamp": "2025-01-09T12:00:00Z"
-    }
-  ],
-  "skipped": [
-    {
-      "file": "TestMusic",
-      "reason": "Audio system, not combat",
-      "timestamp": "2025-01-09T14:00:00Z"
-    }
-  ]
-}
-```
-
-### Fields
-
-- `file` - Current test file name (without .java)
-- `method` - Current test method, or `null` if at file boundary (need to list methods)
-- `status` - Current phase (see status values below)
-- `hypothesis` - Agent's prediction of what the test verifies (set during ANALYZE)
-- `verified` - Human's confirmation or correction (set during VERIFY, before IMPLEMENT)
-
-### Status values
-
-- `not_started` - Haven't begun this file/method
-- `analyzing` - Reading the Java test, forming hypothesis
-- `verifying` - Waiting for human to verify in real game
-- `implementing` - Writing Python test + implementation
-- `blocked` - Can't proceed; record reason in `hypothesis` field, ask human how to proceed (skip, defer, or investigate further)
-
-### How to use
-
-1. **Start of session**: Read PROGRESS, continue from current status
-2. **ANALYZE phase**: Set status to `analyzing`, read Java test, set `hypothesis`
-3. **VERIFY phase**: Set status to `verifying`, present hypothesis to human, wait for confirmation
-4. **After human confirms**: Set `verified` with human's response
-5. **IMPLEMENT phase**: Set status to `implementing`, write test, implement until green
-6. **COMMIT phase**: Move current to `completed` (with timestamp), git commit, set next method as current
-7. **On skip**: Add to `skipped` with reason, advance to next
+**On session start**: Read PROGRESS, check `phase`, follow the appropriate workflow.
 
 ## Tooling
 
@@ -224,8 +88,6 @@ Entity types:
 ---
 
 # Phase 2: Infrastructure
-
-Phase 1 (test-following) is complete. We extracted 36 combat behaviors from the original test suite and have 77 passing Python tests.
 
 **16 tests remain blocked** because they require infrastructure we haven't built:
 - Die/Sides system (getSideState, turnInto, getCalculatedEffect)
@@ -364,10 +226,10 @@ Build infrastructure in dependency order, maximizing unblocked tests:
 | Verification | "Does X behave like Y in game?" | "Does this design enable the blocked tests?" |
 | Success metric | Test passes | Previously-blocked tests pass |
 
-## Starting Phase 2
+## On "Continue"
 
-To begin Phase 2:
-1. Update PROGRESS to phase 2 format
-2. Pick first infrastructure component (recommend: die_sides)
-3. Identify simplest blocked test that needs it
-4. Follow the infrastructure workflow
+1. Read `combat/PROGRESS` - check `infrastructure.current`
+2. If `status: "not_started"` → begin IDENTIFY step for that component
+3. If `status: "verifying"` → present design to human, wait for approval
+4. If `status: "implementing"` → continue building until tests pass
+5. Follow the infrastructure workflow above
