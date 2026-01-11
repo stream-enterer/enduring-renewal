@@ -17,8 +17,9 @@
 | `side_injection` | inflictSelfShield, inflictBoned, inflictExert, inflictPain, inflictDeath, inflictSingleUse, inflictNothing, inflictInflictNothing, inflictInflictDeath | 9 |
 | `meta_copy_advanced` | share, spy, dejavu, annul, possessed | 5 |
 | `meta_copy_buff` | duplicate | 1 |
+| `group_buff_system` | lead | 1 |
 
-**Total implemented: 57 keywords**
+**Total implemented: 58 keywords**
 
 ### Dependency Graph
 
@@ -29,7 +30,7 @@ Buff System Tree (depends on buff_system ✅):
     ├─► #3 side_injection (inflict*)               [9 kw] ✅
     ├─► #4 meta_copy_advanced (share, spy...)      [5 kw] ✅
     ├─► #5 meta_copy_buff (duplicate)              [1 kw] ✅
-    └─► #6 group_buff_system (lead)                [1 kw]
+    └─► #6 group_buff_system (lead)                [1 kw] ✅
 
 Independent Systems (no prerequisites):
     ├─► #7 trait_system (dispel)                   [1 kw, needs trait tracking]
@@ -107,8 +108,8 @@ Independent Systems (no prerequisites):
 
 <!-- Format: "Next: #N (name)" or "COMPLETE - Only permanently blocked remain" -->
 
-**Next: #6 (group_buff_system)**
-- Implement 1 keyword: lead
-- Java: Keyword.java:151-159
-- Post-effect that gives +N pips to allied sides matching this side's EffType (damage/heal/shield)
+**Next: #7 (trait_system)**
+- Implement 1 keyword: dispel
+- Java: Trait.java, EntState.java (removeTraits)
+- Requires: Add `traits: list[Personal]` to Entity; TraitsRemoved trigger blocking trait application
 - Estimated: 1 keyword unblocked

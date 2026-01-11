@@ -9940,3 +9940,248 @@ class TestDuplicate:
         assert Keyword.ENGAGE in side_state2.calculated_effect.keywords
         assert Keyword.GROWTH in side_state2.calculated_effect.keywords
         assert Keyword.DUPLICATE not in side_state2.calculated_effect.keywords
+
+
+class TestLead:
+    """Tests for LEAD keyword - other allies' sides of same type get +N pips for one turn.
+
+    LEAD applies a buff to other friendly entities (NOT the source) that gives +N pips
+    to all their sides that share the same effect type (damage/heal/shield) as the used side.
+
+    Key behavior:
+    - Only affects OTHER allies (NOT the source)
+    - Only affects sides matching the effect type
+    - Buff is +N where N is the pip value
+    - Effect lasts one turn
+    """
+
+    def test_lead_buffs_allies_matching_sides(self):
+        """LEAD gives +N pips to allies' sides of the same type."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Leader", hp=5)
+        hero2 = make_hero("Follower1", hp=10)
+        hero3 = make_hero("Follower2", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero1, hero2, hero3], [monster])
+
+        # Hero1 has lead damage 2
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.LEAD}))
+
+        # Hero2 has damage 1
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 1))
+
+        # Hero3 has damage 3
+        hero3.die = Die()
+        hero3.die.set_all_sides(Side(EffectType.DAMAGE, 3))
+
+        # Before lead, allies have their base values
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+        side_state2 = state2.get_side_state(0, fight)
+        assert side_state2.calculated_effect.calculated_value == 1
+
+        state3 = fight.get_state(hero3, Temporality.PRESENT)
+        side_state3 = state3.get_side_state(0, fight)
+        assert side_state3.calculated_effect.calculated_value == 3
+
+        # Hero1 uses lead on monster (deals 2 damage)
+        fight.use_die(hero1, 0, monster)
+
+        # After lead, allies' damage sides should have +2 pips
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+        side_state2 = state2.get_side_state(0, fight)
+        assert side_state2.calculated_effect.calculated_value == 3  # 1 + 2
+
+        state3 = fight.get_state(hero3, Temporality.PRESENT)
+        side_state3 = state3.get_side_state(0, fight)
+        assert side_state3.calculated_effect.calculated_value == 5  # 3 + 2
+
+    def test_lead_does_not_affect_source(self):
+        """LEAD does NOT affect the source entity's sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Leader", hp=5)
+        hero2 = make_hero("Follower", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 has lead damage 3 on side 0, damage 1 on other sides
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 1))
+        hero1.die.set_side(0, Side(EffectType.DAMAGE, 3, {Keyword.LEAD}))
+
+        # Hero2 has damage 2
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        # Hero1 uses lead
+        fight.use_die(hero1, 0, monster)
+
+        # Hero1's OTHER damage sides should NOT have +3
+        state1 = fight.get_state(hero1, Temporality.PRESENT)
+        side_state1 = state1.get_side_state(1, fight)
+        assert side_state1.calculated_effect.calculated_value == 1  # Still base value
+
+        # Hero2's damage sides SHOULD have +3
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+        side_state2 = state2.get_side_state(0, fight)
+        assert side_state2.calculated_effect.calculated_value == 5  # 2 + 3
+
+    def test_lead_only_affects_matching_type(self):
+        """LEAD only buffs sides matching the used side's effect type."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Leader", hp=5)
+        hero2 = make_hero("Follower", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 has lead damage 3
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.LEAD}))
+
+        # Hero2 has damage on side 0, heal on side 1, shield on side 2
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.HEAL, 2))
+        hero2.die.set_side(0, Side(EffectType.DAMAGE, 1))
+        hero2.die.set_side(2, Side(EffectType.SHIELD, 2))
+
+        # Hero1 uses lead (damage type)
+        fight.use_die(hero1, 0, monster)
+
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+
+        # Damage side should have +3
+        side0 = state2.get_side_state(0, fight)
+        assert side0.calculated_effect.calculated_value == 4  # 1 + 3
+
+        # Heal side should NOT have +3 (different type)
+        side1 = state2.get_side_state(1, fight)
+        assert side1.calculated_effect.calculated_value == 2  # Still 2
+
+        # Shield side should NOT have +3 (different type)
+        side2 = state2.get_side_state(2, fight)
+        assert side2.calculated_effect.calculated_value == 2  # Still 2
+
+    def test_lead_heal_buffs_heal_sides(self):
+        """LEAD on a heal side buffs allies' heal sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Leader", hp=5)
+        hero2 = make_hero("Follower", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 has lead heal 2
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.HEAL, 2, {Keyword.LEAD}))
+
+        # Hero2 has heal 1 on side 0, damage 3 on side 1
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 3))
+        hero2.die.set_side(0, Side(EffectType.HEAL, 1))
+
+        # Hero1 uses lead heal on ally
+        fight.use_die(hero1, 0, hero2)
+
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+
+        # Heal side should have +2
+        side0 = state2.get_side_state(0, fight)
+        assert side0.calculated_effect.calculated_value == 3  # 1 + 2
+
+        # Damage side should NOT have +2
+        side1 = state2.get_side_state(1, fight)
+        assert side1.calculated_effect.calculated_value == 3  # Still 3
+
+    def test_lead_expires_after_turn(self):
+        """LEAD buff expires after one turn."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Leader", hp=5)
+        hero2 = make_hero("Follower", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 has lead damage 3
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.LEAD}))
+
+        # Hero2 has damage 1
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 1))
+
+        # Hero1 uses lead
+        fight.use_die(hero1, 0, monster)
+
+        # Hero2 has +3 now
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+        side_state2 = state2.get_side_state(0, fight)
+        assert side_state2.calculated_effect.calculated_value == 4
+
+        # Next turn
+        fight.next_turn()
+
+        # Hero2 no longer has +3
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+        side_state2 = state2.get_side_state(0, fight)
+        assert side_state2.calculated_effect.calculated_value == 1
+
+    def test_lead_does_not_affect_enemies(self):
+        """LEAD only affects friendly entities, not enemies."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Leader", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # Hero has lead damage 3
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.LEAD}))
+
+        # Monster has damage 5
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 5))
+
+        # Hero uses lead on monster
+        fight.use_die(hero, 0, monster)
+
+        # Monster should NOT have +3 (enemy, not ally)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert side_state.calculated_effect.calculated_value == 5  # Still 5
+
+    def test_lead_uses_calculated_value_for_bonus(self):
+        """LEAD uses the calculated pip value (after all modifiers) for the bonus."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Leader", hp=5)
+        hero2 = make_hero("Follower", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 has lead + engage damage 2 (with engage, vs full HP = x2 = 4)
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 2, {Keyword.LEAD, Keyword.ENGAGE}))
+
+        # Hero2 has damage 1
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.DAMAGE, 1))
+
+        # Monster is at full HP, so engage doubles the value to 4
+        # Hero1 uses lead on full HP monster
+        fight.use_die(hero1, 0, monster)
+
+        # Hero2's damage sides should have +4 (the calculated value after engage)
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+        side_state2 = state2.get_side_state(0, fight)
+        assert side_state2.calculated_effect.calculated_value == 5  # 1 + 4

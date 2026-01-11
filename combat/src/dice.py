@@ -172,6 +172,8 @@ class Keyword(Enum):
     SKILL = auto()         # +N pips where N = my level/tier
     # Meta keyword - copy to allies
     DUPLICATE = auto()     # Copy this side onto all allied sides for one turn
+    # Group buff keyword - buff allied sides
+    LEAD = auto()          # After use, other allies' sides of same type get +N pips for one turn
     # Usage tracking keywords - multiple uses per turn
     DOUBLE_USE = auto()    # Can be used twice per turn
     QUAD_USE = auto()      # Can be used 4 times per turn

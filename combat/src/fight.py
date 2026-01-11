@@ -1908,6 +1908,10 @@ class FightLog:
         if calculated_side.has_keyword(Keyword.DUPLICATE):
             self.apply_duplicate(entity, calculated_side)
 
+        # LEAD: other allies' sides of same type get +N pips for one turn
+        if calculated_side.has_keyword(Keyword.LEAD):
+            self.apply_lead(entity, calculated_side, value)
+
         # Note: POSSESSED is handled at the effect type determination level.
         # It inverts the "friendly" flag, affecting targeting in the full game.
         # In our simplified system where targets are explicit, possessed allows
@@ -2000,6 +2004,41 @@ class FightLog:
             affect_sides = AffectSides(
                 conditions=None,
                 effects=ReplaceWith(side_copy.copy())  # Copy for each entity
+            )
+            buff = Buff(personal=affect_sides, turns_remaining=1)
+            ally_state.add_buff(buff)
+
+    def apply_lead(self, source: Entity, calculated_side: "Side", pip_value: int):
+        """Apply lead buff to all friendly entities EXCEPT source - their matching sides get +N pips.
+
+        The buff lasts for 1 turn. Used by the LEAD keyword which gives +N pips to all
+        other heroes' sides that share the same effect type (damage/heal/shield) as this side.
+
+        Args:
+            source: The entity that used the lead side
+            calculated_side: The calculated side (used to determine effect type)
+            pip_value: The pip value (N) to add to matching sides
+        """
+        from .triggers import Buff, AffectSides, TypeCondition, FlatBonus
+        from .effects import EffectType
+
+        # Get the effect type to match (damage, heal, shield)
+        effect_type = calculated_side.effect_type
+
+        # Get all friendly entities (same team as source), excluding the source
+        team = self.heroes if source.team == Team.HERO else self.monsters
+        for ally in team:
+            if ally == source:
+                continue  # Skip the source entity
+
+            ally_state = self._states[ally]
+            if ally_state.is_dead:
+                continue
+
+            # Apply buff that adds +N pips to all sides matching the effect type
+            affect_sides = AffectSides(
+                conditions=TypeCondition(effect_type),
+                effects=FlatBonus(pip_value)
             )
             buff = Buff(personal=affect_sides, turns_remaining=1)
             ally_state.add_buff(buff)
