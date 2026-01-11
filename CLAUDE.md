@@ -19,25 +19,43 @@ Workflow:
 
 ## State Tracking
 
-`combat/KEYWORDS.json` tracks only:
+`combat/KEYWORDS.json` tracks:
+- `verified`: keywords confirmed correct via human gameplay testing (subset of implemented)
 - `implemented`: keywords with passing tests
-- `all`: complete enum (191 keywords)
+- `blocked`: keywords skipped due to missing infrastructure (maps reason → keyword list)
+- `all`: complete enum (191 keywords) - **must match Java Keyword.java enum**
 
-Remaining = `all` - `implemented`. Currently: 17 done, 174 remaining.
+```
+remaining = all - implemented - blocked
+verified ⊆ implemented (verified is always a subset)
+```
+
+**Two-tier verification:**
+1. **Implemented** = automated tests pass (required for progress)
+2. **Verified** = human confirmed in-game behavior matches (batch at end)
+
+Agent implements all keywords → tests pass → added to `implemented`.
+After ALL keywords implemented → human runs funnel sieve verification (see below).
+
+**Safety invariant:** Every keyword in `all` is either implemented, blocked, or remaining. Nothing is lost.
 
 ## On "continue"
 
 1. Read `combat/KEYWORDS.json`, compute remaining keywords
-2. Pick next keyword (agent's choice - related keywords, dependencies, or just enum order)
+2. Pick next keyword using **soft priority**:
+   - **First**: Base keywords before variants (implement `engage` before `antiEngage`)
+   - **Second**: Simple conditionals (x2 multipliers) before complex (combined, parameterized)
+   - **Third**: Keywords whose infrastructure exists before those that need new systems
+   - **Flexible**: Can deviate if related keywords make sense to batch
 3. For each keyword:
-   - Read Java source: `decompiled/gameplay/effect/eff/keyword/Keyword.java`
-   - Read conditionalBonus if needed: `decompiled/gameplay/effect/eff/conditionalBonus/`
-   - Write failing test first
-   - Implement until green
-   - Add to `implemented` array
-4. Run `uv run pytest` - all tests must pass
-5. Commit: `Implement <keyword> keyword` or `Implement <x>, <y>, <z> keywords`
-6. Report progress
+   - **Read Java source first** - `Keyword.java` and `conditionalBonus/` are authoritative. Patterns in this doc are examples, not specs.
+   - Add enum value to `src/dice.py` (SCREAMING_SNAKE_CASE: `antiEngage` → `ANTI_ENGAGE`)
+   - Write failing test in `tests/test_keyword.py`
+   - Implement in appropriate location (see Pipeline section)
+   - Run `uv run pytest` - must pass
+   - Add to `implemented` array in `KEYWORDS.json`
+4. Commit: `Implement <keyword> keyword` or `Implement <x>, <y>, <z> keywords`
+5. Report: keywords implemented, keywords skipped (and why), remaining count
 
 ## Existing Implementations
 
@@ -51,6 +69,95 @@ These keywords are already implemented and tested. They stay where they are:
 | petrify | `FightLog` | Transforms sides to stone |
 | rampage, rescue | `FightLog` | Death-trigger reuse |
 | ranged | `FightLog` | Targeting modifier |
+
+## Implementation Patterns
+
+### Conditional Keywords (most common)
+
+Add to `FightLog._apply_conditional_keyword_bonuses()` as an if statement:
+
+```python
+# In fight.py:_apply_conditional_keyword_bonuses()
+# Pattern: if has_keyword → check condition → multiply value
+
+if side.has_keyword(Keyword.ENGAGE):
+    if target_state.hp == target_state.max_hp:
+        value *= 2
+
+if side.has_keyword(Keyword.CRUEL):
+    if target_state.hp <= target_state.max_hp // 2:
+        value *= 2
+
+# Add new conditional keywords here following this pattern
+```
+
+### Meta Keywords
+
+Add to `EntityState._process_meta_keywords()` - these modify the Side before value calculation.
+
+### Post-Effect Keywords
+
+Add to `FightLog.use_die()` after the main effect is applied.
+
+## Test Patterns
+
+Helper functions (defined at top of each test file):
+
+```python
+def make_hero(name: str, hp: int = 5) -> Entity:
+    return Entity(EntityType(name, hp, EntitySize.HERO), Team.HERO)
+
+def make_monster(name: str, hp: int = 4) -> Entity:
+    return Entity(EntityType(name, hp, EntitySize.HERO), Team.MONSTER)
+```
+
+**Note:** These are duplicated per test file (minor DRY violation, acceptable for test isolation).
+
+**Where to add tests:** Add a new `class Test<Keyword>:` to `tests/test_keyword.py` (one class per keyword).
+
+### Pattern 1: Full Integration Test (preferred)
+
+```python
+def test_pristine_full_hp(self):
+    """Pristine deals x2 damage when source is at full HP."""
+    hero = make_hero("Fighter", hp=5)
+    monster = make_monster("Goblin", hp=10)
+    fight = FightLog([hero], [monster])
+
+    # Setup: Die with pristine keyword
+    hero.die = Die()
+    pristine_side = Side(EffectType.DAMAGE, 2, {Keyword.PRISTINE})
+    hero.die.set_all_sides(pristine_side)
+
+    # Act: Use the die
+    fight.use_die(hero, 0, monster)
+
+    # Assert: x2 damage (2 * 2 = 4)
+    state = fight.get_state(monster, Temporality.PRESENT)
+    assert state.hp == 6
+```
+
+### Pattern 2: Condition Not Met
+
+```python
+def test_pristine_no_bonus_when_damaged(self):
+    """Pristine deals normal damage when source is below full HP."""
+    hero = make_hero("Fighter", hp=5)
+    monster = make_monster("Goblin", hp=10)
+    fight = FightLog([hero], [monster])
+
+    # Damage the hero first (no longer at full HP)
+    fight.apply_damage(monster, hero, 1, is_pending=False)
+
+    hero.die = Die()
+    pristine_side = Side(EffectType.DAMAGE, 2, {Keyword.PRISTINE})
+    hero.die.set_all_sides(pristine_side)
+
+    fight.use_die(hero, 0, monster)
+    # No x2, just base damage
+    state = fight.get_state(monster, Temporality.PRESENT)
+    assert state.hp == 8  # 10 - 2 = 8
+```
 
 ## Keyword Pipeline
 
@@ -97,24 +204,56 @@ Some keywords need systems that may not exist yet. **Check before implementing.*
 | Side injection | inflict* keywords | Check for modifying target's dice |
 | Usage tracking | doubleUse, quadUse, hyperUse, flurry | Check for per-turn usage counter |
 
-**If infrastructure is missing:** Either implement it first, or skip the keyword and note the dependency.
+**If infrastructure is missing:**
+1. Add keyword to `blocked` in KEYWORDS.json under the infrastructure reason:
+   ```json
+   "blocked": {
+     "turn_end_processing": ["poison", "regen"],
+     "buff_system": ["weaken", "boost"]
+   }
+   ```
+2. Continue with other keywords that don't need the missing infrastructure
+3. In final report, mention blocked keywords and why
 
 ## Variant Keywords
 
-Variants modify base keywords. **Do NOT duplicate logic - compose or reference.**
+Variants modify base keywords. **Invert/modify the condition inline:**
 
-| Prefix | What It Does | Java Pattern | Example |
-|--------|--------------|--------------|---------|
-| `anti*` | Inverts condition | `NotRequirement` | antiEngage = x2 if target NOT full HP |
-| `halve*` | x0.5 instead of x2 | `.halveVersion()` | halveEngage = x0.5 if target full HP |
-| `swap*` | Swaps source/target | swapped condition | swapEngage = x2 if SOURCE full HP |
-| `group*` | Applies to all allies | `groupAct` field | groupGrowth = all allies get growth |
-| `minus*` | Inverts bonus (+N → -N) | `InvertBonus` | minusFlesh = -1 per HP I have |
+| Prefix | What It Does | Example |
+|--------|--------------|---------|
+| `anti*` | Inverts condition | antiEngage = x2 if target NOT full HP |
+| `halve*` | x0.5 instead of x2 | halveEngage = x0.5 if target full HP |
+| `swap*` | Swaps source/target | swapEngage = x2 if SOURCE full HP |
+| `group*` | Applies to all allies | groupGrowth = all allies get growth |
+| `minus*` | Inverts bonus (+N → -N) | minusFlesh = -1 per HP I have |
 
-**Combined keywords** (engarged, engine, paxin) use `KeywordCombineType` in Java:
-- `ConditionBonus`: condition from A, bonus from B (engarged = engage + charged)
-- `TC4X`: both conditions must be true → x4 (engine = engage AND pristine)
-- `XOR`: exactly one condition true → x3 (paxin = pair XOR chain)
+```python
+# antiEngage → ANTI_ENGAGE: invert the condition
+if side.has_keyword(Keyword.ANTI_ENGAGE):
+    if target_state.hp != target_state.max_hp:  # NOT full HP
+        value *= 2
+
+# halveEngage → HALVE_ENGAGE: same condition, different multiplier
+if side.has_keyword(Keyword.HALVE_ENGAGE):
+    if target_state.hp == target_state.max_hp:
+        value //= 2  # integer division
+
+# swapEngage → SWAP_ENGAGE: check SOURCE instead of TARGET
+if side.has_keyword(Keyword.SWAP_ENGAGE):
+    if source_state.hp == source_state.max_hp:  # SOURCE full HP
+        value *= 2
+```
+
+**Combined keywords** (engarged, engine, paxin):
+
+```python
+# engine → ENGINE: engage AND pristine → x4
+if side.has_keyword(Keyword.ENGINE):
+    engage_met = target_state.hp == target_state.max_hp
+    pristine_met = source_state.hp == source_state.max_hp
+    if engage_met and pristine_met:
+        value *= 4
+```
 
 ## Parameter (N) Source
 
@@ -171,6 +310,48 @@ uv run pytest -k "keyword_name"     # Filter by name
 | `FightLog.java` | Combat state, die resolution, effect application |
 | `EntState.java` | Entity state snapshots (HP, shields, etc.) |
 | `conditionalBonus/*.java` | How keywords modify values |
+
+## Funnel Sieve Verification
+
+After ALL keywords are implemented, run minimal gameplay tests that maximize coverage:
+
+**Layer 1: Combined Keywords** (test multiple base keywords at once)
+| Test | Implicitly Verifies |
+|------|---------------------|
+| `engine` | engage, pristine, x4 stacking |
+| `paxin` | pair, chain, XOR logic |
+| `engarged` | engage, charged, condition+bonus |
+| `cruesh` | cruel, flesh, HP-based bonuses |
+
+**Layer 2: Variant Keywords** (test modification system)
+| Test | Implicitly Verifies |
+|------|---------------------|
+| `antiEngage` | anti* prefix, condition inversion |
+| `halveEngage` | halve* prefix, x0.5 multiplier |
+| `swapCruel` | swap* prefix, source/target swap |
+| `groupGrowth` | group* prefix, multi-target effects |
+
+**Layer 3: Infrastructure Keywords** (test new systems)
+| Test | Implicitly Verifies |
+|------|---------------------|
+| `poison` | turn-end processing, DoT |
+| `weaken` | buff/debuff system |
+| `boned` | entity summoning |
+| `inflictPain` | side injection |
+
+**Layer 4: Edge Cases** (test interactions)
+- Multiple keywords on same side (stacking)
+- Parameterized keywords (N from pips)
+- Self-targeting keywords (selfHeal, selfShield)
+- Death triggers (rampage, rescue, deathwish)
+
+**Process:**
+1. If Layer 1 passes → base keywords likely correct
+2. If Layer 2 passes → variant system works
+3. If Layer 3 passes → infrastructure works
+4. If Layer 4 passes → edge cases handled
+
+Failures at any layer indicate which system needs investigation. Fix and re-test that layer before proceeding.
 
 ## Deferred (need infrastructure)
 

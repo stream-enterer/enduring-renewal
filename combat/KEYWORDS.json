@@ -1,6 +1,9 @@
 {
   "note": "State tracking only. Keyword specs live in Java source. Verification lives in tests.",
   "source": "decompiled/gameplay/effect/eff/keyword/Keyword.java",
+  "verified": [
+    "engage", "cruel", "pristine", "pair", "growth", "rampage", "rescue"
+  ],
   "implemented": [
     "manaGain",
     "engage",
@@ -20,6 +23,8 @@
     "ranged",
     "copycat"
   ],
+  "blocked": {
+  },
   "all": [
     "heal", "shield", "damage", "manaGain",
     "engage", "pristine", "cruel", "deathwish", "armoured", "wham",
