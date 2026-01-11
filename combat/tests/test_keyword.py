@@ -2041,3 +2041,397 @@ class TestReborn:
         fight.use_die(hero, 0, monster)
         state = fight.get_state(monster, Temporality.PRESENT)
         assert state.hp == 6, "Reborn should deal x2 with multiple deaths"
+
+
+class TestWham:
+    """Tests for Wham keyword.
+
+    Wham deals x2 damage if the TARGET has shields.
+    This is the target-check version of armoured (which checks source).
+
+    Verified: x2 when target has shields.
+    """
+
+    def test_wham_doubles_when_target_has_shields(self):
+        """Wham deals x2 damage when target has shields."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Give monster shields
+        fight.apply_shield(monster, 3)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.shield == 3, "Monster should have shields"
+
+        # Hero uses wham damage
+        hero.die = Die()
+        wham_side = Side(EffectType.DAMAGE, 2, {Keyword.WHAM})
+        hero.die.set_all_sides(wham_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 4 damage, 3 blocked by shield, 1 HP lost
+        assert state.hp == 9, "Wham should deal x2 (4 damage) when target has shields"
+        assert state.shield == 0, "Shield should be consumed"
+
+    def test_wham_no_bonus_without_shields(self):
+        """Wham deals normal damage when target has no shields."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Monster has no shields
+        hero.die = Die()
+        wham_side = Side(EffectType.DAMAGE, 2, {Keyword.WHAM})
+        hero.die.set_all_sides(wham_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Wham should deal normal (2 damage) when target has no shields"
+
+
+class TestSquish:
+    """Tests for Squish keyword.
+
+    Squish deals x2 damage if the TARGET has the least HP of all living entities.
+    This is the target-check version of moxie (which checks source).
+
+    Verified: x2 when target has lowest HP among all entities.
+    """
+
+    def test_squish_doubles_when_target_has_least_hp(self):
+        """Squish deals x2 damage when target has least HP of all."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=3)  # Has least HP
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        squish_side = Side(EffectType.DAMAGE, 2, {Keyword.SQUISH})
+        hero.die.set_all_sides(squish_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == -1, "Squish should deal x2 (4 damage) when target has least HP"
+
+    def test_squish_no_bonus_when_target_not_least(self):
+        """Squish deals normal damage when target doesn't have least HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=3)  # Has least HP
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        squish_side = Side(EffectType.DAMAGE, 2, {Keyword.SQUISH})
+        hero.die.set_all_sides(squish_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Squish should deal normal (2 damage) when target doesn't have least HP"
+
+    def test_squish_with_multiple_entities(self):
+        """Squish checks against ALL entities (heroes and monsters)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        heroes = [make_hero("Fighter", hp=10), make_hero("Mage", hp=2)]
+        monster = make_monster("Goblin", hp=5)
+
+        fight = FightLog(heroes, [monster])
+
+        # Mage at 2 HP has the least, not the monster
+        fighter = heroes[0]
+        fighter.die = Die()
+        squish_side = Side(EffectType.DAMAGE, 2, {Keyword.SQUISH})
+        fighter.die.set_all_sides(squish_side)
+
+        fight.use_die(fighter, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 3, "Squish should not double when ally has less HP than target"
+
+
+class TestUppercut:
+    """Tests for Uppercut keyword.
+
+    Uppercut deals x2 damage if the TARGET has the most HP of all living entities.
+    This is the target-check version of bully (which checks source).
+
+    Verified: x2 when target has highest HP among all entities.
+    """
+
+    def test_uppercut_doubles_when_target_has_most_hp(self):
+        """Uppercut deals x2 damage when target has most HP of all."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)  # Has most HP
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        uppercut_side = Side(EffectType.DAMAGE, 2, {Keyword.UPPERCUT})
+        hero.die.set_all_sides(uppercut_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 6, "Uppercut should deal x2 (4 damage) when target has most HP"
+
+    def test_uppercut_no_bonus_when_target_not_most(self):
+        """Uppercut deals normal damage when target doesn't have most HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)  # Has most HP
+        monster = make_monster("Goblin", hp=5)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        uppercut_side = Side(EffectType.DAMAGE, 2, {Keyword.UPPERCUT})
+        hero.die.set_all_sides(uppercut_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 3, "Uppercut should deal normal (2 damage) when target doesn't have most HP"
+
+    def test_uppercut_with_multiple_entities(self):
+        """Uppercut checks against ALL entities (heroes and monsters)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        heroes = [make_hero("Fighter", hp=5), make_hero("Tank", hp=15)]
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog(heroes, [monster])
+
+        # Tank at 15 HP has the most, not the monster
+        fighter = heroes[0]
+        fighter.die = Die()
+        uppercut_side = Side(EffectType.DAMAGE, 2, {Keyword.UPPERCUT})
+        fighter.die.set_all_sides(uppercut_side)
+
+        fight.use_die(fighter, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Uppercut should not double when ally has more HP than target"
+
+
+class TestTerminal:
+    """Tests for Terminal keyword.
+
+    Terminal deals x2 damage if the TARGET has exactly 1 HP.
+
+    Verified: x2 when target has exactly 1 HP.
+    """
+
+    def test_terminal_doubles_at_1_hp(self):
+        """Terminal deals x2 damage when target has exactly 1 HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=5)
+
+        fight = FightLog([hero], [monster])
+
+        # Damage monster to 1 HP
+        fight.apply_damage(hero, monster, 4, is_pending=False)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 1, "Monster should be at 1 HP"
+
+        hero.die = Die()
+        terminal_side = Side(EffectType.DAMAGE, 2, {Keyword.TERMINAL})
+        hero.die.set_all_sides(terminal_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == -3, "Terminal should deal x2 (4 damage) when target at 1 HP"
+
+    def test_terminal_no_bonus_above_1_hp(self):
+        """Terminal deals normal damage when target has more than 1 HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=5)
+
+        fight = FightLog([hero], [monster])
+
+        # Damage monster to 2 HP (not 1)
+        fight.apply_damage(hero, monster, 3, is_pending=False)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 2, "Monster should be at 2 HP"
+
+        hero.die = Die()
+        terminal_side = Side(EffectType.DAMAGE, 2, {Keyword.TERMINAL})
+        hero.die.set_all_sides(terminal_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 0, "Terminal should deal normal (2 damage) when target not at 1 HP"
+
+    def test_terminal_no_bonus_at_full_hp(self):
+        """Terminal deals normal damage when target is at full HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=5)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        terminal_side = Side(EffectType.DAMAGE, 2, {Keyword.TERMINAL})
+        hero.die.set_all_sides(terminal_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 3, "Terminal should deal normal (2 damage) at full HP"
+
+
+class TestEgo:
+    """Tests for Ego keyword.
+
+    Ego deals x2 damage/effect if the SOURCE is targeting themselves.
+
+    Verified: x2 when targeting self.
+    """
+
+    def test_ego_doubles_when_self_targeting(self):
+        """Ego deals x2 effect when source targets themselves."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=5)
+
+        fight = FightLog([hero], [monster])
+
+        # Damage hero first
+        fight.apply_damage(monster, hero, 5, is_pending=False)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 5, "Hero should be at 5 HP"
+
+        hero.die = Die()
+        ego_heal_side = Side(EffectType.HEAL, 2, {Keyword.EGO})
+        hero.die.set_all_sides(ego_heal_side)
+
+        # Hero uses ego heal on SELF
+        fight.use_die(hero, 0, hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 9, "Ego should deal x2 (4 heal) when targeting self"
+
+    def test_ego_no_bonus_when_targeting_other(self):
+        """Ego deals normal effect when source targets someone else."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        ego_damage_side = Side(EffectType.DAMAGE, 2, {Keyword.EGO})
+        hero.die.set_all_sides(ego_damage_side)
+
+        # Hero uses ego damage on MONSTER (not self)
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 8, "Ego should deal normal (2 damage) when targeting other"
+
+    def test_ego_shield_self(self):
+        """Ego doubles shield when self-targeting."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=5)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        ego_shield_side = Side(EffectType.SHIELD, 2, {Keyword.EGO})
+        hero.die.set_all_sides(ego_shield_side)
+
+        # Hero uses ego shield on SELF
+        fight.use_die(hero, 0, hero)
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.shield == 4, "Ego should deal x2 (4 shield) when targeting self"
+
+
+class TestCentury:
+    """Tests for Century keyword.
+
+    Century deals x2 damage if the TARGET has 100 or more HP.
+
+    Verified: x2 when target has 100+ HP.
+    """
+
+    def test_century_doubles_at_100_hp(self):
+        """Century deals x2 damage when target has exactly 100 HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Boss", hp=100)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        century_side = Side(EffectType.DAMAGE, 2, {Keyword.CENTURY})
+        hero.die.set_all_sides(century_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 96, "Century should deal x2 (4 damage) when target has 100 HP"
+
+    def test_century_doubles_above_100_hp(self):
+        """Century deals x2 damage when target has more than 100 HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Boss", hp=150)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        century_side = Side(EffectType.DAMAGE, 2, {Keyword.CENTURY})
+        hero.die.set_all_sides(century_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 146, "Century should deal x2 (4 damage) when target has 150 HP"
+
+    def test_century_no_bonus_below_100_hp(self):
+        """Century deals normal damage when target has less than 100 HP."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=99)
+
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        century_side = Side(EffectType.DAMAGE, 2, {Keyword.CENTURY})
+        hero.die.set_all_sides(century_side)
+
+        fight.use_die(hero, 0, monster)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == 97, "Century should deal normal (2 damage) when target has 99 HP"

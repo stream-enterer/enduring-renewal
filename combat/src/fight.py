@@ -1221,7 +1221,7 @@ class FightLog:
 
         # Apply conditional keyword bonuses based on source and target state
         target_state = self._states[target]
-        value = self._apply_conditional_keyword_bonuses(value, calculated_side, source_state, target_state, entity)
+        value = self._apply_conditional_keyword_bonuses(value, calculated_side, source_state, target_state, entity, target)
 
         # Apply the effect based on type
         if calculated_side.effect_type == EffectType.SHIELD:
@@ -1266,13 +1266,18 @@ class FightLog:
 
     def _apply_conditional_keyword_bonuses(
         self, value: int, side: "Side", source_state: EntityState,
-        target_state: EntityState, source_entity: Entity
+        target_state: EntityState, source_entity: Entity, target_entity: Entity
     ) -> int:
         """Apply conditional bonuses based on keywords, source, and target state.
 
         Target-check keywords (check target):
         - ENGAGE: x2 if target is at full HP (hp == max_hp)
         - CRUEL: x2 if target is at half HP or less (hp <= max_hp/2)
+        - WHAM: x2 if target has shields
+        - SQUISH: x2 if target has the least HP of all living entities
+        - UPPERCUT: x2 if target has the most HP of all living entities
+        - TERMINAL: x2 if target has exactly 1 HP
+        - CENTURY: x2 if target has 100+ HP
 
         Source-check keywords (check self):
         - PRISTINE: x2 if I have full HP
@@ -1281,6 +1286,9 @@ class FightLog:
         - MOXIE: x2 if I have the least HP of all living entities
         - BULLY: x2 if I have the most HP of all living entities
         - REBORN: x2 if I died this fight
+
+        Self-target keywords:
+        - EGO: x2 if targeting myself
 
         Returns the modified value after applying all applicable bonuses.
         """
@@ -1294,6 +1302,33 @@ class FightLog:
         # CRUEL: x2 vs targets at half HP or less
         if side.has_keyword(Keyword.CRUEL):
             if target_state.hp <= target_state.max_hp // 2:
+                value *= 2
+
+        # WHAM: x2 vs targets with shields
+        if side.has_keyword(Keyword.WHAM):
+            if target_state.shield > 0:
+                value *= 2
+
+        # SQUISH: x2 vs targets with least HP of all
+        if side.has_keyword(Keyword.SQUISH):
+            min_hp = self._get_min_hp_of_all()
+            if target_state.hp == min_hp:
+                value *= 2
+
+        # UPPERCUT: x2 vs targets with most HP of all
+        if side.has_keyword(Keyword.UPPERCUT):
+            max_hp = self._get_max_hp_of_all()
+            if target_state.hp == max_hp:
+                value *= 2
+
+        # TERMINAL: x2 vs targets on exactly 1 HP
+        if side.has_keyword(Keyword.TERMINAL):
+            if target_state.hp == 1:
+                value *= 2
+
+        # CENTURY: x2 vs targets with 100+ HP
+        if side.has_keyword(Keyword.CENTURY):
+            if target_state.hp >= 100:
                 value *= 2
 
         # PRISTINE: x2 if I have full HP
@@ -1327,6 +1362,11 @@ class FightLog:
         # REBORN: x2 if I died this fight
         if side.has_keyword(Keyword.REBORN):
             if source_state.deaths_this_fight > 0:
+                value *= 2
+
+        # EGO: x2 if targeting myself
+        if side.has_keyword(Keyword.EGO):
+            if source_entity == target_entity:
                 value *= 2
 
         return value

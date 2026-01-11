@@ -21,7 +21,13 @@
     "singleUse",
     "petrify",
     "ranged",
-    "copycat"
+    "copycat",
+    "wham",
+    "squish",
+    "uppercut",
+    "terminal",
+    "ego",
+    "century"
   ],
   "blocked": {
   },

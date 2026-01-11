@@ -26,6 +26,12 @@ class Keyword(Enum):
     MOXIE = auto()       # x2 effect if I have least HP of all
     BULLY = auto()       # x2 effect if I have most HP of all
     REBORN = auto()      # x2 effect if I died this fight
+    WHAM = auto()        # x2 effect vs targets with shields
+    SQUISH = auto()      # x2 effect vs targets with least HP of all
+    UPPERCUT = auto()    # x2 effect vs targets with most HP of all
+    TERMINAL = auto()    # x2 effect vs targets on exactly 1 HP
+    EGO = auto()         # x2 effect if targeting myself
+    CENTURY = auto()     # x2 effect vs targets with 100+ HP
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom
