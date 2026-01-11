@@ -39,6 +39,7 @@ class EntityState:
     buffs: list = field(default_factory=list)  # Active buffs with Personal triggers
     cleansed_map: dict = field(default_factory=dict)  # CleanseType -> amount cleansed this turn
     deaths_this_fight: int = 0  # Number of times entity has died this fight (for reborn keyword)
+    is_exerted: bool = False  # If True, all sides are blanks until end of next turn
 
     @property
     def is_dead(self) -> bool:
@@ -1367,6 +1368,22 @@ class FightLog:
         if calculated_side.has_keyword(Keyword.SELF_HEAL):
             self.apply_heal(entity, value)
 
+        # === COST KEYWORDS (applied after main effect) ===
+        # PAIN: I take N damage (N = pip value)
+        if calculated_side.has_keyword(Keyword.PAIN):
+            # Pain damage is dealt to the source (can be blocked by shields)
+            self.apply_damage(entity, entity, value, is_pending=False)
+
+        # DEATH: I die after using this side
+        if calculated_side.has_keyword(Keyword.DEATH):
+            source_state = self.get_state(entity, Temporality.PRESENT)
+            source_state.hp = 0  # is_dead property will return True when hp <= 0
+
+        # EXERT: replace all sides with blanks until end of next turn
+        if calculated_side.has_keyword(Keyword.EXERT):
+            source_state = self.get_state(entity, Temporality.PRESENT)
+            source_state.is_exerted = True
+
     def get_most_recent_die_effect(self) -> Optional[SideState]:
         """Get the most recently used die's side state (for copycat keyword)."""
         return self._most_recent_die_effect
@@ -1380,6 +1397,11 @@ class FightLog:
         if n <= 0:
             return []
         return list(reversed(self._die_effect_history[-n:]))
+
+    def _get_multiplier(self, side: "Side") -> int:
+        """Get the conditional bonus multiplier (2 normally, 3 if treble present)."""
+        from .dice import Keyword
+        return 3 if side.has_keyword(Keyword.TREBLE) else 2
 
     def _apply_conditional_keyword_bonuses(
         self, value: int, side: "Side", source_state: EntityState,
@@ -1407,9 +1429,14 @@ class FightLog:
         Self-target keywords:
         - EGO: x2 if targeting myself
 
+        Note: If TREBLE keyword is present, all x2 multipliers become x3.
+
         Returns the modified value after applying all applicable bonuses.
         """
         from .dice import Keyword
+
+        # Get multiplier (2 normally, 3 with treble)
+        mult = self._get_multiplier(side)
 
         # +N pip bonus keywords (applied before x2 multipliers)
         # BLOODLUST: +N where N = damaged enemies
@@ -1447,112 +1474,114 @@ class FightLog:
             value += self._dice_used_this_turn
 
         # x2 multiplier keywords (applied after +N bonuses)
+        # Note: with TREBLE keyword, these become x3 instead of x2 (mult variable)
+
         # ENGAGE: x2 vs full HP targets
         if side.has_keyword(Keyword.ENGAGE):
             if target_state.hp == target_state.max_hp:
-                value *= 2
+                value *= mult
 
         # CRUEL: x2 vs targets at half HP or less
         if side.has_keyword(Keyword.CRUEL):
             if target_state.hp <= target_state.max_hp // 2:
-                value *= 2
+                value *= mult
 
         # WHAM: x2 vs targets with shields
         if side.has_keyword(Keyword.WHAM):
             if target_state.shield > 0:
-                value *= 2
+                value *= mult
 
         # SQUISH: x2 vs targets with least HP of all
         if side.has_keyword(Keyword.SQUISH):
             min_hp = self._get_min_hp_of_all()
             if target_state.hp == min_hp:
-                value *= 2
+                value *= mult
 
         # UPPERCUT: x2 vs targets with most HP of all
         if side.has_keyword(Keyword.UPPERCUT):
             max_hp = self._get_max_hp_of_all()
             if target_state.hp == max_hp:
-                value *= 2
+                value *= mult
 
         # TERMINAL: x2 vs targets on exactly 1 HP
         if side.has_keyword(Keyword.TERMINAL):
             if target_state.hp == 1:
-                value *= 2
+                value *= mult
 
         # CENTURY: x2 vs targets with 100+ HP
         if side.has_keyword(Keyword.CENTURY):
             if target_state.hp >= 100:
-                value *= 2
+                value *= mult
 
         # PRISTINE: x2 if I have full HP
         if side.has_keyword(Keyword.PRISTINE):
             if source_state.hp == source_state.max_hp:
-                value *= 2
+                value *= mult
 
         # DEATHWISH: x2 if I am dying this turn
         if side.has_keyword(Keyword.DEATHWISH):
             future_state = self.get_state(source_entity, Temporality.FUTURE)
             if future_state.hp <= 0:
-                value *= 2
+                value *= mult
 
         # ARMOURED: x2 if I have shields
         if side.has_keyword(Keyword.ARMOURED):
             if source_state.shield > 0:
-                value *= 2
+                value *= mult
 
         # MOXIE: x2 if I have the least HP of all living entities
         if side.has_keyword(Keyword.MOXIE):
             min_hp = self._get_min_hp_of_all()
             if source_state.hp == min_hp:
-                value *= 2
+                value *= mult
 
         # BULLY: x2 if I have the most HP of all living entities
         if side.has_keyword(Keyword.BULLY):
             max_hp = self._get_max_hp_of_all()
             if source_state.hp == max_hp:
-                value *= 2
+                value *= mult
 
         # REBORN: x2 if I died this fight
         if side.has_keyword(Keyword.REBORN):
             if source_state.deaths_this_fight > 0:
-                value *= 2
+                value *= mult
 
         # EGO: x2 if targeting myself
         if side.has_keyword(Keyword.EGO):
             if source_entity == target_entity:
-                value *= 2
+                value *= mult
 
         # SERRATED: x2 if target gained no shields this turn
         # (has no shields AND hasn't blocked any damage with shields)
         if side.has_keyword(Keyword.SERRATED):
             if target_state.shield == 0 and target_state.damage_blocked == 0:
-                value *= 2
+                value *= mult
 
         # UNDERDOG: x2 if source HP < target HP
         if side.has_keyword(Keyword.UNDERDOG):
             if source_state.hp < target_state.hp:
-                value *= 2
+                value *= mult
 
         # OVERDOG: x2 if source HP > target HP
         if side.has_keyword(Keyword.OVERDOG):
             if source_state.hp > target_state.hp:
-                value *= 2
+                value *= mult
 
         # DOG: x2 if source HP == target HP
         if side.has_keyword(Keyword.DOG):
             if source_state.hp == target_state.hp:
-                value *= 2
+                value *= mult
 
         # HYENA: x2 if source HP and target HP are coprime (GCD == 1)
         if side.has_keyword(Keyword.HYENA):
             if gcd(source_state.hp, target_state.hp) == 1:
-                value *= 2
+                value *= mult
 
         # TALL: x2 if target is topmost (index 0 in their team)
         if side.has_keyword(Keyword.TALL):
             team_list = self.heroes if target_entity.team == Team.HERO else self.monsters
             if team_list and team_list[0] == target_entity:
-                value *= 2
+                value *= mult
 
         # CHAIN: x2 if previous die shares a keyword with this side
         if side.has_keyword(Keyword.CHAIN):
@@ -1562,97 +1591,97 @@ class FightLog:
                 # Check if any keyword is shared (excluding CHAIN itself)
                 current_keywords = side.keywords - {Keyword.CHAIN}
                 if current_keywords & prev_keywords:  # Set intersection
-                    value *= 2
+                    value *= mult
 
         # INSPIRED: x2 if previous die had more pips than this side
         if side.has_keyword(Keyword.INSPIRED):
             previous = self.get_most_recent_die_effect()
             if previous is not None:
                 if previous.calculated_effect.calculated_value > side.calculated_value:
-                    value *= 2
+                    value *= mult
 
         # FIRST: x2 if no dice used this turn (before this one)
         if side.has_keyword(Keyword.FIRST):
             if self._dice_used_this_turn == 0:
-                value *= 2
+                value *= mult
 
         # SIXTH: x2 if this is the 6th die used this turn
         if side.has_keyword(Keyword.SIXTH):
             if self._dice_used_this_turn == 5:
-                value *= 2
+                value *= mult
 
         # STEP: x2 if previous 2 dice values form a consecutive run
         if side.has_keyword(Keyword.STEP):
             if self._is_consecutive_run(2, side.calculated_value):
-                value *= 2
+                value *= mult
 
         # RUN: x2 if previous 3 dice values form a consecutive run
         if side.has_keyword(Keyword.RUN):
             if self._is_consecutive_run(3, side.calculated_value):
-                value *= 2
+                value *= mult
 
         # SPRINT: x2 if previous 5 dice values form a consecutive run
         if side.has_keyword(Keyword.SPRINT):
             if self._is_consecutive_run(5, side.calculated_value):
-                value *= 2
+                value *= mult
 
         # SLOTH: x2 if source has more blank sides than target
         if side.has_keyword(Keyword.SLOTH):
             source_blanks = self._count_blank_sides(source_entity)
             target_blanks = self._count_blank_sides(target_entity)
             if source_blanks > target_blanks:
-                value *= 2
+                value *= mult
 
         # === ANTI* VARIANTS (inverted condition) ===
         # ANTI_ENGAGE: x2 if target NOT at full HP
         if side.has_keyword(Keyword.ANTI_ENGAGE):
             if target_state.hp != target_state.max_hp:
-                value *= 2
+                value *= mult
 
         # ANTI_PRISTINE: x2 if source NOT at full HP
         if side.has_keyword(Keyword.ANTI_PRISTINE):
             if source_state.hp != source_state.max_hp:
-                value *= 2
+                value *= mult
 
         # ANTI_DEATHWISH: x2 if source NOT at 1HP (not dying)
         if side.has_keyword(Keyword.ANTI_DEATHWISH):
             future_state = self.get_state(source_entity, Temporality.FUTURE)
             if future_state.hp > 0:
-                value *= 2
+                value *= mult
 
         # ANTI_DOG: x2 if source HP != target HP (inverted dog)
         if side.has_keyword(Keyword.ANTI_DOG):
             if source_state.hp != target_state.hp:
-                value *= 2
+                value *= mult
 
         # ANTI_PAIR: x2 if previous die had DIFFERENT pip value
         if side.has_keyword(Keyword.ANTI_PAIR):
             previous = self.get_most_recent_die_effect()
             if previous is not None:
                 if side.calculated_value != previous.calculated_effect.calculated_value:
-                    value *= 2
+                    value *= mult
 
         # === SWAP* VARIANTS (swap source/target check) ===
         # SWAP_ENGAGE: x2 if SOURCE at full HP (instead of target)
         if side.has_keyword(Keyword.SWAP_ENGAGE):
             if source_state.hp == source_state.max_hp:
-                value *= 2
+                value *= mult
 
         # SWAP_CRUEL: x2 if SOURCE at or below half HP (instead of target)
         if side.has_keyword(Keyword.SWAP_CRUEL):
             if source_state.hp <= source_state.max_hp // 2:
-                value *= 2
+                value *= mult
 
         # SWAP_DEATHWISH: x2 if TARGET at 1HP (instead of source)
         if side.has_keyword(Keyword.SWAP_DEATHWISH):
             future_state = self.get_state(target_entity, Temporality.FUTURE)
             if future_state.hp <= 0:
-                value *= 2
+                value *= mult
 
         # SWAP_TERMINAL: x2 if TARGET at exactly 1HP (same check as swapDeathwish in Java)
         if side.has_keyword(Keyword.SWAP_TERMINAL):
             if target_state.hp == 1:
-                value *= 2
+                value *= mult
 
         # === HALVE* VARIANTS (x0.5 instead of x2) ===
         # HALVE_ENGAGE: x0.5 if target at full HP
@@ -1684,7 +1713,7 @@ class FightLog:
                 value *= 4
 
         # === COMBINED KEYWORDS (XOR) ===
-        # PAXIN: pair XOR chain = x2 if exactly one condition met
+        # PAXIN: pair XOR chain = x3 if exactly one condition met (not affected by treble)
         if side.has_keyword(Keyword.PAXIN):
             # Check pair condition
             pair_met = False
@@ -1701,43 +1730,43 @@ class FightLog:
                 current_keywords = side.keywords - {Keyword.PAXIN}
                 chain_met = bool(current_keywords & prev_keywords)
 
-            # XOR: exactly one must be true
+            # XOR: exactly one must be true (x3 per Java XOR implementation)
             if pair_met != chain_met:
-                value *= 2
+                value *= 3
 
         # === COMBINED KEYWORDS (ConditionBonus - condition + pip bonus) ===
         # ENGARGED: engage + charged = x2 if target full HP, already has +N mana from charged
         if side.has_keyword(Keyword.ENGARGED):
             # +N mana pips (charged component)
             value += self.get_total_mana()
-            # x2 if target full HP (engage component)
+            # x2 if target full HP (engage component) - affected by treble
             if target_state.hp == target_state.max_hp:
-                value *= 2
+                value *= mult
 
         # CRUESH: cruel + flesh = x2 if target at half HP or less, already has +N HP
         if side.has_keyword(Keyword.CRUESH):
             # +N HP pips (flesh component)
             value += source_state.hp
-            # x2 if target at half HP or less (cruel component)
+            # x2 if target at half HP or less (cruel component) - affected by treble
             if target_state.hp <= target_state.max_hp // 2:
-                value *= 2
+                value *= mult
 
         # PRISTEEL: pristine + steel = x2 if source full HP, already has +N shields
         if side.has_keyword(Keyword.PRISTEEL):
             # +N shield pips (steel component)
             value += source_state.shield
-            # x2 if source full HP (pristine component)
+            # x2 if source full HP (pristine component) - affected by treble
             if source_state.hp == source_state.max_hp:
-                value *= 2
+                value *= mult
 
         # DEATHLUST: deathwish + bloodlust = x2 if source dying, +N damaged enemies
         if side.has_keyword(Keyword.DEATHLUST):
             # +N damaged enemies (bloodlust component)
             value += self.count_damaged_enemies()
-            # x2 if source dying (deathwish component)
+            # x2 if source dying (deathwish component) - affected by treble
             future_state = self.get_state(source_entity, Temporality.FUTURE)
             if future_state.hp <= 0:
-                value *= 2
+                value *= mult
 
         # === MINUS VARIANTS ===
         # MINUS_FLESH: -N pips where N = my current HP

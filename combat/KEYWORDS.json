@@ -80,7 +80,11 @@
     "antiDog",
     "antiPair",
     "selfShield",
-    "selfHeal"
+    "selfHeal",
+    "treble",
+    "pain",
+    "death",
+    "exert"
   ],
   "blocked": {
     "turn_tracking": ["patient", "era", "minusEra"],

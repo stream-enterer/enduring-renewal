@@ -99,6 +99,12 @@ class Keyword(Enum):
     # Self-targeting keywords
     SELF_SHIELD = auto()   # Shield myself for N pips
     SELF_HEAL = auto()     # Heal myself for N pips
+    # Cost keywords
+    PAIN = auto()          # I take N damage (N = pip value)
+    DEATH = auto()         # I die after using this side
+    EXERT = auto()         # Replace all sides with blanks until end of next turn
+    # Value modifier keywords
+    TREBLE = auto()        # Other keywords x2 -> x3
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom

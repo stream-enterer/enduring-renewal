@@ -4117,10 +4117,10 @@ class TestPriswish:
 
 
 class TestPaxin:
-    """Tests for paxin keyword - x2 if exactly one of pair/chain is met."""
+    """Tests for paxin keyword - x3 if exactly one of pair/chain is met (per Java XOR)."""
 
-    def test_paxin_x2_pair_only(self):
-        """Paxin deals x2 when pair condition is met but chain is not."""
+    def test_paxin_x3_pair_only(self):
+        """Paxin deals x3 when pair condition is met but chain is not."""
         from src.dice import Die, Side, Keyword
         from src.effects import EffectType
 
@@ -4129,13 +4129,13 @@ class TestPaxin:
         monster = make_monster("Goblin", hp=20)
         fight = FightLog([hero1, hero2], [monster])
 
-        # First die - 3 damage, with GROWTH keyword (won't trigger x2)
+        # First die - 3 damage, with GROWTH keyword (won't trigger chain)
         hero1.die = Die()
         side1 = Side(EffectType.DAMAGE, 3, {Keyword.GROWTH})
         hero1.die.set_all_sides(side1)
         fight.use_die(hero1, 0, monster)
 
-        # Second die with PAXIN only - 3 damage, different keyword (REBORN, won't trigger)
+        # Second die with PAXIN only - 3 damage, different keyword (REBORN, won't trigger chain)
         hero2.die = Die()
         side2 = Side(EffectType.DAMAGE, 3, {Keyword.PAXIN, Keyword.REBORN})
         hero2.die.set_all_sides(side2)
@@ -4144,12 +4144,12 @@ class TestPaxin:
         state = fight.get_state(monster, Temporality.PRESENT)
         # Pair: 3 == 3, TRUE
         # Chain: REBORN not in {GROWTH}, FALSE
-        # XOR: TRUE, so x2
-        # 20 - 3 - 6 = 11
-        assert state.hp == 11
+        # XOR: TRUE, so x3 (per Java XOR implementation)
+        # 20 - 3 - 9 = 8
+        assert state.hp == 8
 
-    def test_paxin_x2_chain_only(self):
-        """Paxin deals x2 when chain condition is met but pair is not."""
+    def test_paxin_x3_chain_only(self):
+        """Paxin deals x3 when chain condition is met but pair is not."""
         from src.dice import Die, Side, Keyword
         from src.effects import EffectType
 
@@ -4173,9 +4173,9 @@ class TestPaxin:
         state = fight.get_state(monster, Temporality.PRESENT)
         # Pair: 4 != 3, FALSE
         # Chain: GROWTH in {GROWTH}, TRUE
-        # XOR: TRUE, so x2
-        # 20 - 3 - 8 = 9
-        assert state.hp == 9
+        # XOR: TRUE, so x3 (per Java XOR implementation)
+        # 20 - 3 - 12 = 5
+        assert state.hp == 5
 
     def test_paxin_no_bonus_when_both_met(self):
         """Paxin deals normal damage when both pair and chain are met."""
@@ -5419,3 +5419,296 @@ class TestSelfHeal:
         # Support heals
         support_state = fight.get_state(hero1, Temporality.PRESENT)
         assert support_state.hp == 5  # 3 + 2
+
+
+class TestTreble:
+    """Tests for Treble keyword.
+
+    Treble: Other keywords x2 -> x3.
+    When present on a side, all x2 conditional multipliers become x3.
+    """
+
+    def test_treble_engage_x3(self):
+        """Treble changes engage from x2 to x3."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Engage with treble: x3 vs full HP targets
+        side = Side(EffectType.DAMAGE, 2, {Keyword.ENGAGE, Keyword.TREBLE})
+        hero.die.set_all_sides(side)
+
+        # Monster is at full HP
+        fight.use_die(hero, 0, monster)
+
+        # Should be 2 * 3 = 6 damage
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 4  # 10 - 6
+
+    def test_treble_pristine_x3(self):
+        """Treble changes pristine from x2 to x3."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Pristine with treble: x3 if I have full HP
+        side = Side(EffectType.DAMAGE, 2, {Keyword.PRISTINE, Keyword.TREBLE})
+        hero.die.set_all_sides(side)
+
+        # Hero is at full HP
+        fight.use_die(hero, 0, monster)
+
+        # Should be 2 * 3 = 6 damage
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 4  # 10 - 6
+
+    def test_treble_no_effect_on_x4(self):
+        """Treble doesn't affect TC4X keywords (already x4)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Engine (engage + pristine = x4) with treble
+        side = Side(EffectType.DAMAGE, 2, {Keyword.ENGINE, Keyword.TREBLE})
+        hero.die.set_all_sides(side)
+
+        # Both conditions met (hero full HP, monster full HP)
+        fight.use_die(hero, 0, monster)
+
+        # Engine gives x4, treble doesn't change it
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 12  # 20 - 8
+
+    def test_treble_no_condition_no_multiplier(self):
+        """Treble with conditional keyword but condition not met: no bonus."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Damage the monster first so engage won't trigger
+        fight.apply_damage(hero, monster, 1, is_pending=False)
+
+        hero.die = Die()
+        # Engage with treble, but monster not at full HP
+        side = Side(EffectType.DAMAGE, 2, {Keyword.ENGAGE, Keyword.TREBLE})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # No multiplier (condition not met), just base damage
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 7  # 10 - 1 - 2
+
+
+class TestPain:
+    """Tests for Pain keyword.
+
+    Pain: I take N damage (N = pip value).
+    The self-damage is applied after the main effect.
+    Pain damage can be blocked by shields.
+    """
+
+    def test_pain_self_damage(self):
+        """Pain deals self-damage equal to pip value."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        # Damage side with pain: deals damage to target, takes damage
+        side = Side(EffectType.DAMAGE, 3, {Keyword.PAIN})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster takes 3 damage
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 7
+
+        # Hero takes 3 self-damage from pain
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.hp == 7
+
+    def test_pain_blocked_by_shields(self):
+        """Pain damage is blocked by shields."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Give hero shields
+        fight.apply_shield(hero, 2)
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.shield == 2
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 3, {Keyword.PAIN})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Hero takes 3 pain, 2 blocked by shield, 1 HP damage
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.hp == 9
+        assert hero_state.shield == 0
+
+    def test_pain_can_kill_user(self):
+        """Pain can kill the user if it deals enough damage."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=3)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 5, {Keyword.PAIN})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Effect still happens first
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 5
+
+        # Hero dies from pain
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.is_dead
+
+
+class TestDeath:
+    """Tests for Death keyword.
+
+    Death: I die after using this side.
+    The effect still happens before death.
+    """
+
+    def test_death_kills_user(self):
+        """Death keyword kills the user after the effect."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 5, {Keyword.DEATH})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Effect happens
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 5
+
+        # User dies
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.is_dead
+
+    def test_death_on_heal_still_heals(self):
+        """Death on a heal side still heals target before user dies."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        healer = make_hero("Healer", hp=5)
+        fighter = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([healer, fighter], [monster])
+
+        # Damage fighter
+        fight.apply_damage(monster, fighter, 5, is_pending=False)
+        fighter_state = fight.get_state(fighter, Temporality.PRESENT)
+        assert fighter_state.hp == 5
+
+        healer.die = Die()
+        side = Side(EffectType.HEAL, 3, {Keyword.DEATH})
+        healer.die.set_all_sides(side)
+
+        fight.use_die(healer, 0, fighter)
+
+        # Fighter gets healed
+        fighter_state = fight.get_state(fighter, Temporality.PRESENT)
+        assert fighter_state.hp == 8
+
+        # Healer dies
+        healer_state = fight.get_state(healer, Temporality.PRESENT)
+        assert healer_state.is_dead
+
+
+class TestExert:
+    """Tests for Exert keyword.
+
+    Exert: Replace all sides with blanks until end of next turn.
+    The effect still happens, but the die is exhausted.
+    """
+
+    def test_exert_sets_flag(self):
+        """Exert sets is_exerted flag on the entity state."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        side = Side(EffectType.DAMAGE, 3, {Keyword.EXERT})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, monster)
+
+        # Effect still happens
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 7
+
+        # Exert flag is set
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.is_exerted
+
+    def test_exert_effect_still_happens(self):
+        """Exerted die's effect still happens."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Healer", hp=5)
+        fighter = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero, fighter], [monster])
+
+        # Damage fighter
+        fight.apply_damage(monster, fighter, 5, is_pending=False)
+
+        hero.die = Die()
+        side = Side(EffectType.HEAL, 3, {Keyword.EXERT})
+        hero.die.set_all_sides(side)
+
+        fight.use_die(hero, 0, fighter)
+
+        # Heal happens
+        fighter_state = fight.get_state(fighter, Temporality.PRESENT)
+        assert fighter_state.hp == 8
+
+        # Exert flag is set
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        assert hero_state.is_exerted
