@@ -1,7 +1,7 @@
 {
   "current": {
     "file": "TestKeyword",
-    "method": "precise",
+    "method": "fierce",
     "status": "analyzing",
     "hypothesis": null,
     "verified": null
@@ -45,6 +45,14 @@
     }
   ],
   "completed": [
+    {
+      "file": "TestKeyword",
+      "method": "precise",
+      "hypothesis": "Engage deals x2 damage against targets at full HP. Once they're damaged (HP < maxHP), no multiplier applies.",
+      "verified": "Confirmed. Engage = x2 vs targets with full hp (from keywords.csv).",
+      "test": "tests/test_keyword.py::TestEngage",
+      "timestamp": "2025-01-10T19:50:00Z"
+    },
     {
       "file": "TestKeyword",
       "method": "poison",

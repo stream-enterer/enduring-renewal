@@ -270,3 +270,91 @@ class TestPoison:
         # Future: 4 total (2 immediate + 2 pending)
         future = fight.get_state(monster, Temporality.FUTURE)
         assert future.hp == monster_max - 4, "Should have 4 total damage (stacked poison)"
+
+
+class TestEngage:
+    """Tests for Engage keyword.
+
+    Engage deals x2 damage against targets at full HP.
+    Once they're damaged (HP < maxHP), no multiplier applies.
+
+    Verified: Confirmed (from keywords.csv: "x2 vs targets with full hp").
+    """
+
+    def test_engage_doubles_damage_at_full_hp(self):
+        """Engage deals x2 damage when target is at full HP."""
+        hero = make_hero("Fencer", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+        monster_max = 4
+
+        # Target at full HP -> x2 damage
+        fight.apply_engage_damage(hero, monster, 1)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max - 2, "Engage should deal x2 damage vs full HP target"
+
+    def test_engage_no_bonus_when_damaged(self):
+        """Engage deals normal damage when target is not at full HP."""
+        hero = make_hero("Fencer", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+        monster_max = 4
+
+        # First attack at full HP -> x2 = 2 damage
+        fight.apply_engage_damage(hero, monster, 1)
+
+        # Second attack - target now damaged -> no multiplier
+        fight.apply_engage_damage(hero, monster, 1)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        # 2 + 1 = 3 total damage
+        assert state.hp == monster_max - 3, "Engage should deal normal damage vs damaged target"
+
+    def test_engage_full_scenario(self):
+        """Full engage test matching original Java test.
+
+        Setup: 1 hero vs 1 goblin (4 HP)
+        - dmgEngage(1) -> monster at maxHp-2 (x2 damage)
+        - dmgEngage(1) -> monster at maxHp-3 (normal damage)
+
+        Verified: Confirmed.
+        """
+        hero = make_hero("Fencer", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+        monster_max = 4
+
+        # First engage attack - target at full HP
+        fight.apply_engage_damage(hero, monster, 1)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max - 2, "should be damaged for 2"
+
+        # Second engage attack - target no longer at full HP
+        fight.apply_engage_damage(hero, monster, 1)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max - 3, "should be damaged for 3 total"
+
+    def test_engage_vs_different_targets(self):
+        """Engage bonus applies independently per target."""
+        hero = make_hero("Fencer", hp=5)
+        monsters = [make_monster(f"Goblin{i}", hp=4) for i in range(2)]
+
+        fight = FightLog([hero], monsters)
+        monster_max = 4
+
+        # Attack monster 0 - at full HP -> x2
+        fight.apply_engage_damage(hero, monsters[0], 1)
+        state0 = fight.get_state(monsters[0], Temporality.PRESENT)
+        assert state0.hp == monster_max - 2, "First monster should take x2"
+
+        # Attack monster 1 - also at full HP -> x2
+        fight.apply_engage_damage(hero, monsters[1], 1)
+        state1 = fight.get_state(monsters[1], Temporality.PRESENT)
+        assert state1.hp == monster_max - 2, "Second monster should also take x2"
+
+        # Attack monster 0 again - now damaged -> normal
+        fight.apply_engage_damage(hero, monsters[0], 1)
+        state0 = fight.get_state(monsters[0], Temporality.PRESENT)
+        assert state0.hp == monster_max - 3, "First monster should take normal damage now"

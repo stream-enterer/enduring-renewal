@@ -747,3 +747,18 @@ class FightLog:
 
         # Add pending poison damage
         self._pending.append(PendingDamage(target, amount, source))
+
+    def apply_engage_damage(self, source: Entity, target: Entity, base_damage: int, is_pending: bool = False):
+        """Apply damage with Engage keyword.
+
+        Engage deals x2 damage against targets at full HP.
+        Once they're damaged (HP < maxHP), no multiplier applies.
+
+        Note: Engage also works on heals/shields (x2 vs full HP ally),
+        but this method is specifically for damage.
+        """
+        state = self._states[target]
+        multiplier = 2 if state.hp == state.max_hp else 1
+        total_damage = base_damage * multiplier
+
+        self.apply_damage(source, target, total_damage, is_pending)
