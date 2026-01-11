@@ -177,10 +177,10 @@
     "spy",
     "dejavu",
     "annul",
-    "possessed"
+    "possessed",
+    "duplicate"
   ],
   "blocked": {
-    "meta_copy_buff": ["duplicate"],
     "roll_phase": ["cantrip", "sticky"],
     "trait_system": ["dispel"],
     "spell_tracking": ["singleCast", "cooldown", "deplete", "channel", "spellRescue", "future"],

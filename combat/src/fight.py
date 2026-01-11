@@ -1904,6 +1904,10 @@ class FightLog:
         if calculated_side.has_keyword(Keyword.ANNUL):
             self.apply_annul(target)
 
+        # DUPLICATE: copy this side onto all allied sides for one turn
+        if calculated_side.has_keyword(Keyword.DUPLICATE):
+            self.apply_duplicate(entity, calculated_side)
+
         # Note: POSSESSED is handled at the effect type determination level.
         # It inverts the "friendly" flag, affecting targeting in the full game.
         # In our simplified system where targets are explicit, possessed allows
@@ -1963,6 +1967,42 @@ class FightLog:
         )
         buff = Buff(personal=affect_sides, turns_remaining=1)
         state.add_buff(buff)
+
+    def apply_duplicate(self, source: Entity, calculated_side: "Side"):
+        """Apply duplicate buff to all friendly entities - all their sides become this side.
+
+        The buff lasts for 1 turn. Used by the DUPLICATE keyword which copies
+        the used side onto all allied sides.
+
+        This affects ALL friendly entities (same team as source), including the source itself.
+
+        Args:
+            source: The entity that used the duplicate side
+            calculated_side: The calculated side to copy (effect type + value + keywords)
+        """
+        from .triggers import Buff, AffectSides, ReplaceWith
+        from .dice import Keyword
+
+        # Create a copy of the calculated side to use for replacement
+        # Strip the DUPLICATE keyword itself to avoid infinite recursion issues
+        side_copy = calculated_side.copy()
+        if Keyword.DUPLICATE in side_copy.keywords:
+            side_copy.keywords.discard(Keyword.DUPLICATE)
+
+        # Get all friendly entities (same team as source)
+        team = self.heroes if source.team == Team.HERO else self.monsters
+        for ally in team:
+            ally_state = self._states[ally]
+            if ally_state.is_dead:
+                continue
+
+            # Apply buff that replaces all sides with the copied side
+            affect_sides = AffectSides(
+                conditions=None,
+                effects=ReplaceWith(side_copy.copy())  # Copy for each entity
+            )
+            buff = Buff(personal=affect_sides, turns_remaining=1)
+            ally_state.add_buff(buff)
 
     def get_most_recent_die_effect(self) -> Optional[SideState]:
         """Get the most recently used die's side state (for copycat keyword)."""

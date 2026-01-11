@@ -9729,3 +9729,214 @@ class TestPossessed:
 
         state = fight.get_state(monster, Temporality.PRESENT)
         assert state.hp == 8  # 6 + 2 heal
+
+
+class TestDuplicate:
+    """Tests for DUPLICATE keyword - copy this side onto all allied sides for one turn.
+
+    DUPLICATE applies a buff to ALL friendly entities (same team as source) that
+    replaces ALL their sides with a copy of the used side for one turn.
+
+    Key behavior:
+    - Affects all allies (including the source itself)
+    - Replaces entire side (effect type, value, keywords)
+    - DUPLICATE keyword itself is stripped from the copy
+    - Effect lasts one turn
+    """
+
+    def test_duplicate_affects_all_allies(self):
+        """DUPLICATE replaces all ally sides with the used side."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Duplicator", hp=5)
+        hero2 = make_hero("Receiver1", hp=10)
+        hero3 = make_hero("Receiver2", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero1, hero2, hero3], [monster])
+
+        # Hero1 has duplicate + engage damage 3
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.DUPLICATE, Keyword.ENGAGE}))
+
+        # Hero2 has basic heal
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.HEAL, 1))
+
+        # Hero3 has basic shield
+        hero3.die = Die()
+        hero3.die.set_all_sides(Side(EffectType.SHIELD, 2))
+
+        # Before duplicate, allies have different sides
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+        side_state2 = state2.get_side_state(0, fight)
+        assert side_state2.calculated_effect.effect_type == EffectType.HEAL
+
+        state3 = fight.get_state(hero3, Temporality.PRESENT)
+        side_state3 = state3.get_side_state(0, fight)
+        assert side_state3.calculated_effect.effect_type == EffectType.SHIELD
+
+        # Hero1 uses duplicate on monster
+        fight.use_die(hero1, 0, monster)
+
+        # After duplicate, all ally sides should be DAMAGE 3 with ENGAGE (no DUPLICATE)
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+        side_state2 = state2.get_side_state(0, fight)
+        assert side_state2.calculated_effect.effect_type == EffectType.DAMAGE
+        assert side_state2.calculated_effect.calculated_value == 3
+        assert Keyword.ENGAGE in side_state2.calculated_effect.keywords
+        assert Keyword.DUPLICATE not in side_state2.calculated_effect.keywords
+
+        state3 = fight.get_state(hero3, Temporality.PRESENT)
+        side_state3 = state3.get_side_state(0, fight)
+        assert side_state3.calculated_effect.effect_type == EffectType.DAMAGE
+        assert side_state3.calculated_effect.calculated_value == 3
+        assert Keyword.ENGAGE in side_state3.calculated_effect.keywords
+        assert Keyword.DUPLICATE not in side_state3.calculated_effect.keywords
+
+    def test_duplicate_affects_source_too(self):
+        """DUPLICATE also affects the source entity."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Duplicator", hp=5)
+        hero2 = make_hero("Receiver", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1's die: side 0 has duplicate damage 3, side 1 has heal 1
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.HEAL, 1))  # Initialize all sides first
+        hero1.die.set_side(0, Side(EffectType.DAMAGE, 3, {Keyword.DUPLICATE}))
+
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.SHIELD, 2))
+
+        # Before duplicate, hero1's side 1 is heal
+        state1 = fight.get_state(hero1, Temporality.PRESENT)
+        side_state1 = state1.get_side_state(1, fight)
+        assert side_state1.calculated_effect.effect_type == EffectType.HEAL
+
+        # Hero1 uses duplicate
+        fight.use_die(hero1, 0, monster)
+
+        # After duplicate, hero1's OTHER sides should also be DAMAGE 3
+        state1 = fight.get_state(hero1, Temporality.PRESENT)
+        side_state1 = state1.get_side_state(1, fight)
+        assert side_state1.calculated_effect.effect_type == EffectType.DAMAGE
+        assert side_state1.calculated_effect.calculated_value == 3
+
+    def test_duplicate_expires_after_turn(self):
+        """DUPLICATE buff expires after one turn."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Duplicator", hp=5)
+        hero2 = make_hero("Receiver", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 has duplicate damage 3
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.DUPLICATE}))
+
+        # Hero2 has heal
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.HEAL, 2))
+
+        # Hero1 uses duplicate
+        fight.use_die(hero1, 0, monster)
+
+        # Hero2 now has damage
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+        side_state2 = state2.get_side_state(0, fight)
+        assert side_state2.calculated_effect.effect_type == EffectType.DAMAGE
+
+        # Next turn
+        fight.next_turn()
+
+        # Hero2 should have heal again
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+        side_state2 = state2.get_side_state(0, fight)
+        assert side_state2.calculated_effect.effect_type == EffectType.HEAL
+
+    def test_duplicate_does_not_copy_duplicate_keyword(self):
+        """DUPLICATE keyword itself is stripped from the copy."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Duplicator", hp=5)
+        hero2 = make_hero("Receiver", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 has only DUPLICATE
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.DUPLICATE}))
+
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.HEAL, 2))
+
+        # Hero1 uses duplicate
+        fight.use_die(hero1, 0, monster)
+
+        # Hero2 should NOT have DUPLICATE keyword
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+        side_state2 = state2.get_side_state(0, fight)
+        assert Keyword.DUPLICATE not in side_state2.calculated_effect.keywords
+        # But should have the effect type and value
+        assert side_state2.calculated_effect.effect_type == EffectType.DAMAGE
+        assert side_state2.calculated_effect.calculated_value == 3
+
+    def test_duplicate_does_not_affect_enemies(self):
+        """DUPLICATE only affects friendly entities."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Duplicator", hp=5)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero], [monster])
+
+        # Hero has duplicate damage 3
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.DUPLICATE}))
+
+        # Monster has heal
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.HEAL, 5))
+
+        # Hero uses duplicate on monster
+        fight.use_die(hero, 0, monster)
+
+        # Monster should still have heal (not affected)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        side_state = state.get_side_state(0, fight)
+        assert side_state.calculated_effect.effect_type == EffectType.HEAL
+        assert side_state.calculated_effect.calculated_value == 5
+
+    def test_duplicate_copies_all_keywords(self):
+        """DUPLICATE copies all keywords except DUPLICATE itself."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Duplicator", hp=5)
+        hero2 = make_hero("Receiver", hp=10)
+        monster = make_monster("Goblin", hp=20)
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 has duplicate + engage + growth
+        hero1.die = Die()
+        hero1.die.set_all_sides(Side(EffectType.DAMAGE, 3, {Keyword.DUPLICATE, Keyword.ENGAGE, Keyword.GROWTH}))
+
+        hero2.die = Die()
+        hero2.die.set_all_sides(Side(EffectType.HEAL, 1))
+
+        # Hero1 uses duplicate
+        fight.use_die(hero1, 0, monster)
+
+        # Hero2 should have ENGAGE and GROWTH but not DUPLICATE
+        state2 = fight.get_state(hero2, Temporality.PRESENT)
+        side_state2 = state2.get_side_state(0, fight)
+        assert Keyword.ENGAGE in side_state2.calculated_effect.keywords
+        assert Keyword.GROWTH in side_state2.calculated_effect.keywords
+        assert Keyword.DUPLICATE not in side_state2.calculated_effect.keywords

@@ -16,8 +16,9 @@
 | `side_replacement` | stasis, enduring, dogma, resilient | 4 |
 | `side_injection` | inflictSelfShield, inflictBoned, inflictExert, inflictPain, inflictDeath, inflictSingleUse, inflictNothing, inflictInflictNothing, inflictInflictDeath | 9 |
 | `meta_copy_advanced` | share, spy, dejavu, annul, possessed | 5 |
+| `meta_copy_buff` | duplicate | 1 |
 
-**Total implemented: 56 keywords**
+**Total implemented: 57 keywords**
 
 ### Dependency Graph
 
@@ -27,7 +28,7 @@ Buff System Tree (depends on buff_system ✅):
     ├─► #2 side_replacement (stasis, enduring...)  [4 kw] ✅
     ├─► #3 side_injection (inflict*)               [9 kw] ✅
     ├─► #4 meta_copy_advanced (share, spy...)      [5 kw] ✅
-    ├─► #5 meta_copy_buff (duplicate)              [1 kw]
+    ├─► #5 meta_copy_buff (duplicate)              [1 kw] ✅
     └─► #6 group_buff_system (lead)                [1 kw]
 
 Independent Systems (no prerequisites):
@@ -106,8 +107,8 @@ Independent Systems (no prerequisites):
 
 <!-- Format: "Next: #N (name)" or "COMPLETE - Only permanently blocked remain" -->
 
-**Next: #5 (meta_copy_buff)**
-- Implement 1 keyword: duplicate
-- Java: Keyword.java:267-273
-- Post-effect that applies Buff with AffectSides+AddKeyword to ALL allied sides
+**Next: #6 (group_buff_system)**
+- Implement 1 keyword: lead
+- Java: Keyword.java:151-159
+- Post-effect that gives +N pips to allied sides matching this side's EffType (damage/heal/shield)
 - Estimated: 1 keyword unblocked
