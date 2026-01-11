@@ -1,90 +1,90 @@
-# Next Steps After Keywords Complete
+# Next Steps: Infrastructure Implementation Phase
 
-## Current Status
+All unblocked keywords complete. 112 implemented, ~72 blocked across 22 infrastructure categories.
 
-- **Implemented:** 88 keywords
-- **Blocked:** 23 keywords (on 10 infrastructure systems)
-- **Remaining:** 80 keywords
+## Phase 1: Layers 1-2 Verification (Optional)
 
-## Phase 1: Complete Remaining Keywords
+Can verify now without infrastructure:
 
-Continue with "continue" workflow until `remaining = 0` (excluding blocked).
+- **Layer 1 (Combined):** engine, paxin, engarged, cruesh
+- **Layer 2 (Variants):** antiEngage, halveEngage, swapCruel, groupGrowth
 
-## Phase 2: Funnel Sieve Verification
+These test base + variant systems already implemented.
 
-Run ~16 gameplay tests to verify implementations:
+## Phase 2: Infrastructure Implementation
 
-**Layer 1: Combined Keywords**
-- `engine` → verifies engage, pristine, x4 stacking
-- `paxin` → verifies pair, chain, XOR logic
-- `engarged` → verifies engage, charged
-- `cruesh` → verifies cruel, flesh
+### Recommended Order
 
-**Layer 2: Variant Keywords**
-- `antiEngage` → verifies anti* prefix
-- `halveEngage` → verifies halve* prefix
-- `swapCruel` → verifies swap* prefix
-- `groupGrowth` → verifies group* prefix
+Based on: keyword count, dependency chains, implementation complexity.
 
-**Layer 3-4:** Depends on infrastructure being implemented first.
+| Order | System | Keywords | Unlocks | Complexity |
+|-------|--------|----------|---------|------------|
+| 1 | `buff_system` | weaken, boost, vulnerable, smith, permaBoost, selfVulnerable, duplicate, buffed, affected, skill (10) | skill → trill | Medium |
+| 2 | `status_effect_system` | poison, regen, cleanse, selfPoison, selfRegen, selfCleanse, plague, acidic (8) | - | Medium |
+| 3 | `usage_tracking` | doubleUse, quadUse, hyperUse, rite (4) | - | Low |
+| 4 | `turn_start_processing` | shifter, lucky, critical, fluctuate, fumble (5) | - | Medium |
+| 5 | `target_tracking` | focus, duel (2) | duel → halveDuel, duegue | Low |
+| 6 | `turn_tracking` | patient, era, minusEra (3) | era → minusEra | Low |
+| 7 | `spell_tracking` | singleCast, cooldown, deplete, channel, spellRescue, future (6) | - | Medium |
+| 8 | `side_replacement` | stasis, enduring, dogma, resilient (4) | - | Medium |
+| 9 | `meta_copy_advanced` | share, spy, dejavu, annul, possessed (5) | - | High |
+| 10+ | Remaining systems | See CLAUDE.md Blocked Infrastructure Catalog | - | Varies |
 
-## Phase 3: Implement Blocked Infrastructure
+### Dependency Chains
 
-Each infrastructure system unlocks keywords:
+```
+buff_system.skill → trill
+target_tracking.duel → halveDuel, duegue
+target_tracking.focus → underocus
+```
 
-| Infrastructure | Blocked Keywords | Priority |
-|----------------|------------------|----------|
-| turn_tracking | patient, era, minusEra | Medium |
-| target_tracking | focus, duel | Medium |
-| item_system | hoard, fashionable, equipped | Low |
-| poison_tracking | plague, acidic | Medium |
-| buff_tracking | buffed, affected, skill | High |
-| usage_tracking | doubleUse, quadUse, hyperUse, rite | High |
-| entity_summoning | boned, hyperBoned | Low |
+### Per-System Workflow
 
-**Dependency chain:**
-- `duel` blocks → halveDuel, duegue
-- `focus` blocks → underocus
-- `skill` blocks → trill
+For each system:
 
-**Suggested order:**
-1. buff_tracking (unlocks 3 keywords + enables skill → trill)
-2. usage_tracking (unlocks 4 keywords)
-3. turn_tracking (unlocks 3 keywords)
-4. target_tracking (unlocks 2 keywords + enables duel variants)
-5. poison_tracking (unlocks 2 keywords)
-6. entity_summoning (unlocks 2 keywords)
-7. item_system (unlocks 3 keywords, lowest priority)
+1. **Study Java** - Find relevant classes (Poison.java, Buff.java, etc.)
+2. **Design Python** - Minimal implementation matching Java behavior
+3. **Test infrastructure** - Test system mechanics independent of keywords
+4. **Implement keywords** - Standard keyword workflow
+5. **Update tracking** - Move from `blocked` to `implemented` in KEYWORDS.json
+6. **Commit** - `Implement <system> infrastructure with <keywords>`
 
-## Phase 4: Complete Blocked Keywords
+## Phase 3: Layers 3-4 Verification
 
-After each infrastructure is implemented:
-1. Move keywords from `blocked` to remaining
-2. Implement using standard workflow
-3. Update KEYWORDS.json
+After infrastructure complete:
 
-## Phase 5: Full Funnel Sieve
+- **Layer 3 (Infrastructure):** poison, weaken, boned, inflictPain
+- **Layer 4 (Edge cases):** stacking, parameterized, self-targeting, death triggers
 
-Run complete verification including:
-- Layer 3: Infrastructure keywords (poison, weaken, boned, inflictPain)
-- Layer 4: Edge cases (stacking, parameterized, self-targeting, death triggers)
+## Phase 4: Other Systems
 
-## Phase 6: Other Systems
+After keywords complete:
 
-After keywords complete, potential next tasks:
-- **Items** - Equipment, consumables, artifacts
-- **Heroes** - Character abilities, classes
-- **Monsters** - Enemy types, behaviors
-- **Levels** - Dungeon generation, encounters
+| System | Source Files | Notes |
+|--------|--------------|-------|
+| Items | Item.java, Equipment.java | hoard, fashionable, equipped, potion keywords depend on this |
+| Heroes | Hero.java, HeroType.java | Character abilities |
+| Monsters | Monster.java, MonsterType.java | Enemy types |
+| Levels | Level.java, Encounter.java | Dungeon structure |
 
-Each would use the workflow template with its own:
-- Authoritative source (Item.java, Hero.java, etc.)
-- State JSON (ITEMS.json, HEROES.json, etc.)
+Each uses workflow template with its own:
+- Authoritative source (Java files)
+- State JSON (ITEMS.json, etc.)
 - Implementation patterns
 - Test patterns
 
-## Notes
+## Quick Reference
 
-- The workflow template in this folder can be adapted for any of these systems
-- Use ADAPTATION_GUIDE.md to verify adaptations
-- Prioritize systems that unblock other work
+**Current blocked count:** ~72 keywords
+
+**Highest-impact systems:**
+1. buff_system (10 keywords + enables trill)
+2. status_effect_system (8 keywords)
+3. spell_tracking (6 keywords)
+4. turn_start_processing (5 keywords)
+5. meta_copy_advanced (5 keywords)
+
+**Special cases:**
+- `effect_types`: heal, shield, damage - verify if already exist
+- `not_implementable`: removed - skip (deprecated)
+- `validation_only`: permissive - targeting validation only

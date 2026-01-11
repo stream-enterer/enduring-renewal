@@ -22,73 +22,183 @@ Workflow:
 `combat/KEYWORDS.json` tracks:
 - `verified`: keywords confirmed correct via human gameplay testing (subset of implemented)
 - `implemented`: keywords with passing tests
-- `blocked`: keywords skipped due to missing infrastructure (maps reason → keyword list)
-- `all`: complete enum (191 keywords) - **must match Java Keyword.java enum**
+- `blocked`: keywords grouped by missing infrastructure (maps reason → keyword list)
+- `all`: complete enum (184 keywords) - **must match Java Keyword.java enum**
 
 ```
 remaining = all - implemented - blocked
 verified ⊆ implemented (verified is always a subset)
 ```
 
-**Two-tier verification:**
-1. **Implemented** = automated tests pass (required for progress)
-2. **Verified** = human confirmed in-game behavior matches (batch at end)
+## Workflow
 
-Agent implements all keywords → tests pass → added to `implemented`.
-After ALL keywords implemented → human runs funnel sieve verification (see below).
+**Token efficiency:** Read `KEYWORDS.json` for current state. Only grep/read `fight.py` or `dice.py` sections when implementing - patterns below are starting points.
 
-**Safety invariant:** Every keyword in `all` is either implemented, blocked, or remaining. Nothing is lost.
+When asked to "continue":
 
-## On "continue"
+1. **Read `combat/KEYWORDS.json`** - Compute `remaining = all - implemented - blocked`
+2. **If remaining is non-empty** - Implement unblocked keywords first (simpler)
+3. **If only blocked remain** - Use infrastructure-first workflow below
 
-**Token efficiency:** Do NOT read fight.py, dice.py, or test_keyword.py in full. Patterns below are sufficient. Only grep/read specific sections if debugging.
+### Infrastructure-First Workflow
 
-1. Read `combat/KEYWORDS.json`, compute remaining keywords
-2. Pick next keyword using **soft priority**:
-   - **First**: Base keywords before variants (implement `engage` before `antiEngage`)
-   - **Second**: Simple conditionals (x2 multipliers) before complex (combined, parameterized)
-   - **Third**: Keywords whose infrastructure exists before those that need new systems
-   - **Flexible**: Can deviate if related keywords make sense to batch
-3. For each keyword:
-   - **Read Java source first** - `Keyword.java` and `conditionalBonus/` are authoritative. Patterns in this doc are examples, not specs.
-   - Add enum value to `src/dice.py` (SCREAMING_SNAKE_CASE: `antiEngage` → `ANTI_ENGAGE`)
-     ```python
-     # In dice.py, add to class Keyword(Enum): around line 10
-     ANTI_ENGAGE = auto()  # x2 if target NOT at full HP
-     ```
-   - Write failing test in `tests/test_keyword.py`
-   - Implement in appropriate location (see Pipeline section)
-   - Run `uv run pytest` - must pass
-   - Add to `implemented` array in `KEYWORDS.json`
-4. Commit: `Implement <keyword> keyword` or `Implement <x>, <y>, <z> keywords`
-5. Report: keywords implemented, keywords skipped (and why), remaining count
+When only blocked keywords remain:
+
+1. **Select infrastructure** using priority:
+   - **First**: Systems with no dependencies and high keyword count
+   - **Second**: Systems that unblock dependency chains (e.g., `duel` unblocks `halveDuel`, `duegue`)
+   - **Third**: Systems with fewer keywords / lower impact
+2. **For each infrastructure system:**
+   - Study Java implementation of that system
+   - Design Python equivalent
+   - Implement core infrastructure
+   - Implement all keywords that depend on it
+   - Move keywords from `blocked` to `implemented`
+3. **Commit**: `Implement <system> infrastructure with <x>, <y>, <z> keywords`
+4. **Report**: system implemented, keywords unblocked, remaining blocked count
 
 **Error recovery:**
-- If tests fail → fix implementation, don't add to `implemented` until green
-- If keyword doesn't fit patterns → add to `blocked` with reason, continue with others
-- If unsure about Java behavior → add to `blocked` with reason "needs_clarification", ask user
-- Never leave partial implementations uncommitted
+- If system is complex → implement incrementally, unblock keywords as each piece lands
+- If system depends on another blocked system → note dependency, move to different system
+- If unsure about Java behavior → ask user for clarification
 
-## Existing Implementations
+## Blocked Infrastructure Catalog
 
-These keywords are already implemented and tested. They stay where they are:
+Complete list from `KEYWORDS.json`. Priority based on: keyword count, dependency chains, implementation complexity.
 
-| Keywords | Location | Notes |
-|----------|----------|-------|
-| pair, copycat | `EntityState._process_meta_keywords()` | Meta-keywords that modify the side before value calculation |
-| manaGain, growth, singleUse | `FightLog.use_die()` | Effects applied after/alongside main effect |
-| engage, cruel, pristine, deathwish, armoured, moxie, bully, reborn | `FightLog._apply_conditional_keyword_bonuses()` | Conditional x2 multipliers |
-| petrify | `FightLog` | Transforms sides to stone |
-| rampage, rescue | `FightLog` | Death-trigger reuse |
-| ranged | `FightLog` | Targeting modifier |
+### High Priority (High Impact / Low Complexity)
 
-## Implementation Patterns
+| System | Keywords | Notes |
+|--------|----------|-------|
+| `status_effect_system` | poison, regen, cleanse, selfPoison, selfRegen, selfCleanse, plague, acidic (8) | Needs turn-end processing, status stacking |
+| `buff_system` | weaken, boost, vulnerable, smith, permaBoost, selfVulnerable, duplicate, buffed, affected, skill (10) | Temporary modifiers; `skill` unblocks `trill` |
+| `usage_tracking` | doubleUse, quadUse, hyperUse, rite (4) | Per-turn/per-combat use counters |
+| `turn_start_processing` | shifter, lucky, critical, fluctuate, fumble (5) | Turn-start hooks, side modification |
 
-### Conditional Keywords (most common)
+### Medium Priority (Moderate Complexity)
 
-Add to `FightLog._apply_conditional_keyword_bonuses()` at line ~1267 in fight.py.
+| System | Keywords | Notes |
+|--------|----------|-------|
+| `target_tracking` | focus, duel (2) | Track last/locked target; `duel` unblocks `halveDuel`, `duegue` |
+| `turn_tracking` | patient, era, minusEra (3) | Count turns elapsed |
+| `spell_tracking` | singleCast, cooldown, deplete, channel, spellRescue, future (6) | Spell-specific counters and triggers |
+| `side_replacement` | stasis, enduring, dogma, resilient (4) | Preserve/restore side after use |
+| `meta_copy_advanced` | share, spy, dejavu, annul, possessed (5) | Advanced side copying/modification |
 
-**Method signature (available variables):**
+### Lower Priority (Complex / Low Keyword Count)
+
+| System | Keywords | Notes |
+|--------|----------|-------|
+| `side_injection` | inflictSelfShield, inflictBoned, inflictExert, inflictPain, inflictDeath, inflictSingleUse, inflictNothing, inflictInflictNothing, inflictInflictDeath (9) | Modify target's dice |
+| `entity_summoning` | boned, hyperBoned (2) | Create new entities mid-combat |
+| `item_system` | hoard, fashionable, equipped, potion (4) | Requires item infrastructure |
+| `max_hp_modification` | vitality, wither (2) | Modify max HP |
+| `side_modification` | hypnotise (1) | Change side properties |
+| `trait_system` | dispel (1) | Trait removal |
+| `group_buff_system` | lead (1) | Team-wide buffs |
+| `tactic_system` | tactical (1) | Tactic interaction |
+| `roll_phase` | cantrip, sticky (2) | Roll/reroll modification |
+
+### Dependency Chains
+
+These keywords depend on other blocked keywords:
+- `depends_on_duel`: halveDuel, duegue (2) - Blocked until `duel` implemented
+- `depends_on_focus`: underocus (1) - Blocked until `focus` implemented
+- `depends_on_skill`: trill (1) - Blocked until `skill` implemented
+
+### Special Cases
+
+| System | Keywords | Notes |
+|--------|----------|-------|
+| `effect_types` | heal, shield, damage (3) | Core effect types - may already exist, needs verification |
+| `validation_only` | permissive (1) | Targeting validation only |
+| `not_implementable` | removed (1) | Deprecated, skip |
+
+## Infrastructure Implementation Patterns
+
+**Note:** These patterns are starting points, not specs. Always study the Java source first - actual implementation may differ.
+
+### Pattern 1: Turn-Based Processing
+
+For systems like `status_effect_system`, `turn_start_processing`:
+
+```python
+# In FightLog, extend next_turn() or add hooks:
+def next_turn(self):
+    self._process_turn_start_effects()  # shifter, lucky, critical
+    # ... existing turn logic ...
+    self._process_turn_end_effects()    # poison, regen
+
+def _process_turn_end_effects(self):
+    for entity in self.all_entities:
+        state = self.get_state(entity, Temporality.PRESENT)
+        for status in state.statuses:
+            status.apply_end_of_turn(self, entity)
+```
+
+### Pattern 2: Status/Buff Tracking
+
+For `buff_system`, `status_effect_system`:
+
+```python
+# In EntityState, add status tracking:
+@dataclass
+class EntityState:
+    # ... existing fields ...
+    statuses: dict[StatusType, int] = field(default_factory=dict)
+    buffs: dict[BuffType, int] = field(default_factory=dict)
+
+    def has_status(self, status_type: StatusType) -> bool:
+        return self.statuses.get(status_type, 0) > 0
+
+    def add_status(self, status_type: StatusType, stacks: int = 1):
+        self.statuses[status_type] = self.statuses.get(status_type, 0) + stacks
+```
+
+### Pattern 3: Usage Tracking
+
+For `usage_tracking`:
+
+```python
+# Track uses per die per turn/combat
+@dataclass
+class DieState:
+    uses_this_turn: int = 0
+    uses_this_combat: int = 0
+
+# In use_die():
+def use_die(self, source: Entity, side_index: int, target: Entity):
+    die_state = self.get_die_state(source)
+    if side.has_keyword(Keyword.DOUBLE_USE):
+        if die_state.uses_this_turn >= 2:
+            return  # Already used twice
+    # ... normal use logic ...
+    die_state.uses_this_turn += 1
+```
+
+### Pattern 4: Target Tracking
+
+For `target_tracking`:
+
+```python
+# In FightLog, track targeting history
+@dataclass
+class FightLog:
+    last_target: dict[Entity, Entity] = field(default_factory=dict)
+    duel_target: dict[Entity, Entity] = field(default_factory=dict)
+
+    def record_target(self, source: Entity, target: Entity):
+        self.last_target[source] = target
+```
+
+## Implementation Patterns (Keywords)
+
+These patterns are for individual keywords once infrastructure exists.
+
+### Conditional Keywords
+
+Add to `FightLog._apply_conditional_keyword_bonuses()`:
+
 ```python
 def _apply_conditional_keyword_bonuses(
     self, value: int, side: "Side", source_state: EntityState,
@@ -96,64 +206,93 @@ def _apply_conditional_keyword_bonuses(
 ) -> int:
 ```
 
-**Variables you can use:**
+**Variables available:**
 - `value` - current damage/heal value (multiply this)
 - `side` - the Side being used (check `side.has_keyword(...)`)
-- `source_state` - EntityState of attacker (hp, max_hp, shield, is_dead, etc.)
-- `target_state` - EntityState of target
-- `source_entity` / `target_entity` - Entity objects (for identity checks)
+- `source_state` / `target_state` - EntityState objects
+- `source_entity` / `target_entity` - Entity objects
 
-**Pattern:**
-```python
-# In fight.py:_apply_conditional_keyword_bonuses()
-# Add after existing keywords, before "return value"
+### Meta Keywords
 
-if side.has_keyword(Keyword.ENGAGE):
-    if target_state.hp == target_state.max_hp:
-        value *= 2
+Add to `EntityState._process_meta_keywords()`:
 
-if side.has_keyword(Keyword.CRUEL):
-    if target_state.hp <= target_state.max_hp // 2:
-        value *= 2
-
-# Add new conditional keywords here following this pattern
-```
-
-### Meta Keywords (copycat, pair, echo)
-
-Add to `EntityState._process_meta_keywords()` at line ~175 in fight.py.
-
-**Method signature:**
 ```python
 def _process_meta_keywords(self, side_state: "SideState", fight_log: "FightLog" = None):
 ```
 
-**Variables:** `side_state.calculated_effect` (has `.keywords`, `.value`, `.calculated_value`)
+These modify the Side itself before value calculation.
 
-**Pattern:** These modify the Side itself before value calculation. Complex - grep for existing examples.
+### Post-Effect Keywords
 
-### Post-Effect Keywords (growth, singleUse, manaGain)
+Add to `FightLog.use_die()` after main effect:
 
-Add to `FightLog.use_die()` after line ~1255 in fight.py (after main effect, before return).
-
-**Pattern:**
 ```python
-# After the effect is applied, check for post-effect keywords
+# After effect applied
 original_side = die.get_side(side_index)
 if original_side.has_keyword(Keyword.GROWTH):
-    original_side.apply_growth()  # +1 to base value
+    original_side.apply_growth()
 ```
-
-### Non-Conditional Keywords
-
-If a keyword doesn't fit the conditional pattern (x2 multiplier based on condition):
-1. Check the Pipeline table to identify correct stage
-2. If stage lacks documentation here → add to `blocked` with reason "needs_pattern_documentation"
-3. Report to user: "Keyword X needs implementation pattern for Y stage"
 
 ## Test Patterns
 
-Helper functions (defined at top of each test file):
+**Note:** Infrastructure test examples show APIs to design, not existing code. Design the API, then implement it.
+
+### Infrastructure Tests
+
+Test the system, not just individual keywords:
+
+```python
+class TestStatusEffectSystem:
+    """Test status effect infrastructure."""
+
+    def test_poison_stacks(self):
+        """Poison stacks should accumulate."""
+        hero = make_hero("Fighter", hp=10)
+        fight = FightLog([hero], [])
+
+        fight.apply_status(hero, StatusType.POISON, 2)
+        fight.apply_status(hero, StatusType.POISON, 1)
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.get_status_stacks(StatusType.POISON) == 3
+
+    def test_poison_damages_on_turn_end(self):
+        """Poison deals damage equal to stacks at turn end."""
+        hero = make_hero("Fighter", hp=10)
+        fight = FightLog([hero], [])
+
+        fight.apply_status(hero, StatusType.POISON, 3)
+        fight.next_turn()
+
+        state = fight.get_state(hero, Temporality.PRESENT)
+        assert state.hp == 7  # 10 - 3 poison
+```
+
+### Keyword Tests
+
+Test the keyword using the infrastructure:
+
+```python
+class TestPoison:
+    """Test poison keyword."""
+
+    def test_poison_applies_stacks(self):
+        """Poison side applies poison stacks to target."""
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        hero.die = Die()
+        poison_side = Side(EffectType.STATUS, 2, {Keyword.POISON})
+        hero.die.set_all_sides(poison_side)
+
+        fight.use_die(hero, 0, monster)
+
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.get_status_stacks(StatusType.POISON) == 2
+```
+
+### Helpers
 
 ```python
 def make_hero(name: str, hp: int = 5) -> Entity:
@@ -163,68 +302,9 @@ def make_monster(name: str, hp: int = 4) -> Entity:
     return Entity(EntityType(name, hp, EntitySize.HERO), Team.MONSTER)
 ```
 
-**Note:** These are duplicated per test file (minor DRY violation, acceptable for test isolation).
-
-**Where to add tests:** Add a new `class Test<Keyword>:` to `tests/test_keyword.py` (one class per keyword).
-
-**Common FightLog setup methods:**
-- `fight.apply_damage(source, target, amount, is_pending=False)` - deal damage
-- `fight.apply_shield(target, amount)` - grant shields
-- `fight.get_state(entity, Temporality.PRESENT)` - get current EntityState
-
-### Pattern 1: Full Integration Test (preferred)
-
-```python
-def test_pristine_full_hp(self):
-    """Pristine deals x2 damage when source is at full HP."""
-    from src.dice import Die, Side, Keyword
-    from src.effects import EffectType
-
-    hero = make_hero("Fighter", hp=5)
-    monster = make_monster("Goblin", hp=10)
-    fight = FightLog([hero], [monster])
-
-    # Setup: Die with pristine keyword
-    hero.die = Die()
-    pristine_side = Side(EffectType.DAMAGE, 2, {Keyword.PRISTINE})
-    hero.die.set_all_sides(pristine_side)
-
-    # Act: Use the die
-    fight.use_die(hero, 0, monster)
-
-    # Assert: x2 damage (2 * 2 = 4)
-    state = fight.get_state(monster, Temporality.PRESENT)
-    assert state.hp == 6
-```
-
-### Pattern 2: Condition Not Met
-
-```python
-def test_pristine_no_bonus_when_damaged(self):
-    """Pristine deals normal damage when source is below full HP."""
-    from src.dice import Die, Side, Keyword
-    from src.effects import EffectType
-
-    hero = make_hero("Fighter", hp=5)
-    monster = make_monster("Goblin", hp=10)
-    fight = FightLog([hero], [monster])
-
-    # Damage the hero first (no longer at full HP)
-    fight.apply_damage(monster, hero, 1, is_pending=False)
-
-    hero.die = Die()
-    pristine_side = Side(EffectType.DAMAGE, 2, {Keyword.PRISTINE})
-    hero.die.set_all_sides(pristine_side)
-
-    fight.use_die(hero, 0, monster)
-    # No x2, just base damage
-    state = fight.get_state(monster, Temporality.PRESENT)
-    assert state.hp == 8  # 10 - 2 = 8
-```
-
 ## Keyword Pipeline
 
-Keywords run at different stages. **Check which stage before implementing.**
+Keywords run at different stages:
 
 ```
 Full resolution order:
@@ -241,115 +321,23 @@ Full resolution order:
 |-------|------|------------------|--------------|
 | Targeting | Before use | eliminate, heavy, generous, scared, picky | Restricts valid targets |
 | Roll | During rolling | cantrip, sticky | Affects roll behavior |
-| Meta | Before value calc | copycat, pair, echo | Transforms the Side (copy keywords/pips) |
-| Conditional | Value calculation | engage, pristine, bloodlust | Multiplies (x2) or adds (+N) to value |
+| Meta | Before value calc | copycat, pair, echo | Transforms the Side |
+| Conditional | Value calculation | engage, pristine, bloodlust | Multiplies (x2) or adds (+N) |
 | Post-effect | After resolution | growth, singleUse, manaGain | Modifies die, grants mana |
 | Turn-timing | Turn start/end | poison, regen, shifter, fluctuate | Per-turn effects |
 
-**How to identify stage:**
-- Restricts which targets are valid → Targeting
-- Affects rolling/rerolling → Roll
-- Copies/transforms the side itself → Meta
-- Multiplies value (x2) or adds pips (+N) → Conditional
-- Happens after the effect resolves → Post-effect
-- Says "each turn" or "at end of turn" → Turn-timing
+## Quick Reference
 
-## Infrastructure Dependencies
+**Variant prefixes:** `anti*` (invert), `halve*` (x0.5), `swap*` (source↔target), `group*` (all allies), `minus*` (negate)
 
-Some keywords need systems that may not exist yet. **Check before implementing.**
-
-| Infrastructure | Keywords That Need It | Status |
-|----------------|----------------------|--------|
-| Turn-end processing | poison, regen | Check `FightLog` for turn hooks |
-| Turn-start processing | shifter, fluctuate, lucky, critical, fumble | Check `FightLog` for turn hooks |
-| Buff/debuff system | weaken, boost, vulnerable, smith, permaBoost | Check for temporary modifier system |
-| Entity summoning | boned, hyperBoned | Check for summon capability |
-| Side injection | inflict* keywords | Check for modifying target's dice |
-| Usage tracking | doubleUse, quadUse, hyperUse, flurry | Check for per-turn usage counter |
-
-**If infrastructure is missing:**
-1. Add keyword to `blocked` in KEYWORDS.json under the infrastructure reason:
-   ```json
-   "blocked": {
-     "turn_end_processing": ["poison", "regen"],
-     "buff_system": ["weaken", "boost"]
-   }
-   ```
-2. Continue with other keywords that don't need the missing infrastructure
-3. In final report, mention blocked keywords and why
-
-## Variant Keywords
-
-Variants modify base keywords. **Invert/modify the condition inline:**
-
-| Prefix | What It Does | Example |
-|--------|--------------|---------|
-| `anti*` | Inverts condition | antiEngage = x2 if target NOT full HP |
-| `halve*` | x0.5 instead of x2 | halveEngage = x0.5 if target full HP |
-| `swap*` | Swaps source/target | swapEngage = x2 if SOURCE full HP |
-| `group*` | Applies to all allies | groupGrowth = all allies get growth |
-| `minus*` | Inverts bonus (+N → -N) | minusFlesh = -1 per HP I have |
-
-```python
-# antiEngage → ANTI_ENGAGE: invert the condition
-if side.has_keyword(Keyword.ANTI_ENGAGE):
-    if target_state.hp != target_state.max_hp:  # NOT full HP
-        value *= 2
-
-# halveEngage → HALVE_ENGAGE: same condition, x0.5 (rounded down per Java)
-if side.has_keyword(Keyword.HALVE_ENGAGE):
-    if target_state.hp == target_state.max_hp:
-        value //= 2  # integer division (Java: "x0.5 rounded down")
-
-# swapEngage → SWAP_ENGAGE: check SOURCE instead of TARGET
-if side.has_keyword(Keyword.SWAP_ENGAGE):
-    if source_state.hp == source_state.max_hp:  # SOURCE full HP
-        value *= 2
-```
-
-**Combined keywords** (engarged, engine, paxin):
-
-```python
-# engine → ENGINE: engage AND pristine → x4
-if side.has_keyword(Keyword.ENGINE):
-    engage_met = target_state.hp == target_state.max_hp
-    pristine_met = source_state.hp == source_state.max_hp
-    if engage_met and pristine_met:
-        value *= 4
-```
-
-## Parameter (N) Source
-
-Keywords with "N" in their description get N from the **Side's pip value** unless noted.
-
-```
-hyperGrowth  → +N pips (N = side.pips)
-scared       → target must have N or less HP (N = side.pips)
-pain         → I take N damage (N = side.pips)
-```
-
-**Exceptions (hardcoded values):**
-- `century` → 100 HP (see `ParamCondition.OrMoreHp`)
-- `terminal` → 1 HP (see `ParamCondition.ExactlyHp`)
-- `sixth` → 6th die (not parameterized by pips)
-
-## Keyword Stacking
-
-When multiple conditional keywords apply, they **multiply independently**:
-
-```
-engage (x2) + cruel (x2) = x4 (if both conditions met)
-pristine (x2) + treble = x3 (treble upgrades x2 → x3)
-```
-
-Check `_apply_conditional_keyword_bonuses()` for actual stacking behavior. Tests verify correctness.
+**Parameter (N):** From Side's pip value. Exceptions: `century`=100, `terminal`=1, `sixth`=6th die
 
 ## Project Structure
 
 ```
 decompiled/           # READ-ONLY Java source (reference)
 combat/
-├── KEYWORDS.json     # State tracking only (implemented list)
+├── KEYWORDS.json     # State tracking (implemented, blocked, all)
 ├── src/
 │   ├── dice.py       # Keyword enum, Side, Die
 │   ├── fight.py      # FightLog, EntityState, keyword handling
@@ -373,6 +361,7 @@ uv run pytest -k "keyword_name"     # Filter by name
 | `FightLog.java` | Combat state, die resolution, effect application |
 | `EntState.java` | Entity state snapshots (HP, shields, etc.) |
 | `conditionalBonus/*.java` | How keywords modify values |
+| `Poison.java`, `Buff.java`, etc. | Status/buff implementations |
 
 **How to read Keyword.java:**
 ```java
@@ -383,52 +372,30 @@ pristine(Colours.light, "have full hp", StateConditionType.FullHP, true),
 //                                                                 ^^^^ true = check SOURCE
 ```
 
-Look for `StateConditionType` to understand the condition, and the boolean to know if it checks source or target.
-
 ## Funnel Sieve Verification
 
-After ALL keywords are implemented, run minimal gameplay tests that maximize coverage:
+After ALL keywords implemented (including blocked), run gameplay tests:
 
-**Layer 1: Combined Keywords** (test multiple base keywords at once)
-| Test | Implicitly Verifies |
-|------|---------------------|
-| `engine` | engage, pristine, x4 stacking |
-| `paxin` | pair, chain, XOR logic |
-| `engarged` | engage, charged, condition+bonus |
-| `cruesh` | cruel, flesh, HP-based bonuses |
+**Layer 1-2: Already Verifiable** (all keywords implemented)
+- Combined keywords: engine, paxin, engarged, cruesh
+- Variant keywords: antiEngage, halveEngage, swapCruel, groupGrowth
 
-**Layer 2: Variant Keywords** (test modification system)
-| Test | Implicitly Verifies |
-|------|---------------------|
-| `antiEngage` | anti* prefix, condition inversion |
-| `halveEngage` | halve* prefix, x0.5 multiplier |
-| `swapCruel` | swap* prefix, source/target swap |
-| `groupGrowth` | group* prefix, multi-target effects |
+**Layer 3: Requires Infrastructure** (currently blocked)
+- poison → status_effect_system
+- weaken → buff_system
+- boned → entity_summoning
+- inflictPain → side_injection
 
-**Layer 3: Infrastructure Keywords** (test new systems)
-| Test | Implicitly Verifies |
-|------|---------------------|
-| `poison` | turn-end processing, DoT |
-| `weaken` | buff/debuff system |
-| `boned` | entity summoning |
-| `inflictPain` | side injection |
-
-**Layer 4: Edge Cases** (test interactions)
+**Layer 4: Edge Cases**
 - Multiple keywords on same side (stacking)
 - Parameterized keywords (N from pips)
 - Self-targeting keywords (selfHeal, selfShield)
 - Death triggers (rampage, rescue, deathwish)
 
-**Process:**
-1. If Layer 1 passes → base keywords likely correct
-2. If Layer 2 passes → variant system works
-3. If Layer 3 passes → infrastructure works
-4. If Layer 4 passes → edge cases handled
+## Deferred Tests
 
-Failures at any layer indicate which system needs investigation. Fix and re-test that layer before proceeding.
-
-## Deferred (need infrastructure)
+These tests need additional infrastructure beyond keyword implementation:
 
 - `TestTriggerOrdering.testTriggerHPOrdering` - needs ModifierLib
-- `TestTriggerOrdering.testCreakyJointsSword` - needs Items
+- `TestTriggerOrdering.testCreakyJointsSword` - needs item_system
 - `TestStates.test2hpStates` - needs Save/Load
