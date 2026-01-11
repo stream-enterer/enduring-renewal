@@ -211,6 +211,39 @@ class Keyword(Enum):
     ENDURING = auto()      # When replaced, keeps keywords (loses pips/effect)
     DOGMA = auto()         # When replaced, only pips change (keeps keywords/effect type)
     RESILIENT = auto()     # When replaced, keeps pips (loses keywords/effect)
+    # Side injection keywords - add keywords to all target's sides
+    INFLICT_SELF_SHIELD = auto()  # Add selfShield keyword to all target's sides
+    INFLICT_BONED = auto()        # Add boned keyword to all target's sides
+    INFLICT_EXERT = auto()        # Add exert keyword to all target's sides
+    INFLICT_PAIN = auto()         # Add pain keyword to all target's sides
+    INFLICT_DEATH = auto()        # Add death keyword to all target's sides
+    INFLICT_SINGLE_USE = auto()   # Add singleUse keyword to all target's sides
+    INFLICT_NOTHING = auto()      # Add nothing keyword to all target's sides
+    INFLICT_INFLICT_NOTHING = auto()  # Add inflictNothing keyword to all target's sides
+    INFLICT_INFLICT_DEATH = auto()    # Add inflictDeath keyword to all target's sides
+
+
+# Map from inflict keyword to the keyword it inflicts
+INFLICT_KEYWORD_MAP: dict["Keyword", "Keyword"] = {}
+
+
+def _init_inflict_map():
+    """Initialize the inflict keyword map after enum is fully defined."""
+    global INFLICT_KEYWORD_MAP
+    INFLICT_KEYWORD_MAP = {
+        Keyword.INFLICT_SELF_SHIELD: Keyword.SELF_SHIELD,
+        Keyword.INFLICT_BONED: Keyword.BONED,
+        Keyword.INFLICT_EXERT: Keyword.EXERT,
+        Keyword.INFLICT_PAIN: Keyword.PAIN,
+        Keyword.INFLICT_DEATH: Keyword.DEATH,
+        Keyword.INFLICT_SINGLE_USE: Keyword.SINGLE_USE,
+        Keyword.INFLICT_NOTHING: Keyword.NOTHING,
+        Keyword.INFLICT_INFLICT_NOTHING: Keyword.INFLICT_NOTHING,
+        Keyword.INFLICT_INFLICT_DEATH: Keyword.INFLICT_DEATH,
+    }
+
+
+_init_inflict_map()
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom

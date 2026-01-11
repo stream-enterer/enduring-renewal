@@ -163,7 +163,16 @@
     "stasis",
     "enduring",
     "dogma",
-    "resilient"
+    "resilient",
+    "inflictSelfShield",
+    "inflictBoned",
+    "inflictExert",
+    "inflictPain",
+    "inflictDeath",
+    "inflictSingleUse",
+    "inflictNothing",
+    "inflictInflictNothing",
+    "inflictInflictDeath"
   ],
   "blocked": {
     "meta_copy_buff": ["duplicate"],
@@ -171,7 +180,6 @@
     "trait_system": ["dispel"],
     "meta_copy_advanced": ["share", "spy", "dejavu", "annul", "possessed"],
     "spell_tracking": ["singleCast", "cooldown", "deplete", "channel", "spellRescue", "future"],
-    "side_injection": ["inflictSelfShield", "inflictBoned", "inflictExert", "inflictPain", "inflictDeath", "inflictSingleUse", "inflictNothing", "inflictInflictNothing", "inflictInflictDeath"],
     "item_system": ["hoard", "fashionable", "equipped", "potion"],
     "group_buff_system": ["lead"],
     "tactic_system": ["tactical"],

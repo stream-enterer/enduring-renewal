@@ -14,8 +14,9 @@
 | `entity_summoning` | boned, hyperBoned | 2 |
 | `side_modification` | hypnotise | 1 |
 | `side_replacement` | stasis, enduring, dogma, resilient | 4 |
+| `side_injection` | inflictSelfShield, inflictBoned, inflictExert, inflictPain, inflictDeath, inflictSingleUse, inflictNothing, inflictInflictNothing, inflictInflictDeath | 9 |
 
-**Total implemented: 42 keywords**
+**Total implemented: 51 keywords**
 
 ### Dependency Graph
 
@@ -23,7 +24,7 @@
 Buff System Tree (depends on buff_system ✅):
     ├─► #1 side_modification (hypnotise)           [1 kw] ✅
     ├─► #2 side_replacement (stasis, enduring...)  [4 kw] ✅
-    ├─► #3 side_injection (inflict*)               [9 kw]
+    ├─► #3 side_injection (inflict*)               [9 kw] ✅
     ├─► #4 meta_copy_advanced (share, spy...)      [5 kw]
     ├─► #5 meta_copy_buff (duplicate)              [1 kw]
     └─► #6 group_buff_system (lead)                [1 kw]
@@ -104,8 +105,9 @@ Independent Systems (no prerequisites):
 
 <!-- Format: "Next: #N (name)" or "COMPLETE - Only permanently blocked remain" -->
 
-**Next: #3 (side_injection)**
-- Implement 9 inflict* keywords: inflictSelfShield, inflictBoned, inflictExert, inflictPain, inflictDeath, inflictSingleUse, inflictNothing, inflictInflictNothing, inflictInflictDeath
-- Java: Inflicted.java:1-88, Keyword.java:342-350,678-679
-- Requires: Inflicted trigger class that adds keyword to all target's sides via Buff
-- Estimated: 9 keywords unblocked
+**Next: #4 (meta_copy_advanced)**
+- Implement 5 keywords: share, spy, dejavu, annul, possessed
+- Java: EntState.java:546-552, EntSideState.java:237-248
+- share/annul use Buff+AffectSides+AddKeyword/RemoveAllKeywords
+- spy/dejavu already work in meta keyword recursion
+- Estimated: 5 keywords unblocked

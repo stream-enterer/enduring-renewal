@@ -1848,6 +1848,26 @@ class FightLog:
                         ally_side = ally.die.get_side(i)
                         ally_side.apply_growth()
 
+        # === SIDE INJECTION KEYWORDS (add keywords to all target's sides) ===
+        from .dice import INFLICT_KEYWORD_MAP
+        for inflict_kw, target_kw in INFLICT_KEYWORD_MAP.items():
+            if calculated_side.has_keyword(inflict_kw):
+                self.apply_inflicted(target, target_kw)
+
+    def apply_inflicted(self, entity: Entity, keyword: "Keyword"):
+        """Apply an Inflicted debuff to an entity, adding keyword to all their sides.
+
+        Args:
+            entity: The entity to apply the Inflicted debuff to
+            keyword: The keyword that will be added to all the entity's sides
+        """
+        from .triggers import Buff, Inflicted
+
+        state = self._states[entity]
+        inflicted = Inflicted(keyword)
+        buff = Buff(personal=inflicted, turns_remaining=None)  # Permanent until cleansed
+        state.add_buff(buff)
+
     def get_most_recent_die_effect(self) -> Optional[SideState]:
         """Get the most recently used die's side state (for copycat keyword)."""
         return self._most_recent_die_effect

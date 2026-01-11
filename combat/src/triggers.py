@@ -473,6 +473,49 @@ class Regen(Personal):
         return Regen(self.value)
 
 
+class Inflicted(Personal):
+    """Inflicted trigger - adds a keyword to all target's sides.
+
+    Inflicted is a debuff applied via inflict* keywords (inflictPain, inflictDeath, etc.).
+    It modifies all sides by adding the inflicted keyword to their calculated effect.
+
+    - Is cleansable via CleanseType.INFLICT
+    - Multiple Inflicted triggers of the same keyword merge (but do nothing extra)
+    - Always fully cleansed by 1 cleanse point
+    """
+
+    def __init__(self, keyword: "Keyword"):
+        self.keyword = keyword
+
+    def affect_side(self, side_state: "SideState", owner: "EntityState", trigger_index: int):
+        """Add the inflicted keyword to the side's calculated effect."""
+        side_state.add_keyword(self.keyword)
+
+    def get_priority(self) -> float:
+        """Priority for Inflicted. From Java: 0.0F"""
+        return 0.0
+
+    def get_cleanse_type(self) -> CleanseType:
+        """Inflicted is cleansable."""
+        return CleanseType.INFLICT
+
+    def can_merge(self, other: "Personal") -> bool:
+        """Can merge with other Inflicted triggers of the same keyword."""
+        return isinstance(other, Inflicted) and self.keyword == other.keyword
+
+    def merge(self, other: "Personal"):
+        """Merge does nothing - two same-keyword inflictions are identical."""
+        pass
+
+    def cleanse_by(self, amount: int) -> tuple[int, bool]:
+        """Reduce inflicted by amount. Always uses 1, always fully cleansed."""
+        return (1, True)
+
+    def copy(self) -> "Inflicted":
+        """Create a copy (for undo support)."""
+        return Inflicted(self.keyword)
+
+
 # ============================================================================
 # Buff system triggers (Weaken, Boost, Vulnerable, Smith)
 # ============================================================================

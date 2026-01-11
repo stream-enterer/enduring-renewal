@@ -8616,3 +8616,593 @@ class TestEntitySummoning:
         # Some Bones should be in reinforcements
         total_summoned = len(fight.monsters) - 2 + len(fight._reinforcements)
         assert total_summoned == 10  # All 10 were summoned (some in reinforcements)
+
+
+# ============================================================================
+# Side Injection Keywords (inflict*)
+# ============================================================================
+
+
+class TestInflictSelfShield:
+    """Tests for InflictSelfShield keyword.
+
+    InflictSelfShield: Add selfShield keyword to all target's sides.
+    When the target uses any die side, it will shield itself for N pips.
+    """
+
+    def test_inflict_self_shield_adds_keyword(self):
+        """InflictSelfShield adds selfShield keyword to all target's sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Caster", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Monster has a basic damage die
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        # Hero uses inflictSelfShield on monster
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_SELF_SHIELD}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Check all monster's sides now have SELF_SHIELD keyword
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        for i in range(6):
+            side_state = monster_state.get_side_state(i, fight)
+            assert side_state.has_keyword(Keyword.SELF_SHIELD), \
+                f"Side {i} should have SELF_SHIELD keyword"
+
+    def test_inflict_self_shield_effect(self):
+        """InflictSelfShield causes target's attacks to self-shield."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Caster", hp=10)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        # Monster has a basic damage die (2 damage)
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        # Hero uses inflictSelfShield on monster
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_SELF_SHIELD}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster attacks hero
+        fight.use_die(monster, 0, hero)
+
+        # Monster should have gained 2 shield (from selfShield)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.shield == 2
+
+
+class TestInflictPain:
+    """Tests for InflictPain keyword.
+
+    InflictPain: Add pain keyword to all target's sides.
+    When the target uses any die side, it takes N damage.
+    """
+
+    def test_inflict_pain_adds_keyword(self):
+        """InflictPain adds pain keyword to all target's sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Caster", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_PAIN}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Check all monster's sides now have PAIN keyword
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        for i in range(6):
+            side_state = monster_state.get_side_state(i, fight)
+            assert side_state.has_keyword(Keyword.PAIN), \
+                f"Side {i} should have PAIN keyword"
+
+    def test_inflict_pain_effect(self):
+        """InflictPain causes target to take damage when using sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Tank", hp=20)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 3))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_PAIN}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster attacks hero (has pain now)
+        fight.use_die(monster, 0, hero)
+
+        # Monster should have taken 3 damage (pain)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        # Initial 10 HP - 1 (from hero's inflict attack) - 3 (pain) = 6
+        assert monster_state.hp == 6
+
+
+class TestInflictDeath:
+    """Tests for InflictDeath keyword.
+
+    InflictDeath: Add death keyword to all target's sides.
+    When the target uses any die side, it dies.
+    """
+
+    def test_inflict_death_adds_keyword(self):
+        """InflictDeath adds death keyword to all target's sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Reaper", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_DEATH}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Check all monster's sides now have DEATH keyword
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        for i in range(6):
+            side_state = monster_state.get_side_state(i, fight)
+            assert side_state.has_keyword(Keyword.DEATH), \
+                f"Side {i} should have DEATH keyword"
+
+    def test_inflict_death_effect(self):
+        """InflictDeath causes target to die when using any side."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Reaper", hp=20)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_DEATH}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster attacks hero (has death now)
+        fight.use_die(monster, 0, hero)
+
+        # Monster should be dead
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.is_dead
+
+
+class TestInflictExert:
+    """Tests for InflictExert keyword.
+
+    InflictExert: Add exert keyword to all target's sides.
+    When the target uses any die side, it becomes exerted.
+    """
+
+    def test_inflict_exert_adds_keyword(self):
+        """InflictExert adds exert keyword to all target's sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Exhaustor", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_EXERT}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Check all monster's sides now have EXERT keyword
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        for i in range(6):
+            side_state = monster_state.get_side_state(i, fight)
+            assert side_state.has_keyword(Keyword.EXERT), \
+                f"Side {i} should have EXERT keyword"
+
+    def test_inflict_exert_effect(self):
+        """InflictExert causes target to become exerted when using any side."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Exhaustor", hp=20)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_EXERT}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster attacks hero (has exert now)
+        fight.use_die(monster, 0, hero)
+
+        # Monster should be exerted
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.is_exerted
+
+
+class TestInflictSingleUse:
+    """Tests for InflictSingleUse keyword.
+
+    InflictSingleUse: Add singleUse keyword to all target's sides.
+    When the target uses any die side, that side becomes blank.
+    """
+
+    def test_inflict_single_use_adds_keyword(self):
+        """InflictSingleUse adds singleUse keyword to all target's sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Breaker", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_SINGLE_USE}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Check all monster's sides now have SINGLE_USE keyword
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        for i in range(6):
+            side_state = monster_state.get_side_state(i, fight)
+            assert side_state.has_keyword(Keyword.SINGLE_USE), \
+                f"Side {i} should have SINGLE_USE keyword"
+
+    def test_inflict_single_use_effect(self):
+        """InflictSingleUse causes target's used sides to become blank."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Breaker", hp=20)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_SINGLE_USE}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster attacks hero (side 0 has singleUse now)
+        fight.use_die(monster, 0, hero)
+
+        # Monster's side 0 should be blank now
+        side_0 = monster.die.get_side(0)
+        assert side_0.effect_type == EffectType.BLANK
+
+
+class TestInflictBoned:
+    """Tests for InflictBoned keyword.
+
+    InflictBoned: Add boned keyword to all target's sides.
+    When the target uses any die side, it summons a Bones.
+    """
+
+    def test_inflict_boned_adds_keyword(self):
+        """InflictBoned adds boned keyword to all target's sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Necro", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_BONED}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Check all monster's sides now have BONED keyword
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        for i in range(6):
+            side_state = monster_state.get_side_state(i, fight)
+            assert side_state.has_keyword(Keyword.BONED), \
+                f"Side {i} should have BONED keyword"
+
+    def test_inflict_boned_effect(self):
+        """InflictBoned causes target's attacks to summon Bones."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Necro", hp=20)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_BONED}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Count monsters before
+        monsters_before = len(fight.monsters)
+
+        # Monster attacks hero (has boned now)
+        fight.use_die(monster, 0, hero)
+
+        # Should have summoned 1 Bones
+        assert len(fight.monsters) == monsters_before + 1
+
+
+class TestInflictNothing:
+    """Tests for InflictNothing keyword.
+
+    InflictNothing: Add nothing keyword to all target's sides.
+    The nothing keyword has no effect - it's just decoration.
+    """
+
+    def test_inflict_nothing_adds_keyword(self):
+        """InflictNothing adds nothing keyword to all target's sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Joker", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_NOTHING}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Check all monster's sides now have NOTHING keyword
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        for i in range(6):
+            side_state = monster_state.get_side_state(i, fight)
+            assert side_state.has_keyword(Keyword.NOTHING), \
+                f"Side {i} should have NOTHING keyword"
+
+
+class TestInflictInflictNothing:
+    """Tests for InflictInflictNothing keyword.
+
+    InflictInflictNothing: Add inflictNothing keyword to all target's sides.
+    When target uses a side, it inflicts nothing on its target.
+    """
+
+    def test_inflict_inflict_nothing_adds_keyword(self):
+        """InflictInflictNothing adds inflictNothing keyword to all target's sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Meta", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_INFLICT_NOTHING}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Check all monster's sides now have INFLICT_NOTHING keyword
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        for i in range(6):
+            side_state = monster_state.get_side_state(i, fight)
+            assert side_state.has_keyword(Keyword.INFLICT_NOTHING), \
+                f"Side {i} should have INFLICT_NOTHING keyword"
+
+    def test_inflict_inflict_nothing_chains(self):
+        """InflictInflictNothing chains: monster's attack inflicts nothing on hero."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Meta", hp=20)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_INFLICT_NOTHING}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster attacks hero (has inflictNothing now)
+        fight.use_die(monster, 0, hero)
+
+        # Hero should now have NOTHING on all sides
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        for i in range(6):
+            side_state = hero_state.get_side_state(i, fight)
+            assert side_state.has_keyword(Keyword.NOTHING), \
+                f"Side {i} should have NOTHING keyword from chain"
+
+
+class TestInflictInflictDeath:
+    """Tests for InflictInflictDeath keyword.
+
+    InflictInflictDeath: Add inflictDeath keyword to all target's sides.
+    When target uses a side, it inflicts death on its target.
+    """
+
+    def test_inflict_inflict_death_adds_keyword(self):
+        """InflictInflictDeath adds inflictDeath keyword to all target's sides."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("DoomMage", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_INFLICT_DEATH}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Check all monster's sides now have INFLICT_DEATH keyword
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        for i in range(6):
+            side_state = monster_state.get_side_state(i, fight)
+            assert side_state.has_keyword(Keyword.INFLICT_DEATH), \
+                f"Side {i} should have INFLICT_DEATH keyword"
+
+    def test_inflict_inflict_death_chains(self):
+        """InflictInflictDeath chains: monster's attack causes hero's sides to have death."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("DoomMage", hp=20)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.HEAL, 1, {Keyword.INFLICT_INFLICT_DEATH}))
+
+        fight.use_die(hero, 0, monster)
+
+        # Monster attacks hero (has inflictDeath now)
+        fight.use_die(monster, 0, hero)
+
+        # Hero should now have DEATH on all sides
+        hero_state = fight.get_state(hero, Temporality.PRESENT)
+        for i in range(6):
+            side_state = hero_state.get_side_state(i, fight)
+            assert side_state.has_keyword(Keyword.DEATH), \
+                f"Side {i} should have DEATH keyword from chain"
+
+
+class TestInflictedCleansing:
+    """Tests for cleansing Inflicted debuffs."""
+
+    def test_inflicted_can_be_cleansed(self):
+        """Inflicted debuff can be removed with cleanse."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Cleanser", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        # First inflict pain on monster
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_PAIN}))
+        fight.use_die(hero, 0, monster)
+
+        # Verify monster has pain
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        side_state = monster_state.get_side_state(0, fight)
+        assert side_state.has_keyword(Keyword.PAIN)
+
+        # Now cleanse monster
+        fight.apply_cleanse(monster, 1)
+
+        # Pain should be removed
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        side_state = monster_state.get_side_state(0, fight)
+        assert not side_state.has_keyword(Keyword.PAIN)
+
+    def test_inflicted_merge_same_keyword(self):
+        """Multiple Inflicted debuffs of same keyword merge into one."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Caster", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_PAIN}))
+
+        # Inflict pain twice
+        fight.use_die(hero, 0, monster)
+        fight.use_die(hero, 1, monster)
+
+        # Should have merged into one buff
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        # Count Inflicted buffs
+        from src.triggers import Inflicted
+        inflicted_count = sum(
+            1 for b in monster_state.buffs
+            if isinstance(b.personal, Inflicted) and b.personal.keyword == Keyword.PAIN
+        )
+        assert inflicted_count == 1  # Merged into one
+
+    def test_inflicted_different_keywords_stack(self):
+        """Different Inflicted debuffs don't merge."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Caster", hp=5)
+        monster = make_monster("Goblin", hp=10)
+        fight = FightLog([hero], [monster])
+
+        monster.die = Die()
+        monster.die.set_all_sides(Side(EffectType.DAMAGE, 2))
+
+        # Inflict pain
+        hero.die = Die()
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_PAIN}))
+        fight.use_die(hero, 0, monster)
+
+        # Inflict death
+        hero.die.set_all_sides(Side(EffectType.DAMAGE, 1, {Keyword.INFLICT_DEATH}))
+        fight.use_die(hero, 1, monster)
+
+        # Should have 2 separate buffs
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        from src.triggers import Inflicted
+        inflicted_count = sum(
+            1 for b in monster_state.buffs if isinstance(b.personal, Inflicted)
+        )
+        assert inflicted_count == 2  # Two separate inflictions
