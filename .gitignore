@@ -26,6 +26,10 @@ htmlcov/
 # Scratch space
 notes/
 
+# Fuzzer runtime data
+combat/.fuzzer_checkpoint.json
+combat/crash_logs/
+
 # OS
 .DS_Store
 Thumbs.db
