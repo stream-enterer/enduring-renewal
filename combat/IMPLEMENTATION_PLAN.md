@@ -18,8 +18,9 @@
 | `meta_copy_advanced` | share, spy, dejavu, annul, possessed | 5 |
 | `meta_copy_buff` | duplicate | 1 |
 | `group_buff_system` | lead | 1 |
+| `trait_system` | dispel | 1 |
 
-**Total implemented: 58 keywords**
+**Total implemented: 59 keywords**
 
 ### Dependency Graph
 
@@ -33,7 +34,7 @@ Buff System Tree (depends on buff_system ✅):
     └─► #6 group_buff_system (lead)                [1 kw] ✅
 
 Independent Systems (no prerequisites):
-    ├─► #7 trait_system (dispel)                   [1 kw, needs trait tracking]
+    ├─► #7 trait_system (dispel)                   [1 kw] ✅
     ├─► #8 spell_tracking (singleCast, cooldown...)  [6 kw, needs spell infra]
     └─► #9 item_system (hoard, fashionable...)     [3 kw, needs item mocking]
 ```
@@ -108,8 +109,8 @@ Independent Systems (no prerequisites):
 
 <!-- Format: "Next: #N (name)" or "COMPLETE - Only permanently blocked remain" -->
 
-**Next: #7 (trait_system)**
-- Implement 1 keyword: dispel
-- Java: Trait.java, EntState.java (removeTraits)
-- Requires: Add `traits: list[Personal]` to Entity; TraitsRemoved trigger blocking trait application
-- Estimated: 1 keyword unblocked
+**Next: #8 (spell_tracking)**
+- Implement 6 keywords: singleCast, cooldown, deplete, channel, spellRescue, future
+- Java: Keyword.java:351-356, Snapshot.java:63,167,278-279 (future ability system)
+- Requires: Per-spell usage tracking (fight/turn level); spell cost modifiers; future ability queue
+- Complexity: HIGH - Needs spell system integration

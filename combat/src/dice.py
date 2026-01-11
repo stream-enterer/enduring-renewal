@@ -207,6 +207,7 @@ class Keyword(Enum):
     WITHER = auto()        # Grant target -N max HP this fight
     # Side modification keywords
     HYPNOTISE = auto()     # Set target's DAMAGE sides to 0 for one turn
+    DISPEL = auto()        # Remove all traits from target for this fight
     # Entity summoning keywords
     BONED = auto()         # Summon 1 Bones
     HYPER_BONED = auto()   # Summon N Bones (N = pip value)

@@ -110,6 +110,14 @@ class Personal(ABC):
         """Create a copy of this personal (for undo support)."""
         return self  # Default: immutable, return same instance
 
+    def allow_traits(self) -> bool:
+        """Return whether traits are allowed on the entity.
+
+        If any buff's personal returns False, the entity's traits are disabled.
+        This is used by TraitsRemoved (from dispel keyword) to disable traits.
+        """
+        return True
+
 
 class AffectSideCondition(ABC):
     """Base class for conditions that determine which sides a trigger affects."""
@@ -484,6 +492,28 @@ class Regen(Personal):
     def copy(self) -> "Regen":
         """Create a copy (for undo support)."""
         return Regen(self.value)
+
+
+class TraitsRemoved(Personal):
+    """Marker trigger that disables an entity's traits.
+
+    Applied by the dispel keyword. When present, the entity's traits
+    are not included in get_active_personals().
+
+    This is a singular buff - multiple applications don't stack.
+    """
+
+    def allow_traits(self) -> bool:
+        """Disallow traits when this buff is active."""
+        return False
+
+    def can_merge(self, other: "Personal") -> bool:
+        """TraitsRemoved is singular - merge with other TraitsRemoved."""
+        return isinstance(other, TraitsRemoved)
+
+    def merge(self, other: "Personal"):
+        """Merge does nothing - TraitsRemoved is a binary state."""
+        pass
 
 
 class Inflicted(Personal):

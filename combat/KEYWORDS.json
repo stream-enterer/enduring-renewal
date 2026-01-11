@@ -179,11 +179,11 @@
     "annul",
     "possessed",
     "duplicate",
-    "lead"
+    "lead",
+    "dispel"
   ],
   "blocked": {
     "roll_phase": ["cantrip", "sticky"],
-    "trait_system": ["dispel"],
     "spell_tracking": ["singleCast", "cooldown", "deplete", "channel", "spellRescue", "future"],
     "item_system": ["hoard", "fashionable", "equipped", "potion"],
     "tactic_system": ["tactical"],

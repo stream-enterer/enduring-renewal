@@ -2,7 +2,10 @@
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .triggers import Personal
 
 
 class Team(Enum):
@@ -37,6 +40,7 @@ class Entity:
     entity_type: EntityType
     team: Team
     position: int = 0
+    traits: list["Personal"] = field(default_factory=list)  # Traits are permanent Personal triggers
 
     # Runtime state managed by FightLog, not here
     def __hash__(self):

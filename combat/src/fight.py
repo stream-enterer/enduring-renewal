@@ -62,6 +62,9 @@ class EntityState:
 
         Returns triggers sorted by priority (lower priority runs first).
         Same priority preserves insertion order (FIFO).
+
+        Note: Traits are only included if allow_traits() returns True.
+        This allows buffs like TraitsRemoved (from dispel) to disable traits.
         """
         from .triggers import Personal
 
@@ -72,10 +75,26 @@ class EntityState:
             if buff.personal is not None:
                 personals.append(buff.personal)
 
+        # Collect from traits if traits are allowed
+        if self._allow_traits():
+            for trait in self.entity.traits:
+                personals.append(trait)
+
         # Sort by priority (stable sort preserves insertion order for same priority)
         personals.sort(key=lambda p: p.get_priority())
 
         return personals
+
+    def _allow_traits(self) -> bool:
+        """Check if traits are allowed on this entity.
+
+        Traits are disabled if any buff's personal returns allow_traits() == False.
+        Used by the dispel keyword to disable entity traits for the fight.
+        """
+        for buff in self.buffs:
+            if buff.personal is not None and not buff.personal.allow_traits():
+                return False
+        return True
 
     def add_buff(self, buff):
         """Add a buff to this entity state, merging if possible.
@@ -1800,6 +1819,10 @@ class FightLog:
         if calculated_side.has_keyword(Keyword.HYPNOTISE):
             self.apply_hypnotise(target)
 
+        # DISPEL: remove all traits from target for this fight
+        if calculated_side.has_keyword(Keyword.DISPEL):
+            self.apply_dispel(target)
+
         # === MAX HP MODIFICATION KEYWORDS ===
         # VITALITY: grant target +N max HP (as empty HP) this fight
         # "Empty HP" means max HP increases but current HP does not
@@ -3064,6 +3087,36 @@ class FightLog:
         # Add buff (1 turn duration)
         new_buffs = list(state.buffs)
         buff = Buff(personal=affect_sides, turns_remaining=1)
+        state_copy = replace(state, buffs=new_buffs)
+        state_copy.add_buff(buff)
+        self._states[target] = state_copy
+
+    def apply_dispel(self, target: Entity):
+        """Apply dispel to target - remove all traits for this fight.
+
+        Dispel adds a TraitsRemoved buff to the target. This buff causes
+        get_active_personals() to skip the entity's traits, effectively
+        disabling them for the rest of the fight.
+
+        Only applies if the target has traits. The buff is permanent
+        (no turns_remaining) and singular (multiple dispels don't stack).
+
+        Java: if (ent.traits.length > 0) { addBuff(new TraitsRemoved()); }
+        """
+        from .triggers import Buff, TraitsRemoved
+
+        self._record_action()
+
+        # Only apply if target has traits
+        if not target.traits:
+            return
+
+        state = self._states[target]
+
+        # Add TraitsRemoved buff (permanent, will merge if already present)
+        new_buffs = list(state.buffs)
+        traits_removed = TraitsRemoved()
+        buff = Buff(personal=traits_removed, turns_remaining=None)  # Permanent
         state_copy = replace(state, buffs=new_buffs)
         state_copy.add_buff(buff)
         self._states[target] = state_copy
