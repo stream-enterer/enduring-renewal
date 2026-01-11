@@ -52,7 +52,27 @@ These keywords are already implemented and tested. They stay where they are:
 | rampage, rescue | `FightLog` | Death-trigger reuse |
 | ranged | `FightLog` | Targeting modifier |
 
-New keywords can be added to existing locations OR to a new `keywords/` registry - whatever makes sense for each keyword.
+## Keyword Pipeline
+
+Keywords run at different stages. **Check which stage before implementing.**
+
+```
+Side resolution order:
+1. _process_meta_keywords()           # Modifies the Side itself
+2. _apply_conditional_keyword_bonuses()  # Modifies the calculated value
+3. use_die() post-processing          # Side effects after resolution
+```
+
+| Stage | Method | Example Keywords | What It Does |
+|-------|--------|------------------|--------------|
+| Meta | `_process_meta_keywords()` | copycat, pair, echo | Transforms the Side before value calculation (copy keywords, copy pips) |
+| Conditional | `_apply_conditional_keyword_bonuses()` | engage, pristine, bloodlust | Multiplies or adds to value based on game state |
+| Post-effect | `use_die()` | growth, singleUse, manaGain | Applies effects after main resolution (modify die, grant mana) |
+
+**How to identify stage:**
+- Copies/transforms the side itself → Meta
+- Multiplies value (x2) or adds pips (+N) → Conditional
+- Happens after the effect resolves → Post-effect
 
 ## Project Structure
 
