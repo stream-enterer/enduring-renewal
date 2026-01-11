@@ -149,11 +149,15 @@
     "minusEra",
     "heal",
     "shield",
-    "damage"
+    "damage",
+    "duel",
+    "focus",
+    "halveDuel",
+    "duegue",
+    "underocus"
   ],
   "blocked": {
     "meta_copy_buff": ["duplicate"],
-    "target_tracking": ["focus", "duel"],
     "roll_phase": ["cantrip", "sticky"],
     "side_replacement": ["stasis", "enduring", "dogma", "resilient"],
     "side_modification": ["hypnotise"],
@@ -167,9 +171,7 @@
     "group_buff_system": ["lead"],
     "tactic_system": ["tactical"],
     "validation_only": ["permissive"],
-    "not_implementable": ["removed"],
-    "depends_on_duel": ["halveDuel", "duegue"],
-    "depends_on_focus": ["underocus"]
+    "not_implementable": ["removed"]
   },
   "all": [
     "heal", "shield", "damage", "manaGain",

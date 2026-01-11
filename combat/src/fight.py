@@ -476,6 +476,16 @@ class FightLog:
         # Turn 0 is the initial state - turn-start processing keywords skip turn 0
         self._turn: int = 0
 
+        # Target tracking for duel/focus keywords
+        # Maps entity -> set of entities that have targeted it this turn
+        self._targeters_this_turn: dict[Entity, set[Entity]] = {}
+        # Track target of most recent die command (for focus keyword)
+        self._last_die_target: Optional[Entity] = None
+        # Track source of most recent die command (for self-targeting focus check)
+        self._last_die_source: Optional[Entity] = None
+        # Track if last die was self-targeting (for focus keyword edge case)
+        self._last_die_was_self_targeting: bool = False
+
     def get_shifter_seed(self, side_index: int, entity: Entity) -> int:
         """Generate a deterministic seed for turn-start processing keywords.
 
@@ -1058,6 +1068,12 @@ class FightLog:
         # Reset per-turn dice tracking
         self._dice_used_this_turn = 0
 
+        # Clear target tracking for duel/focus keywords
+        self._targeters_this_turn.clear()
+        self._last_die_target = None
+        self._last_die_source = None
+        self._last_die_was_self_targeting = False
+
         # Process each entity's turn transition
         for entity, state in list(self._states.items()):
             new_shield = state.shield if state.keep_shields else 0
@@ -1526,6 +1542,19 @@ class FightLog:
         self._most_recent_die_effect = side_state
         self._die_effect_history.append(side_state)
         self._dice_used_this_turn += 1
+
+        # Record targeting for duel/focus keywords
+        # Only count cross-team targeting (enemy targeting me)
+        if entity.team != target.team:
+            # Initialize set if needed
+            if target not in self._targeters_this_turn:
+                self._targeters_this_turn[target] = set()
+            self._targeters_this_turn[target].add(entity)
+
+        # Track last target for focus keyword
+        self._last_die_target = target
+        self._last_die_source = entity
+        self._last_die_was_self_targeting = (entity == target)
 
         # Mark die as used (check for multi-use keywords)
         max_uses = 1
@@ -2154,6 +2183,40 @@ class FightLog:
             if future_state.hp <= 0:
                 value *= mult
 
+        # === TARGET TRACKING KEYWORDS ===
+        # DUEL: x2 vs enemies who have targeted me this turn
+        if side.has_keyword(Keyword.DUEL):
+            targeters = self._get_entities_that_targeted_me(source_entity)
+            if target_entity in targeters:
+                value *= mult
+
+        # FOCUS: x2 if targeting same entity as previous die
+        if side.has_keyword(Keyword.FOCUS):
+            if self._target_matches_previous(target_entity):
+                value *= mult
+
+        # HALVE_DUEL: x0.5 vs enemies who have targeted me this turn
+        if side.has_keyword(Keyword.HALVE_DUEL):
+            targeters = self._get_entities_that_targeted_me(source_entity)
+            if target_entity in targeters:
+                value //= 2
+
+        # DUEGUE: duel + plague = x2 vs enemies who targeted me + total poison bonus
+        if side.has_keyword(Keyword.DUEGUE):
+            # +N pips where N = total poison (plague component)
+            value += self.get_total_poison_all()
+            # x2 vs enemies who targeted me (duel component)
+            targeters = self._get_entities_that_targeted_me(source_entity)
+            if target_entity in targeters:
+                value *= mult
+
+        # UNDEROCUS: underdog + focus = x2 if my HP < target HP AND same target as previous die
+        if side.has_keyword(Keyword.UNDEROCUS):
+            underdog_met = source_state.hp < target_state.hp
+            focus_met = self._target_matches_previous(target_entity)
+            if underdog_met and focus_met:
+                value *= 4  # TC4X - both conditions = x4
+
         # === MINUS VARIANTS ===
         # MINUS_FLESH: -N pips where N = my current HP
         if side.has_keyword(Keyword.MINUS_FLESH):
@@ -2242,6 +2305,48 @@ class FightLog:
             if pending.target == target and pending.source is not None:
                 attackers.add(pending.source)
         return list(attackers)
+
+    def _get_entities_that_targeted_me(self, me: Entity) -> set[Entity]:
+        """Get all enemies that have targeted this entity this turn.
+
+        Used by DUEL keyword for x2 bonus against enemies who targeted me.
+        Only returns living enemies.
+
+        Returns:
+            Set of enemy entities that targeted me this turn
+        """
+        targeters = self._targeters_this_turn.get(me, set())
+        # Filter to only living enemies
+        living_targeters = set()
+        for targeter in targeters:
+            state = self._states.get(targeter)
+            if state and not state.is_dead:
+                living_targeters.add(targeter)
+        return living_targeters
+
+    def _target_matches_previous(self, target: Entity) -> bool:
+        """Check if target matches the target of the previous die command.
+
+        Used by FOCUS keyword for x2 bonus if targeting same entity.
+        Also handles edge case where previous die was self-targeting:
+        if previous was self-targeting and current target == previous source, it counts.
+
+        Returns:
+            True if target matches previous die's target
+        """
+        if self._last_die_target is None:
+            return False
+
+        # Direct match: current target == last target
+        if target == self._last_die_target:
+            return True
+
+        # Edge case: if last die was self-targeting, focus triggers
+        # if current target equals the source of that self-targeting die
+        if self._last_die_was_self_targeting and target == self._last_die_source:
+            return True
+
+        return False
 
     def _is_consecutive_run(self, n: int, current_value: int) -> bool:
         """Check if previous n-1 dice plus current form a consecutive run.

@@ -191,6 +191,13 @@ class Keyword(Enum):
     HEAL = auto()          # Also heal target for N pips
     SHIELD = auto()        # Also shield target for N pips
     DAMAGE = auto()        # Also damage target for N pips
+    # Target tracking keywords - based on who targeted whom
+    DUEL = auto()          # x2 vs enemies who targeted me this turn
+    FOCUS = auto()         # x2 if targeting same entity as previous die
+    HALVE_DUEL = auto()    # x0.5 vs enemies who targeted me this turn
+    # Combined keywords with duel
+    DUEGUE = auto()        # duel + plague: x2 vs enemies who targeted me + total poison bonus
+    UNDEROCUS = auto()     # underdog + focus: x2 vs higher HP targets who I focused
 
 
 # Order in which sides get petrified: Top, Left, Middle, Right, Rightmost, Bottom

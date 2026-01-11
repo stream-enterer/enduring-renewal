@@ -1148,3 +1148,386 @@ class TestTrill:
         # Total damage: 1 + 1 + 3 = 5
         monster_state = fight.get_state(monster, Temporality.PRESENT)
         assert monster_state.hp == 15, "Monster should take 1+1+3=5 damage (trill triggered x3)"
+
+
+class TestDuel:
+    """Tests for DUEL keyword.
+
+    DUEL: x2 damage vs enemies who have targeted me this turn.
+    Only counts cross-team targeting (enemies targeting me).
+    """
+
+    def test_duel_no_bonus_when_not_targeted(self):
+        """Duel has no bonus when target hasn't targeted me."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        duel_side = Side(EffectType.DAMAGE, 2, {Keyword.DUEL})
+        hero.die = Die([duel_side for _ in range(6)])
+
+        # No targeting has happened yet, so duel doesn't trigger
+        fight.use_die(hero, 0, monster)
+
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 8, "Duel should deal base 2 damage (no x2)"
+
+    def test_duel_bonus_when_targeted(self):
+        """Duel gets x2 when target has targeted me this turn."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Monster attacks hero first
+        dmg_side = Side(EffectType.DAMAGE, 1, set())
+        monster.die = Die([dmg_side for _ in range(6)])
+        fight.use_die(monster, 0, hero)
+
+        # Now hero uses duel against the monster that just attacked
+        duel_side = Side(EffectType.DAMAGE, 2, {Keyword.DUEL})
+        hero.die = Die([duel_side for _ in range(6)])
+        fight.use_die(hero, 0, monster)
+
+        # Duel should trigger: 2 * 2 = 4 damage
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 6, "Duel should deal 4 damage (2 * 2)"
+
+    def test_duel_clears_after_turn(self):
+        """Duel tracking clears at end of turn."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Monster attacks hero
+        dmg_side = Side(EffectType.DAMAGE, 1, set())
+        monster.die = Die([dmg_side for _ in range(6)])
+        fight.use_die(monster, 0, hero)
+
+        # End turn (clears target tracking)
+        fight.next_turn()
+
+        # Hero uses duel - should NOT trigger (new turn)
+        duel_side = Side(EffectType.DAMAGE, 2, {Keyword.DUEL})
+        hero.die = Die([duel_side for _ in range(6)])
+        fight.use_die(hero, 0, monster)
+
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 8, "Duel should deal base 2 damage after new turn"
+
+
+class TestFocus:
+    """Tests for FOCUS keyword.
+
+    FOCUS: x2 damage if targeting same entity as previous die.
+    """
+
+    def test_focus_no_bonus_first_die(self):
+        """Focus has no bonus on first die (no previous target)."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        focus_side = Side(EffectType.DAMAGE, 2, {Keyword.FOCUS})
+        hero.die = Die([focus_side for _ in range(6)])
+
+        fight.use_die(hero, 0, monster)
+
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 8, "Focus should deal base 2 damage (no previous target)"
+
+    def test_focus_bonus_same_target(self):
+        """Focus gets x2 when targeting same entity as previous die."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter", hp=5)
+        hero2 = make_hero("Thief", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 attacks monster
+        dmg_side = Side(EffectType.DAMAGE, 1, set())
+        hero1.die = Die([dmg_side for _ in range(6)])
+        fight.use_die(hero1, 0, monster)
+
+        # Hero2 uses focus on same monster - should trigger
+        focus_side = Side(EffectType.DAMAGE, 2, {Keyword.FOCUS})
+        hero2.die = Die([focus_side for _ in range(6)])
+        fight.use_die(hero2, 0, monster)
+
+        # Focus triggers: 2 * 2 = 4 damage, total = 1 + 4 = 5
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 15, "Focus should deal 4 damage (total 5)"
+
+    def test_focus_no_bonus_different_target(self):
+        """Focus doesn't trigger on different target."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster1 = make_monster("Goblin1", hp=10)
+        monster2 = make_monster("Goblin2", hp=10)
+
+        fight = FightLog([hero], [monster1, monster2])
+
+        # Attack monster1
+        dmg_side = Side(EffectType.DAMAGE, 1, set())
+        hero.die = Die([dmg_side for _ in range(6)])
+        fight.use_die(hero, 0, monster1)
+        fight.recharge_die(hero)
+
+        # Use focus on monster2 (different target) - should NOT trigger
+        focus_side = Side(EffectType.DAMAGE, 2, {Keyword.FOCUS})
+        hero.die = Die([focus_side for _ in range(6)])
+        fight.use_die(hero, 0, monster2)
+
+        monster2_state = fight.get_state(monster2, Temporality.PRESENT)
+        assert monster2_state.hp == 8, "Focus should deal base 2 damage (different target)"
+
+    def test_focus_clears_after_turn(self):
+        """Focus tracking clears at end of turn."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero], [monster])
+
+        # Attack monster
+        dmg_side = Side(EffectType.DAMAGE, 1, set())
+        hero.die = Die([dmg_side for _ in range(6)])
+        fight.use_die(hero, 0, monster)
+
+        # End turn
+        fight.next_turn()
+        fight.recharge_die(hero)
+
+        # Focus on same monster - should NOT trigger (new turn)
+        focus_side = Side(EffectType.DAMAGE, 2, {Keyword.FOCUS})
+        hero.die = Die([focus_side for _ in range(6)])
+        fight.use_die(hero, 0, monster)
+
+        # Total damage: 1 + 2 = 3 (focus didn't trigger)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 17, "Focus should deal base 2 damage after new turn"
+
+
+class TestHalveDuel:
+    """Tests for HALVE_DUEL keyword.
+
+    HALVE_DUEL: x0.5 damage vs enemies who have targeted me this turn.
+    """
+
+    def test_halve_duel_full_damage_when_not_targeted(self):
+        """HalveDuel deals full damage when not targeted."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        halve_duel_side = Side(EffectType.DAMAGE, 4, {Keyword.HALVE_DUEL})
+        hero.die = Die([halve_duel_side for _ in range(6)])
+
+        fight.use_die(hero, 0, monster)
+
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 6, "HalveDuel should deal full 4 damage"
+
+    def test_halve_duel_half_damage_when_targeted(self):
+        """HalveDuel deals half damage when target targeted me."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        # Monster attacks hero first
+        dmg_side = Side(EffectType.DAMAGE, 1, set())
+        monster.die = Die([dmg_side for _ in range(6)])
+        fight.use_die(monster, 0, hero)
+
+        # Hero uses halveDuel
+        halve_duel_side = Side(EffectType.DAMAGE, 4, {Keyword.HALVE_DUEL})
+        hero.die = Die([halve_duel_side for _ in range(6)])
+        fight.use_die(hero, 0, monster)
+
+        # HalveDuel triggers: 4 // 2 = 2 damage
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 8, "HalveDuel should deal 2 damage (4 / 2)"
+
+
+class TestDuegue:
+    """Tests for DUEGUE keyword.
+
+    DUEGUE: duel + plague combination.
+    - x2 vs enemies who targeted me
+    - +N pips where N = total poison on all characters
+    """
+
+    def test_duegue_plague_bonus_only(self):
+        """Duegue gets plague bonus even without duel trigger."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero], [monster])
+
+        # Apply some poison to create plague bonus
+        fight.apply_poison(monster, 3)
+
+        duegue_side = Side(EffectType.DAMAGE, 2, {Keyword.DUEGUE})
+        hero.die = Die([duegue_side for _ in range(6)])
+
+        fight.use_die(hero, 0, monster)
+
+        # Base 2 + 3 plague = 5 damage (no duel bonus)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 15, "Duegue should deal 5 damage (2 + 3 plague)"
+
+    def test_duegue_duel_and_plague(self):
+        """Duegue gets both duel x2 and plague bonus."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=10)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero], [monster])
+
+        # Apply poison for plague bonus
+        fight.apply_poison(monster, 2)
+
+        # Monster attacks hero first (for duel trigger)
+        dmg_side = Side(EffectType.DAMAGE, 1, set())
+        monster.die = Die([dmg_side for _ in range(6)])
+        fight.use_die(monster, 0, hero)
+
+        # Hero uses duegue
+        duegue_side = Side(EffectType.DAMAGE, 2, {Keyword.DUEGUE})
+        hero.die = Die([duegue_side for _ in range(6)])
+        fight.use_die(hero, 0, monster)
+
+        # Base 2 + 2 plague = 4, then x2 = 8 damage
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 12, "Duegue should deal 8 damage ((2 + 2) * 2)"
+
+
+class TestUnderocus:
+    """Tests for UNDEROCUS keyword.
+
+    UNDEROCUS: underdog + focus combination (TC4X).
+    - x4 if my HP < target HP AND same target as previous die
+    """
+
+    def test_underocus_no_bonus_neither_condition(self):
+        """Underocus has no bonus when neither condition met."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+
+        underocus_side = Side(EffectType.DAMAGE, 2, {Keyword.UNDEROCUS})
+        hero.die = Die([underocus_side for _ in range(6)])
+
+        fight.use_die(hero, 0, monster)
+
+        # Neither focus (no previous target) nor underdog (5 > 4) met
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 2, "Underocus should deal base 2 damage"
+
+    def test_underocus_only_underdog(self):
+        """Underocus has no bonus with only underdog condition."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero = make_hero("Fighter", hp=3)
+        monster = make_monster("Goblin", hp=10)
+
+        fight = FightLog([hero], [monster])
+
+        underocus_side = Side(EffectType.DAMAGE, 2, {Keyword.UNDEROCUS})
+        hero.die = Die([underocus_side for _ in range(6)])
+
+        # No previous target, so focus not met
+        fight.use_die(hero, 0, monster)
+
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 8, "Underocus should deal base 2 damage (only underdog)"
+
+    def test_underocus_only_focus(self):
+        """Underocus has no bonus with only focus condition."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter", hp=10)
+        hero2 = make_hero("Thief", hp=10)
+        monster = make_monster("Goblin", hp=5)
+
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 attacks monster first
+        dmg_side = Side(EffectType.DAMAGE, 1, set())
+        hero1.die = Die([dmg_side for _ in range(6)])
+        fight.use_die(hero1, 0, monster)
+
+        # Hero2 uses underocus on same monster (focus met, but HP 10 > 4)
+        underocus_side = Side(EffectType.DAMAGE, 2, {Keyword.UNDEROCUS})
+        hero2.die = Die([underocus_side for _ in range(6)])
+        fight.use_die(hero2, 0, monster)
+
+        # Only focus met, not underdog (10 > 4)
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 2, "Underocus should deal base 2 damage (only focus)"
+
+    def test_underocus_both_conditions(self):
+        """Underocus gets x4 when both underdog and focus met."""
+        from src.dice import Die, Side, Keyword
+        from src.effects import EffectType
+
+        hero1 = make_hero("Fighter", hp=3)
+        hero2 = make_hero("Thief", hp=3)
+        monster = make_monster("Goblin", hp=20)
+
+        fight = FightLog([hero1, hero2], [monster])
+
+        # Hero1 attacks monster first (sets up focus target)
+        dmg_side = Side(EffectType.DAMAGE, 1, set())
+        hero1.die = Die([dmg_side for _ in range(6)])
+        fight.use_die(hero1, 0, monster)
+
+        # Hero2 uses underocus: HP 3 < 19 (underdog) + same target (focus)
+        underocus_side = Side(EffectType.DAMAGE, 2, {Keyword.UNDEROCUS})
+        hero2.die = Die([underocus_side for _ in range(6)])
+        fight.use_die(hero2, 0, monster)
+
+        # Both conditions met: 2 * 4 = 8 damage, total = 1 + 8 = 9
+        monster_state = fight.get_state(monster, Temporality.PRESENT)
+        assert monster_state.hp == 11, "Underocus should deal 8 damage (2 * 4), total 9"
