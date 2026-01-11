@@ -732,3 +732,18 @@ class FightLog:
 
         # Apply the damage (uses standard damage logic)
         self.apply_damage(source, target, total_damage, is_pending)
+
+    def apply_poison_damage(self, source: Entity, target: Entity, amount: int):
+        """Apply damage with Poison keyword.
+
+        Poison deals immediate damage AND adds pending damage equal to the amount.
+        Example: poison(1) deals 1 damage now and 1 more at turn end.
+
+        The pending poison damage uses the source as its source, so it can be
+        cancelled if source dies before turn end.
+        """
+        # Deal immediate damage
+        self.apply_damage(source, target, amount, is_pending=False)
+
+        # Add pending poison damage
+        self._pending.append(PendingDamage(target, amount, source))

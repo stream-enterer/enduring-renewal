@@ -177,3 +177,96 @@ class TestBloodlust:
         # Damage another
         fight.apply_damage(hero, monsters[1], 1, is_pending=False)
         assert fight.count_damaged_enemies() == 2, "Two damaged enemies now"
+
+
+class TestPoison:
+    """Tests for Poison keyword.
+
+    Poison is a damage keyword that deals immediate damage AND adds
+    pending damage equal to the poison amount.
+
+    Example: dmgPoison(1) deals 1 damage now and 1 more at turn end.
+
+    Verified: Confirmed.
+    """
+
+    def test_poison_deals_immediate_damage(self):
+        """Poison deals immediate damage to present state."""
+        hero = make_hero("Thief", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+        monster_max = 4
+
+        # Poison(1) should deal 1 immediate damage
+        fight.apply_poison_damage(hero, monster, 1)
+        state = fight.get_state(monster, Temporality.PRESENT)
+        assert state.hp == monster_max - 1, "Poison should deal immediate damage"
+
+    def test_poison_adds_pending_damage(self):
+        """Poison adds pending damage equal to poison amount."""
+        hero = make_hero("Thief", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+        monster_max = 4
+
+        # Poison(1) should deal 1 now + 1 pending
+        fight.apply_poison_damage(hero, monster, 1)
+
+        # Present: 1 damage taken
+        present = fight.get_state(monster, Temporality.PRESENT)
+        assert present.hp == monster_max - 1, "Present should show immediate damage"
+
+        # Future: 2 damage total (1 immediate + 1 pending)
+        future = fight.get_state(monster, Temporality.FUTURE)
+        assert future.hp == monster_max - 2, "Future should show poison pending damage"
+
+    def test_poison_full_scenario(self):
+        """Full poison test matching original Java test.
+
+        Setup: 1 hero vs 1 goblin (4 HP)
+        - dmgPoison(1) on monster
+        - Present HP: maxHp - 1 (immediate damage)
+        - Future HP: maxHp - 2 (immediate + poison pending)
+
+        Verified: Confirmed.
+        """
+        hero = make_hero("Thief", hp=5)
+        monster = make_monster("Goblin", hp=4)
+
+        fight = FightLog([hero], [monster])
+        monster_max = 4
+
+        # Apply poison damage
+        fight.apply_poison_damage(hero, monster, 1)
+
+        # Check present state - should be damaged for 1
+        present = fight.get_state(monster, Temporality.PRESENT)
+        assert present.hp == monster_max - 1, "should be damaged for 1"
+
+        # Check future state - should be damaged by poison (total 2)
+        future = fight.get_state(monster, Temporality.FUTURE)
+        assert future.hp == monster_max - 2, "should be damaged by poison"
+
+    def test_poison_stacks(self):
+        """Multiple poison applications stack pending damage."""
+        hero = make_hero("Thief", hp=5)
+        monster = make_monster("Goblin", hp=6)
+
+        fight = FightLog([hero], [monster])
+        monster_max = 6
+
+        # First poison(1): 1 immediate + 1 pending
+        fight.apply_poison_damage(hero, monster, 1)
+
+        # Second poison(1): 1 more immediate + 1 more pending
+        fight.apply_poison_damage(hero, monster, 1)
+
+        # Present: 2 immediate damage
+        present = fight.get_state(monster, Temporality.PRESENT)
+        assert present.hp == monster_max - 2, "Should have 2 immediate damage"
+
+        # Future: 4 total (2 immediate + 2 pending)
+        future = fight.get_state(monster, Temporality.FUTURE)
+        assert future.hp == monster_max - 4, "Should have 4 total damage (stacked poison)"

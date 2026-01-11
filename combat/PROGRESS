@@ -1,12 +1,24 @@
 {
   "current": {
     "file": "TestKeyword",
-    "method": "growth",
+    "method": "precise",
     "status": "analyzing",
     "hypothesis": null,
     "verified": null
   },
   "blocked": [
+    {
+      "file": "TestKeyword",
+      "method": "rescue",
+      "reason": "Requires die 'used' state tracking (isUsed()). Rescue keyword: heal doesn't mark die as used if it rescued target from dying.",
+      "timestamp": "2025-01-10T19:35:00Z"
+    },
+    {
+      "file": "TestKeyword",
+      "method": "growth",
+      "reason": "Requires die/sides system (turnInto, DieCommand) and mana system (getTotalMana, shieldMana effect). Growth makes effect value increase by 1 each use (1 -> 2 -> 3 -> etc).",
+      "timestamp": "2025-01-10T19:35:00Z"
+    },
     {
       "file": "TestComplexEff",
       "method": "petrifyBug",
@@ -33,6 +45,14 @@
     }
   ],
   "completed": [
+    {
+      "file": "TestKeyword",
+      "method": "poison",
+      "hypothesis": "Poison is a damage keyword that deals immediate damage AND adds pending damage equal to the poison amount. Example: dmgPoison(1) deals 1 damage now and 1 more at turn end (in future state).",
+      "verified": "Confirmed.",
+      "test": "tests/test_keyword.py::TestPoison",
+      "timestamp": "2025-01-10T19:40:00Z"
+    },
     {
       "file": "TestKeyword",
       "method": "bloodlust",
