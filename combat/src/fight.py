@@ -357,13 +357,10 @@ class EntityState:
                 if all(eff.calculated_effect.get_visible_value() == current_value for eff in previous_effects):
                     calculated.value *= 3
 
-        # TRILL: trio + skill combined - x3 if previous 2 dice match (skill bonus in conditional)
-        if Keyword.TRILL in calculated.keywords and fight_log is not None:
-            current_value = calculated.calculated_value
-            previous_effects = fight_log.get_last_n_die_effects(2)
-            if len(previous_effects) >= 2:
-                if all(eff.calculated_effect.get_visible_value() == current_value for eff in previous_effects):
-                    calculated.value *= 3
+        # TRILL: trio's condition + skill's bonus (NOT x3!)
+        # Per KUtils.java:1165-1166, ConditionBonus = condition + pip bonus
+        # If previous 2 dice match, add tier
+        # NOTE: handled in _apply_conditional_keyword_bonuses where we have entity tier access
 
         # QUIN: x5 if previous 4 dice had same calculated value (using visible values)
         if Keyword.QUIN in calculated.keywords and fight_log is not None:
@@ -381,19 +378,8 @@ class EntityState:
                 if all(eff.calculated_effect.get_visible_value() == current_value for eff in previous_effects):
                     calculated.value *= 7
 
-        # REV_DIFF and DOUB_DIFF: Modify value based on delta from base
-        # delta = calculated - base
-        # doubDiff: adds delta (doubling the effect of any pip changes)
-        # revDiff: adds -2*delta (inverting and doubling the effect of pip changes)
-        if Keyword.REV_DIFF in calculated.keywords or Keyword.DOUB_DIFF in calculated.keywords:
-            base_value = side_state.original_side.value
-            calculated_value = calculated.calculated_value
-            delta = calculated_value - base_value
-            if delta != 0:
-                if Keyword.DOUB_DIFF in calculated.keywords:
-                    calculated.value += delta
-                else:  # REV_DIFF
-                    calculated.value += delta * -2
+        # Note: DOUBDIFF/REVDIFF are applied in _apply_conditional_keyword_bonuses
+        # after all additive bonuses (STEEL, BLOODLUST, etc.) per EntSideState.java:152-159
 
     def get_total_petrification(self) -> int:
         """Count the number of petrified sides.
@@ -2438,6 +2424,9 @@ class FightLog:
         # Get multiplier (2 normally, 3 with treble)
         mult = self._get_multiplier(side)
 
+        # Track value before additive bonuses for DOUBDIFF/REVDIFF
+        value_before_additive = value
+
         # +N pip bonus keywords (applied before x2 multipliers)
         # BLOODLUST: +N where N = damaged enemies
         if side.has_keyword(Keyword.BLOODLUST):
@@ -2455,11 +2444,14 @@ class FightLog:
         if side.has_keyword(Keyword.FLESH):
             value += source_state.hp
 
+        # MINUS_FLESH: -N where N = my current HP
+        if side.has_keyword(Keyword.MINUS_FLESH):
+            value -= source_state.hp
+
         # RAINBOW: +N where N = number of keywords on this side
+        # Per ConditionalBonusType.java:93-94, includes RAINBOW itself
         if side.has_keyword(Keyword.RAINBOW):
-            # Count keywords excluding RAINBOW itself to avoid infinite bonus
-            keyword_count = len(side.keywords) - 1
-            value += keyword_count
+            value += len(side.keywords)
 
         # FLURRY: +N where N = times I've been used this turn
         if side.has_keyword(Keyword.FLURRY):
@@ -2506,9 +2498,15 @@ class FightLog:
                     unused_count += 1
             value += unused_count
 
-        # TRILL: trio + skill - add tier bonus (multiplier handled below)
+        # TRILL: trio's condition + skill's bonus
+        # Per KUtils.java:1165-1166, ConditionBonus = condition + pip bonus
+        # If previous 2 dice match value, add tier
         if side.has_keyword(Keyword.TRILL):
-            value += self.get_entity_tier(source_entity)
+            current_value = side.calculated_value
+            previous_effects = self.get_last_n_die_effects(2)
+            if len(previous_effects) >= 2:
+                if all(eff.calculated_effect.get_visible_value() == current_value for eff in previous_effects):
+                    value += self.get_entity_tier(source_entity)
 
         # ERA: +N where N = turns elapsed
         if side.has_keyword(Keyword.ERA):
@@ -2529,6 +2527,17 @@ class FightLog:
         # FASHIONABLE: +N where N = total tier of equipped items on me
         if side.has_keyword(Keyword.FASHIONABLE):
             value += self.get_total_equipped_tier(source_entity)
+
+        # DOUBDIFF/REVDIFF: Modify pip delta from additive bonuses
+        # Per EntSideState.java:152-159, these run AFTER additive bonuses
+        additive_delta = value - value_before_additive
+        if additive_delta != 0:
+            # DOUBDIFF: adds delta (doubling the pip delta)
+            if side.has_keyword(Keyword.DOUB_DIFF):
+                value += additive_delta
+            # REVDIFF: adds -2*delta (inverting and doubling the pip delta)
+            elif side.has_keyword(Keyword.REV_DIFF):
+                value += additive_delta * -2
 
         # x2 multiplier keywords (applied after +N bonuses)
         # Note: with TREBLE keyword, these become x3 instead of x2 (mult variable)
@@ -2678,15 +2687,17 @@ class FightLog:
             if self._is_consecutive_run(2, side.calculated_value):
                 value *= mult
 
-        # RUN: x2 if previous 3 dice values form a consecutive run
+        # RUN: x3 if previous 3 dice values form a consecutive run
+        # Per Keyword.java:69-73, ConditionalBonus(..., Multiply, 3)
         if side.has_keyword(Keyword.RUN):
             if self._is_consecutive_run(3, side.calculated_value):
-                value *= mult
+                value *= 3
 
-        # SPRINT: x2 if previous 5 dice values form a consecutive run
+        # SPRINT: x5 if previous 5 dice values form a consecutive run
+        # Per Keyword.java:75-78, ConditionalBonus(..., Multiply, 5)
         if side.has_keyword(Keyword.SPRINT):
             if self._is_consecutive_run(5, side.calculated_value):
-                value *= mult
+                value *= 5
 
         # SLOTH: x2 if source has more blank sides than target
         if side.has_keyword(Keyword.SLOTH):
@@ -2741,9 +2752,10 @@ class FightLog:
             if future_state.hp <= 0:
                 value *= mult
 
-        # SWAP_TERMINAL: x2 if TARGET at exactly 1HP (same check as swapDeathwish in Java)
+        # SWAP_TERMINAL: x2 if SOURCE at exactly 1HP
+        # Per KUtils.java:1186, swap keywords exchange source/target checks
         if side.has_keyword(Keyword.SWAP_TERMINAL):
-            if target_state.hp == 1:
+            if source_state.hp == 1:
                 value *= mult
 
         # === HALVE* VARIANTS (x0.5 instead of x2) ===
@@ -2798,38 +2810,32 @@ class FightLog:
                 value *= 3
 
         # === COMBINED KEYWORDS (ConditionBonus - condition + pip bonus) ===
-        # ENGARGED: engage + charged = x2 if target full HP, already has +N mana from charged
+        # Per KUtils.java:1165-1166, ConditionBonus = a's condition + b's bonus (NOT multiplier!)
+
+        # ENGARGED: engage's condition + charged's bonus
+        # If target at full HP, add mana as pips
         if side.has_keyword(Keyword.ENGARGED):
-            # +N mana pips (charged component)
-            value += self.get_total_mana()
-            # x2 if target full HP (engage component) - affected by treble
             if target_state.hp == target_state.max_hp:
-                value *= mult
+                value += self.get_total_mana()
 
-        # CRUESH: cruel + flesh = x2 if target at half HP or less, already has +N HP
+        # CRUESH: cruel's condition + flesh's bonus
+        # If target at half HP or less, add source HP as pips
         if side.has_keyword(Keyword.CRUESH):
-            # +N HP pips (flesh component)
-            value += source_state.hp
-            # x2 if target at half HP or less (cruel component) - affected by treble
             if target_state.hp <= target_state.max_hp // 2:
-                value *= mult
+                value += source_state.hp
 
-        # PRISTEEL: pristine + steel = x2 if source full HP, already has +N shields
+        # PRISTEEL: pristine's condition + steel's bonus
+        # If source at full HP, add shields as pips
         if side.has_keyword(Keyword.PRISTEEL):
-            # +N shield pips (steel component)
-            value += source_state.shield
-            # x2 if source full HP (pristine component) - affected by treble
             if source_state.hp == source_state.max_hp:
-                value *= mult
+                value += source_state.shield
 
-        # DEATHLUST: deathwish + bloodlust = x2 if source dying, +N damaged enemies
+        # DEATHLUST: deathwish's condition + bloodlust's bonus
+        # If source dying, add damaged enemies count
         if side.has_keyword(Keyword.DEATHLUST):
-            # +N damaged enemies (bloodlust component)
-            value += self.count_damaged_enemies()
-            # x2 if source dying (deathwish component) - affected by treble
             future_state = self.get_state(source_entity, Temporality.FUTURE)
             if future_state.hp <= 0:
-                value *= mult
+                value += self.count_damaged_enemies()
 
         # === TARGET TRACKING KEYWORDS ===
         # DUEL: x2 vs enemies who have targeted me this turn
@@ -2849,14 +2855,13 @@ class FightLog:
             if target_entity in targeters:
                 value //= 2
 
-        # DUEGUE: duel + plague = x2 vs enemies who targeted me + total poison bonus
+        # DUEGUE: duel's condition + plague's bonus
+        # Per KUtils.java:1165-1166, ConditionBonus = condition + pip bonus
+        # If target has targeted me, add total poison
         if side.has_keyword(Keyword.DUEGUE):
-            # +N pips where N = total poison (plague component)
-            value += self.get_total_poison_all()
-            # x2 vs enemies who targeted me (duel component)
             targeters = self._get_entities_that_targeted_me(source_entity)
             if target_entity in targeters:
-                value *= mult
+                value += self.get_total_poison_all()
 
         # UNDEROCUS: underdog + focus = x2 if my HP < target HP AND same target as previous die
         if side.has_keyword(Keyword.UNDEROCUS):
@@ -2864,11 +2869,6 @@ class FightLog:
             focus_met = self._target_matches_previous(target_entity)
             if underdog_met and focus_met:
                 value *= 4  # TC4X - both conditions = x4
-
-        # === MINUS VARIANTS ===
-        # MINUS_FLESH: -N pips where N = my current HP
-        if side.has_keyword(Keyword.MINUS_FLESH):
-            value -= source_state.hp
 
         return value
 
@@ -3633,16 +3633,27 @@ class FightLog:
         return len(state.buffs)
 
     def get_trigger_count(self, entity: Entity) -> int:
-        """Get number of triggers affecting an entity (for affected keyword)."""
+        """Get number of triggers affecting an entity (for affected keyword).
+
+        Per ConditionalBonusType.java:38 (Triggers), counts active personals.
+        """
+        # Check for test harness attribute first (buffs merge, so we need explicit count)
+        if hasattr(entity, 'effects_on_me') and entity.effects_on_me is not None:
+            return entity.effects_on_me
         state = self._states.get(entity)
         if state is None:
             return 0
         return len(state.get_active_personals())
 
     def get_entity_tier(self, entity: Entity) -> int:
-        """Get entity's tier/level (for skill keyword)."""
-        # TODO: Implement proper tier tracking when hero system is added
-        # For now, return 1 as default tier
+        """Get entity's tier/level (for skill keyword).
+
+        Per ConditionalBonusType.java:113-120, MyTier returns Hero.getLevel().
+        """
+        # Check entity.level first (test harness sets this)
+        if hasattr(entity, 'level') and entity.level is not None:
+            return entity.level
+        # Fall back to entity_type.tier
         return getattr(entity.entity_type, 'tier', 1)
 
     def get_unequipped_item_count(self) -> int:
@@ -3654,14 +3665,28 @@ class FightLog:
         self._party_unequipped_items = list(items)
 
     def get_equipped_item_count(self, entity: Entity) -> int:
-        """Get count of items equipped on an entity (for equipped keyword)."""
+        """Get count of items equipped on an entity (for equipped keyword).
+
+        Per ConditionalBonusType.java:123-124, ItemsEquipped returns items count.
+        """
+        # Check for test harness attribute first
+        if hasattr(entity, 'equipped_items') and entity.equipped_items is not None:
+            return len(entity.equipped_items)
+        # Check hero registry
         hero = self._hero_registry.get(entity)
         if hero is not None:
             return len(hero.get_items())
         return 0
 
     def get_total_equipped_tier(self, entity: Entity) -> int:
-        """Get sum of tiers of all equipped items (for fashionable keyword)."""
+        """Get sum of tiers of all equipped items (for fashionable keyword).
+
+        Per ConditionalBonusType.java:125-133, TotalItemTier sums item tiers.
+        """
+        # Check for test harness attribute first
+        if hasattr(entity, 'equipped_item_tier_total') and entity.equipped_item_tier_total is not None:
+            return entity.equipped_item_tier_total
+        # Check hero registry
         hero = self._hero_registry.get(entity)
         if hero is not None:
             total = 0

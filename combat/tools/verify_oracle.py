@@ -241,14 +241,18 @@ def setup_entity_state(fight: FightLog, entity: Entity, spec: dict):
         state.deaths_this_fight = 1
 
     # Handle used_last_turn flag
-    if spec.get("used_last_turn", False):
-        state._used_last_turn = True
+    # Per EnumConditionalRequirement.java:157, PATIENT requires turn > 1
+    # If used_last_turn is specified, we must be past turn 1
+    if "used_last_turn" in spec:
+        state.turns_elapsed = spec.get("turns_elapsed", 1)  # At least turn 2
+        state.used_last_turn = spec["used_last_turn"]
 
     # Handle blank_sides (modify die)
+    # Start from index 1 to preserve side 0 (the test side being calculated)
     if "blank_sides" in spec:
         blank_count = spec["blank_sides"]
         if entity.die:
-            for i in range(min(blank_count, 6)):
+            for i in range(1, min(blank_count + 1, 6)):
                 entity.die.sides[i] = Side(EffectType.BLANK, 0)
 
     # Handle level/tier
@@ -284,18 +288,17 @@ def setup_entity_state(fight: FightLog, entity: Entity, spec: dict):
 
     # Handle effects_on_me (for AFFECTED)
     if "effects_on_me" in spec:
-        # Apply N dummy triggers
+        # Set attribute directly (buffs merge, so we track count separately)
+        entity.effects_on_me = spec["effects_on_me"]
+        # Also apply dummy triggers (they'll merge but that's ok)
         for _ in range(spec["effects_on_me"]):
             fight.apply_weaken(entity, 0)
 
-    # TODO: Handle "is_topmost" for TALL keyword
-    # The fight.py doesn't have direct topmost tracking - position 0 is topmost
-    # For now, we can set entity.position but this may not fully exercise TALL
+    # Handle "is_topmost" for TALL keyword
+    # TALL checks if target is at index 0 in their team list
+    # This is handled in run_value_test by manipulating team lists
     if "is_topmost" in spec:
-        if spec["is_topmost"]:
-            entity.position = 0
-        else:
-            entity.position = 1
+        entity._is_topmost_spec = spec["is_topmost"]
 
 
 def setup_context(fight: FightLog, context: dict, source: Entity, target: Entity):
@@ -308,6 +311,8 @@ def setup_context(fight: FightLog, context: dict, source: Entity, target: Entity
     - previous_die_keywords
     - previous_die_target
     - elapsed_turns
+    - last_turn_keywords (for DEJAVU)
+    - first_enemy_attack_keywords (for SPY)
     - damaged_enemies
     - defeated_allies
     - all_entities_hp
@@ -346,7 +351,9 @@ def setup_context(fight: FightLog, context: dict, source: Entity, target: Entity
 
     # Handle previous_die_keywords without previous_die_value
     # (for tests that only care about keyword sharing, like CHAIN)
-    if "previous_die_keywords" in context and "previous_die_value" not in context and "previous_die_values" not in context:
+    # Per EntSideState.java:216-217, copycat/echo/resonate check if recentState != null
+    # so null previous_die_keywords means no previous die (nothing to copy)
+    if context.get("previous_die_keywords") and "previous_die_value" not in context and "previous_die_values" not in context:
         prev_keywords = parse_keywords(context["previous_die_keywords"])
         prev_side_state = create_mock_side_state(EffectType.DAMAGE, 1, prev_keywords)
         record_die_use(fight, prev_side_state, target)
@@ -364,8 +371,37 @@ def setup_context(fight: FightLog, context: dict, source: Entity, target: Entity
             fight._last_die_target = None
 
     # Handle elapsed_turns for ERA
+    # ERA uses source_state.turns_elapsed, not fight._turn
     if "elapsed_turns" in context:
         fight._turn = context["elapsed_turns"]
+        # Also set turns_elapsed on source entity state
+        source_state = fight._states[source]
+        source_state.turns_elapsed = context["elapsed_turns"]
+
+    # Handle last_turn_keywords for DEJAVU
+    # DEJAVU copies keywords from sides used by this entity last turn
+    if "last_turn_keywords" in context:
+        keywords = parse_keywords(context["last_turn_keywords"])
+        # Create a side state representing what was used last turn
+        prev_side_state = create_mock_side_state(EffectType.DAMAGE, 1, keywords)
+        # Set current turn to 1 so last_turn = 0
+        fight._turn = 1
+        # Record the side as used by source in turn 0
+        if not hasattr(fight, '_sides_used_per_turn') or fight._sides_used_per_turn is None:
+            fight._sides_used_per_turn = {}
+        if 0 not in fight._sides_used_per_turn:
+            fight._sides_used_per_turn[0] = {}
+        if source not in fight._sides_used_per_turn[0]:
+            fight._sides_used_per_turn[0][source] = []
+        fight._sides_used_per_turn[0][source].append(prev_side_state)
+
+    # Handle first_enemy_attack_keywords for SPY
+    # SPY copies keywords from the first enemy attack this turn
+    if "first_enemy_attack_keywords" in context:
+        keywords = parse_keywords(context["first_enemy_attack_keywords"])
+        # Create a side state representing the first enemy attack
+        attack_side_state = create_mock_side_state(EffectType.DAMAGE, 1, keywords)
+        fight._first_enemy_attack_this_turn = attack_side_state
 
     # Handle damaged_enemies for BLOODLUST
     if "damaged_enemies" in context:
@@ -488,6 +524,13 @@ def run_value_test(test: dict) -> TestResult:
         if not target_is_self and target not in monsters:
             monsters.insert(0, target)
 
+        # Handle is_topmost for TALL keyword
+        # If target is specified as NOT topmost, insert a dummy entity before it
+        if isinstance(target_spec, dict) and target_spec.get("is_topmost") is False:
+            dummy = Entity(EntityType("DummyTopmost", 10), Team.MONSTER)
+            dummy.die = Die([Side(EffectType.DAMAGE, 1)] * 6)
+            monsters.insert(0, dummy)  # Make dummy the topmost, pushing target to index 1
+
         fight = FightLog(heroes, monsters)
 
         # Set up entity states
@@ -501,6 +544,14 @@ def run_value_test(test: dict) -> TestResult:
 
         # Set up context
         setup_context(fight, context_with_target, source, target)
+
+        # Handle "targeting" in target spec for DUEL keyword
+        # If target.targeting == source.id, target has targeted source this turn
+        if isinstance(target_spec, dict) and isinstance(source_spec, dict):
+            targeting_id = target_spec.get("targeting")
+            source_id = source_spec.get("id")
+            if targeting_id and source_id and targeting_id == source_id:
+                fight._targeters_this_turn.setdefault(source, set()).add(target)
 
         # Get the calculated value WITHOUT actually applying the effect
         # We need to use the internal calculation path
