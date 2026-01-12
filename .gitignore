@@ -33,3 +33,4 @@ combat/crash_logs/
 # OS
 .DS_Store
 Thumbs.db
+combat/triage_state.json
