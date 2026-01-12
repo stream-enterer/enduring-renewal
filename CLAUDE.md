@@ -1,99 +1,61 @@
 # Slice & Dice Combat Reference
 
-Building a new dice-based combat game using Slice & Dice as a reference implementation.
+Reverse-engineered combat system from Slice & Dice, used as behavioral reference for Sylvanshine (C++20 tactics game).
 
 ## Goal
 
-Use S&D's decompiled Java as a **behavioral reference** to understand how a complex keyword-based dice combat system works. Not a direct port - building a new game with clean architecture.
+Port S&D's keyword-based dice combat to Sylvanshine. Use `fight.py` as a **behavioral oracle** — not as code to copy, but as a reference for how keywords should behave.
 
-## What We Have
+See `docs/sylvanshine_integration.md` for the full integration map.
+
+## Structure
 
 ```
-decompiled/           # READ-ONLY Java source (ground truth for behavior)
+decompiled/           # READ-ONLY Java source (ground truth)
 combat/
 ├── src/fight.py      # Python rules engine (~4000 lines)
 ├── src/dice.py       # Keyword enum, Side/Die classes
-├── src/triggers.py   # Buff/debuff system
 ├── tools/            # Verification tools
 └── oracle_tests/     # Test cases from Java analysis
 ```
 
-### fight.py: Partial Oracle
+## fight.py: Partial Oracle
 
-`fight.py` is a reverse-engineered rules engine. It answers: "If I use die X on target Y, what happens?"
+Answers: "If I use die X with keywords Y on target Z, what happens?"
 
-**Verified** (via oracle tests):
-- Individual keyword value calculations (184/188 keywords)
+**Verified** (run `uv run python tools/verify_oracle.py`):
+- Individual keyword value calculations
 - Effect application (damage, heal, shield)
-- Targeting rules
-- Self-effects, multi-target effects
+- Targeting rules, self-effects, multi-target
 
-**Implemented but unverified**:
-- Full turn cycle
-- Buff duration/expiry
-- Multi-turn state
-- Keyword interactions (only tested in isolation)
+**Not verified**:
+- Full turn cycle, multi-turn state
+- Keyword interactions beyond isolated tests
+- Content (heroes, monsters, items)
 
-**Not implemented**:
-- Hero/monster content definitions
-- Items, tactics, spells with mana costs
-- Game modes, progression
-- Most of `gameplay/` packages
+## Key Files
 
-Run `uv run python tools/verify_oracle.py` for current verification status.
-
-## Architecture Note
-
-fight.py mirrors Java structure - large if/elif chains for 188 keywords. For a new game, prefer **data-driven architecture**:
-
-```python
-# Keywords as data, not code branches
-KEYWORDS = {
-    "engage": {"phase": "conditional", "type": "multiplier", "value": 2,
-               "condition": {"check": "target_hp_percent", "equals": 100}},
-}
-```
-
-This makes keywords testable in isolation and easy to add/remove.
-
-## Key Java Files
-
-| File | Contains |
-|------|----------|
+| File | Purpose |
+|------|---------|
 | `Keyword.java` | All 188 keywords, rules text |
-| `FightLog.java` | Combat state machine |
-| `EntState.java` | Entity state, keyword resolution |
-| `EntSideState.java` | Die side calculations |
-
-## Keyword Pipeline
-
-```
-1. Targeting validation  → eliminate, heavy, generous
-2. Roll phase            → cantrip, sticky
-3. Meta keywords         → copycat, pair, echo
-4. Conditional bonuses   → engage, pristine, bloodlust
-5. Main effect           → damage/heal/shield
-6. Post-processing       → growth, singleUse, manaGain
-7. Turn end              → poison, regen
-```
+| `EntState.java` | Keyword resolution logic |
+| `fight.py` | Python port (partial oracle) |
+| `docs/sylvanshine_integration.md` | Concept mapping to Sylvanshine |
 
 ## Commands
 
 ```bash
 cd combat
 
-# See what's verified vs unverified
+# Verification status
 uv run python tools/verify_oracle.py
 
-# Test robustness (no crashes)
+# Robustness (no crashes)
 uv run python tools/keyword_fuzzer.py pairs
-
-# Run unit tests
-uv run pytest tests/ -v
 ```
 
 ## Principles
 
-1. **Java is behavioral reference** - when unsure how something works, read Java
-2. **Spec as source** - oracle tests ARE the spec, no separate docs to rot
-3. **Verify before trusting** - fight.py has gaps; don't assume it's complete
+1. **Java is ground truth** — when behavior is unclear, read Java
+2. **fight.py is reference, not foundation** — has gaps, don't assume completeness
+3. **Data-driven for Sylvanshine** — don't port if/elif chains, build clean keyword engine
