@@ -1,94 +1,80 @@
-# Slice & Dice Combat Library
+# Slice & Dice Combat Reference
 
-Reverse engineering the combat system from Slice & Dice.
+Building a new dice-based combat game using Slice & Dice as a reference implementation.
 
-## Ground Truth
+## Goal
 
-**Java source is authoritative.** Python implementation must match it.
+Use S&D's decompiled Java as a **behavioral reference** to understand how a complex keyword-based dice combat system works. Not a direct port - building a new game with clean architecture.
+
+## What We Have
 
 ```
-decompiled/           # READ-ONLY Java reference
+decompiled/           # READ-ONLY Java source (ground truth for behavior)
 combat/
-├── src/              # Python implementation
-├── tests/            # Unit tests
-├── tools/            # Fuzzer, oracle verifier
-└── oracle_tests/     # LLM-generated test cases
+├── src/fight.py      # Python rules engine (~4000 lines)
+├── src/dice.py       # Keyword enum, Side/Die classes
+├── src/triggers.py   # Buff/debuff system
+├── tools/            # Verification tools
+└── oracle_tests/     # Test cases from Java analysis
 ```
 
-## Two Verification Layers
+### fight.py: Partial Oracle
 
-| Layer | Tool | Tests | Goal |
-|-------|------|-------|------|
-| **Robustness** | `keyword_fuzzer.py` | Keyword combinations | No crashes |
-| **Correctness** | `verify_oracle.py` | Value calculations | Match Java behavior |
+`fight.py` is a reverse-engineered rules engine. It answers: "If I use die X on target Y, what happens?"
 
-Both must pass. Fuzzer passing is necessary but not sufficient.
+**Verified** (via oracle tests):
+- Individual keyword value calculations (184/188 keywords)
+- Effect application (damage, heal, shield)
+- Targeting rules
+- Self-effects, multi-target effects
 
-## Current Task: Oracle Test Triage
+**Implemented but unverified**:
+- Full turn cycle
+- Buff duration/expiry
+- Multi-turn state
+- Keyword interactions (only tested in isolation)
 
-See **`docs/WORKFLOW.md`** for the complete workflow.
+**Not implemented**:
+- Hero/monster content definitions
+- Items, tactics, spells with mana costs
+- Game modes, progression
+- Most of `gameplay/` packages
 
-```bash
-cd combat
+Run `uv run python tools/verify_oracle.py` for current verification status.
 
-# Check triage progress
-uv run python tools/triage.py status
+## Architecture Note
 
-# Get next failure to investigate
-uv run python tools/triage.py next
+fight.py mirrors Java structure - large if/elif chains for 188 keywords. For a new game, prefer **data-driven architecture**:
 
-# Record verdict after investigation
-uv run python tools/triage.py set <test_id> <VERDICT> "<notes>" --citation "<file:line>"
-
-# Verify fix worked
-uv run python tools/triage.py verify <test_id>
+```python
+# Keywords as data, not code branches
+KEYWORDS = {
+    "engage": {"phase": "conditional", "type": "multiplier", "value": 2,
+               "condition": {"check": "target_hp_percent", "equals": 100}},
+}
 ```
 
-Priority order: P0 (errors) → P1 (harness gaps) → P2 (oracle fixes) → P3 (impl fixes)
+This makes keywords testable in isolation and easy to add/remove.
 
-## Fix Review Checklist
-
-Before committing any fix:
-
-1. **Is this mechanical or semantic?**
-   - Mechanical (null check, KeyError): fix directly
-   - Semantic (behavior decision): **check Java source first**
-
-2. **Cite Java source** for semantic fixes:
-   ```
-   Per FightLog.java:234, COPYCAT uses current die if no previous
-   ```
-
-3. **Avoid defensive hacks:**
-   - `if x is None: return` - What SHOULD happen?
-   - `try/except: pass` - Are you hiding a bug?
-
-## Reference Files
+## Key Java Files
 
 | File | Contains |
 |------|----------|
-| `Keyword.java` | Enum, rules text, condition types |
-| `FightLog.java` | Combat state, die resolution |
-| `EntState.java` | Entity state, condition checks |
-| `conditionalBonus/*.java` | Bonus calculations |
-
-Reading keyword definitions:
-```java
-// name(color, "rules", ConditionType, isSourceCheck)
-engage(..., StateConditionType.FullHP, false),  // check TARGET
-pristine(..., StateConditionType.FullHP, true), // check SOURCE
-```
+| `Keyword.java` | All 188 keywords, rules text |
+| `FightLog.java` | Combat state machine |
+| `EntState.java` | Entity state, keyword resolution |
+| `EntSideState.java` | Die side calculations |
 
 ## Keyword Pipeline
 
 ```
-1. Targeting validation  → eliminate, heavy, generous, scared, picky
+1. Targeting validation  → eliminate, heavy, generous
 2. Roll phase            → cantrip, sticky
 3. Meta keywords         → copycat, pair, echo
 4. Conditional bonuses   → engage, pristine, bloodlust
 5. Main effect           → damage/heal/shield
 6. Post-processing       → growth, singleUse, manaGain
-7. Turn end              → poison, regen, shifter
+7. Turn end              → poison, regen
 ```
 
 ## Commands
@@ -96,27 +82,18 @@ pristine(..., StateConditionType.FullHP, true), // check SOURCE
 ```bash
 cd combat
 
-# Oracle verification (correctness)
-uv run python tools/verify_oracle.py              # All tests
-uv run python tools/verify_oracle.py --filter X   # Specific test
-uv run python tools/verify_oracle.py -v           # Verbose
+# See what's verified vs unverified
+uv run python tools/verify_oracle.py
 
-# Fuzzer (robustness)
-uv run python tools/keyword_fuzzer.py pairs       # Test combinations
-uv run python tools/keyword_fuzzer.py recheck     # Re-test after fixes
-uv run python tools/keyword_fuzzer.py summary     # View crash list
+# Test robustness (no crashes)
+uv run python tools/keyword_fuzzer.py pairs
 
-# Unit tests
+# Run unit tests
 uv run pytest tests/ -v
-uv run pytest -k "engage"
 ```
 
-## State Tracking
+## Principles
 
-- `combat/triage_state.json` - Oracle test triage progress
-- `combat/KEYWORDS.json` - Implementation status per keyword
-- `combat/crash_logs/skip_list.json` - Known fuzzer crashes
-
-## Blocked Keywords
-
-These cannot be implemented (UI-only): `permissive`, `potion`, `removed`
+1. **Java is behavioral reference** - when unsure how something works, read Java
+2. **Spec as source** - oracle tests ARE the spec, no separate docs to rot
+3. **Verify before trusting** - fight.py has gaps; don't assume it's complete
