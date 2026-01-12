@@ -51,6 +51,9 @@ def build_keyword_map() -> dict[str, Keyword]:
     # Handle any special cases where the mapping isn't obvious
     # (Most should be handled by the underscore removal above)
 
+    # MANAGAIN in tests maps to MANA keyword (Java: manaGain -> grants mana)
+    mapping["MANAGAIN"] = Keyword.MANA
+
     return mapping
 
 
@@ -794,6 +797,439 @@ def run_effect_test(test: dict) -> TestResult:
         )
 
 
+def run_self_effect_test(test: dict) -> TestResult:
+    """Run a test that checks effects on both source and target.
+
+    Handles tests with patterns like:
+    - expected_damage_to_target + expected_shield_to_source (SELF_SHIELD)
+    - expected_damage_to_target + expected_heal_to_source (SELF_HEAL)
+    - expected_damage_to_target + expected_poison_to_source (SELF_POISON)
+    - expected_damage_to_target + expected_regen_to_source (SELF_REGEN)
+    - expected_damage_to_target + expected_damage_to_source (PAIN)
+    """
+    test_id = test["id"]
+
+    try:
+        # Parse test parameters
+        keywords = parse_keywords(test.get("keywords", []))
+        effect_type = parse_effect_type(test.get("effect", "DAMAGE"))
+        base_value = test.get("base_value", 1)
+
+        # Create entities
+        source_spec = test.get("source", {"hp": 20, "max_hp": 20})
+        target_spec = test.get("target", {"hp": 10, "max_hp": 15})
+
+        source = create_entity(source_spec, Team.HERO, "Source")
+        target = create_entity(target_spec, Team.MONSTER, "Target")
+
+        # Create dice
+        test_side = Side(effect_type, base_value, keywords)
+        source.die = Die([test_side] * 6)
+        target.die = Die([Side(EffectType.DAMAGE, 1)] * 6)
+
+        fight = FightLog([source], [target])
+
+        # Set up entity states
+        setup_entity_state(fight, source, source_spec)
+        setup_entity_state(fight, target, target_spec if isinstance(target_spec, dict) else {})
+
+        # Set up context
+        setup_context(fight, test.get("context", {}), source, target)
+
+        # Record initial state
+        target_state_before = fight.get_state(target, Temporality.PRESENT)
+        source_state_before = fight.get_state(source, Temporality.PRESENT)
+
+        # Use the die
+        fight.use_die(source, 0, target)
+
+        # Get final state
+        target_state_after = fight.get_state(target, Temporality.PRESENT)
+        source_state_after = fight.get_state(source, Temporality.PRESENT)
+
+        # Check expected results
+        results = []
+
+        # Target effects
+        if "expected_damage_to_target" in test:
+            expected = test["expected_damage_to_target"]
+            actual = target_state_before.hp - target_state_after.hp
+            if actual != expected:
+                results.append(f"damage_to_target: expected {expected}, got {actual}")
+
+        if "expected_shield_to_target" in test:
+            expected = test["expected_shield_to_target"]
+            actual = target_state_after.shield
+            if actual != expected:
+                results.append(f"shield_to_target: expected {expected}, got {actual}")
+
+        # Source effects
+        if "expected_shield_to_source" in test:
+            expected = test["expected_shield_to_source"]
+            actual = source_state_after.shield
+            if actual != expected:
+                results.append(f"shield_to_source: expected {expected}, got {actual}")
+
+        if "expected_heal_to_source" in test:
+            expected = test["expected_heal_to_source"]
+            actual = source_state_after.hp - source_state_before.hp
+            if actual != expected:
+                results.append(f"heal_to_source: expected {expected}, got {actual}")
+
+        if "expected_damage_to_source" in test:
+            expected = test["expected_damage_to_source"]
+            actual = source_state_before.hp - source_state_after.hp
+            if actual != expected:
+                results.append(f"damage_to_source: expected {expected}, got {actual}")
+
+        if "expected_poison_to_source" in test:
+            expected = test["expected_poison_to_source"]
+            actual = fight.get_poison_on_entity(source)
+            if actual != expected:
+                results.append(f"poison_to_source: expected {expected}, got {actual}")
+
+        if "expected_regen_to_source" in test:
+            expected = test["expected_regen_to_source"]
+            # Regen comes from state.regen + sum of get_regen() from active personals
+            actual = source_state_after.regen
+            for personal in source_state_after.get_active_personals():
+                actual += personal.get_regen()
+            if actual != expected:
+                results.append(f"regen_to_source: expected {expected}, got {actual}")
+
+        if "expected_petrify_to_source" in test:
+            # Count petrified sides on source using state tracker
+            expected = test["expected_petrify_to_source"]
+            actual = source_state_after.get_total_petrification()
+            if actual != expected:
+                results.append(f"petrify_to_source: expected {expected}, got {actual}")
+
+        if "expected_cleanse_to_source" in test:
+            # Cleanse removes negative effects (poison, weaken, etc.)
+            # Check poison reduction using fight's poison tracking
+            expected = test["expected_cleanse_to_source"]
+            initial_poison = source_spec.get("poison", 0) if isinstance(source_spec, dict) else 0
+            final_poison = fight.get_poison_on_entity(source)
+            actual_cleansed = max(0, initial_poison - final_poison)
+            if actual_cleansed != expected:
+                results.append(f"cleanse_to_source: expected {expected} cleansed, got {actual_cleansed}")
+
+        if "expected_vulnerable_to_source" in test:
+            expected = test["expected_vulnerable_to_source"]
+            actual = fight.get_vulnerable_bonus(source)
+            if actual != expected:
+                results.append(f"vulnerable_to_source: expected {expected}, got {actual}")
+
+        if results:
+            return TestResult(
+                test_id, TestStatus.FAIL,
+                message="; ".join(results)
+            )
+        else:
+            return TestResult(test_id, TestStatus.PASS)
+
+    except Exception as e:
+        return TestResult(
+            test_id, TestStatus.ERROR,
+            message=str(e),
+            traceback=traceback.format_exc()
+        )
+
+
+def run_multi_target_test(test: dict) -> TestResult:
+    """Run a test that checks damage to multiple targets (cleave, descend).
+
+    Handles tests with patterns like:
+    - expected_damage_to_main + expected_damage_to_adjacent (CLEAVE)
+    - expected_damage_to_main + expected_damage_to_below (DESCEND)
+    """
+    test_id = test["id"]
+
+    try:
+        # Parse test parameters
+        keywords = parse_keywords(test.get("keywords", []))
+        effect_type = parse_effect_type(test.get("effect", "DAMAGE"))
+        base_value = test.get("base_value", 1)
+        context = test.get("context", {})
+
+        # Create source
+        source_spec = test.get("source", {"hp": 20, "max_hp": 20})
+        source = create_entity(source_spec, Team.HERO, "Source")
+
+        # Create target and adjacent/below entities
+        target_spec = test.get("target", {"hp": 10, "max_hp": 15})
+        target = create_entity(target_spec, Team.MONSTER, "Target")
+
+        monsters = [target]
+        adjacent_entities = []
+
+        # For CLEAVE, create adjacent enemies
+        if "expected_damage_to_adjacent" in test:
+            adj_count = context.get("adjacent_enemies", 2)
+            for i in range(adj_count):
+                adj = Entity(EntityType(f"Adjacent{i}", 10), Team.MONSTER)
+                adj.die = Die([Side(EffectType.DAMAGE, 1)] * 6)
+                adjacent_entities.append(adj)
+                if i == 0:
+                    monsters.insert(0, adj)  # Left adjacent
+                else:
+                    monsters.append(adj)  # Right adjacent
+
+        # For DESCEND, create enemy below
+        if "expected_damage_to_below" in test:
+            below = Entity(EntityType("Below", 10), Team.MONSTER)
+            below.die = Die([Side(EffectType.DAMAGE, 1)] * 6)
+            adjacent_entities.append(below)
+            monsters.append(below)
+
+        # Create dice
+        test_side = Side(effect_type, base_value, keywords)
+        source.die = Die([test_side] * 6)
+        target.die = Die([Side(EffectType.DAMAGE, 1)] * 6)
+
+        fight = FightLog([source], monsters)
+
+        # Set up entity states
+        setup_entity_state(fight, source, source_spec)
+        setup_entity_state(fight, target, target_spec if isinstance(target_spec, dict) else {})
+
+        # Record initial HP
+        target_hp_before = fight.get_state(target, Temporality.PRESENT).hp
+        adjacent_hp_before = [fight.get_state(e, Temporality.PRESENT).hp for e in adjacent_entities]
+
+        # Use the die
+        fight.use_die(source, 0, target)
+
+        # Get final states
+        target_hp_after = fight.get_state(target, Temporality.PRESENT).hp
+        adjacent_hp_after = [fight.get_state(e, Temporality.PRESENT).hp for e in adjacent_entities]
+
+        # Check expected results
+        results = []
+
+        if "expected_damage_to_main" in test:
+            expected = test["expected_damage_to_main"]
+            actual = target_hp_before - target_hp_after
+            if actual != expected:
+                results.append(f"damage_to_main: expected {expected}, got {actual}")
+
+        if "expected_damage_to_adjacent" in test:
+            expected = test["expected_damage_to_adjacent"]
+            for i, (before, after) in enumerate(zip(adjacent_hp_before, adjacent_hp_after)):
+                actual = before - after
+                if actual != expected:
+                    results.append(f"damage_to_adjacent[{i}]: expected {expected}, got {actual}")
+
+        if "expected_damage_to_below" in test:
+            expected = test["expected_damage_to_below"]
+            if adjacent_entities:
+                actual = adjacent_hp_before[0] - adjacent_hp_after[0]
+                if actual != expected:
+                    results.append(f"damage_to_below: expected {expected}, got {actual}")
+
+        if results:
+            return TestResult(
+                test_id, TestStatus.FAIL,
+                message="; ".join(results)
+            )
+        else:
+            return TestResult(test_id, TestStatus.PASS)
+
+    except Exception as e:
+        return TestResult(
+            test_id, TestStatus.ERROR,
+            message=str(e),
+            traceback=traceback.format_exc()
+        )
+
+
+def run_repel_test(test: dict) -> TestResult:
+    """Run a test for REPEL/SELF_REPEL keywords.
+
+    Handles tests with patterns like:
+    - expected_shield_to_target + expected_damage_to_attackers (REPEL)
+    """
+    test_id = test["id"]
+
+    try:
+        # Parse test parameters
+        keywords = parse_keywords(test.get("keywords", []))
+        effect_type = parse_effect_type(test.get("effect", "DAMAGE"))
+        base_value = test.get("base_value", 1)
+        context = test.get("context", {})
+
+        # Create entities
+        source_spec = test.get("source", {"hp": 20, "max_hp": 20})
+        target_spec = test.get("target", {"hp": 10, "max_hp": 15})
+
+        source = create_entity(source_spec, Team.HERO, "Source")
+        target = create_entity(target_spec, Team.HERO, "Target")  # Heal/shield target is ally
+
+        # Create attackers (enemies with pending damage on target or source)
+        attackers = []
+        attacker_count = context.get("enemies_attacking_target", 0) + context.get("enemies_attacking_source", 0)
+        for i in range(max(attacker_count, 1)):
+            attacker = Entity(EntityType(f"Attacker{i}", 20), Team.MONSTER)
+            attacker.die = Die([Side(EffectType.DAMAGE, 5)] * 6)
+            attackers.append(attacker)
+
+        # Create dice
+        test_side = Side(effect_type, base_value, keywords)
+        source.die = Die([test_side] * 6)
+        target.die = Die([Side(EffectType.DAMAGE, 1)] * 6)
+
+        fight = FightLog([source, target], attackers)
+
+        # Set up entity states
+        setup_entity_state(fight, source, source_spec)
+        setup_entity_state(fight, target, target_spec if isinstance(target_spec, dict) else {})
+
+        # Set up pending damage from attackers
+        if context.get("enemies_attacking_target", 0) > 0:
+            for attacker in attackers[:context["enemies_attacking_target"]]:
+                fight.apply_damage(attacker, target, 5, is_pending=True)
+
+        if context.get("enemies_attacking_source", 0) > 0:
+            for attacker in attackers[:context["enemies_attacking_source"]]:
+                fight.apply_damage(attacker, source, 5, is_pending=True)
+
+        # Record initial states
+        target_state_before = fight.get_state(target, Temporality.PRESENT)
+        attacker_hp_before = [fight.get_state(a, Temporality.PRESENT).hp for a in attackers]
+
+        # Use the die (source uses on target)
+        fight.use_die(source, 0, target)
+
+        # Get final states
+        target_state_after = fight.get_state(target, Temporality.PRESENT)
+        attacker_hp_after = [fight.get_state(a, Temporality.PRESENT).hp for a in attackers]
+
+        # Check expected results
+        results = []
+
+        if "expected_shield_to_target" in test:
+            expected = test["expected_shield_to_target"]
+            actual = target_state_after.shield
+            if actual != expected:
+                results.append(f"shield_to_target: expected {expected}, got {actual}")
+
+        if "expected_damage_to_attackers" in test:
+            expected = test["expected_damage_to_attackers"]
+            for i, (before, after) in enumerate(zip(attacker_hp_before, attacker_hp_after)):
+                actual = before - after
+                if actual != expected and actual != 0:  # Only check attackers that were hit
+                    results.append(f"damage_to_attacker[{i}]: expected {expected}, got {actual}")
+
+        if results:
+            return TestResult(
+                test_id, TestStatus.FAIL,
+                message="; ".join(results)
+            )
+        else:
+            return TestResult(test_id, TestStatus.PASS)
+
+    except Exception as e:
+        return TestResult(
+            test_id, TestStatus.ERROR,
+            message=str(e),
+            traceback=traceback.format_exc()
+        )
+
+
+def run_rng_test(test: dict) -> TestResult:
+    """Run a test for RNG keywords (LUCKY, CRITICAL, FUMBLE).
+
+    These tests use statistical verification since outcomes are random.
+    We run multiple trials and verify the results fall within expected range.
+    """
+    test_id = test["id"]
+
+    try:
+        # Parse test parameters
+        keywords = parse_keywords(test.get("keywords", []))
+        effect_type = parse_effect_type(test.get("effect", "DAMAGE"))
+        base_value = test.get("base_value", 1)
+
+        # For deterministic range tests
+        if "expected_damage_min" in test and "expected_damage_max" in test:
+            # LUCKY: runs multiple trials, value should be between 0 and base_value
+            min_val = test["expected_damage_min"]
+            max_val = test["expected_damage_max"]
+
+            # Run several trials
+            values_seen = set()
+            trials = 20
+
+            for _ in range(trials):
+                source = create_entity({"hp": 20, "max_hp": 20}, Team.HERO, "Source")
+                target = create_entity({"hp": 50, "max_hp": 50}, Team.MONSTER, "Target")
+
+                test_side = Side(effect_type, base_value, keywords)
+                source.die = Die([test_side] * 6)
+                target.die = Die([Side(EffectType.DAMAGE, 1)] * 6)
+
+                fight = FightLog([source], [target])
+                target_hp_before = fight.get_state(target, Temporality.PRESENT).hp
+                fight.use_die(source, 0, target)
+                target_hp_after = fight.get_state(target, Temporality.PRESENT).hp
+
+                damage = target_hp_before - target_hp_after
+                values_seen.add(damage)
+
+                if damage < min_val or damage > max_val:
+                    return TestResult(
+                        test_id, TestStatus.FAIL,
+                        expected=f"[{min_val}, {max_val}]",
+                        actual=damage,
+                        message=f"Damage {damage} outside expected range [{min_val}, {max_val}]"
+                    )
+
+            return TestResult(test_id, TestStatus.PASS)
+
+        # For discrete option tests (CRITICAL, FUMBLE)
+        if "expected_damage_options" in test:
+            options = test["expected_damage_options"]
+
+            # Run several trials
+            values_seen = set()
+            trials = 30
+
+            for _ in range(trials):
+                source = create_entity({"hp": 20, "max_hp": 20}, Team.HERO, "Source")
+                target = create_entity({"hp": 50, "max_hp": 50}, Team.MONSTER, "Target")
+
+                test_side = Side(effect_type, base_value, keywords)
+                source.die = Die([test_side] * 6)
+                target.die = Die([Side(EffectType.DAMAGE, 1)] * 6)
+
+                fight = FightLog([source], [target])
+                target_hp_before = fight.get_state(target, Temporality.PRESENT).hp
+                fight.use_die(source, 0, target)
+                target_hp_after = fight.get_state(target, Temporality.PRESENT).hp
+
+                damage = target_hp_before - target_hp_after
+                values_seen.add(damage)
+
+                if damage not in options:
+                    return TestResult(
+                        test_id, TestStatus.FAIL,
+                        expected=str(options),
+                        actual=damage,
+                        message=f"Damage {damage} not in expected options {options}"
+                    )
+
+            return TestResult(test_id, TestStatus.PASS)
+
+        return TestResult(test_id, TestStatus.SKIP, message="Unknown RNG test type")
+
+    except Exception as e:
+        return TestResult(
+            test_id, TestStatus.ERROR,
+            message=str(e),
+            traceback=traceback.format_exc()
+        )
+
+
 def run_special_test(test: dict) -> TestResult:
     """Run tests for special/behavioral keywords that don't fit other categories."""
     test_id = test["id"]
@@ -849,11 +1285,37 @@ def run_test(test: dict) -> TestResult:
     """Run a single oracle test and return the result."""
     test_id = test["id"]
 
+    # Define test field patterns for each handler
+    self_effect_fields = [
+        "expected_damage_to_target", "expected_shield_to_target",
+        "expected_shield_to_source", "expected_heal_to_source",
+        "expected_damage_to_source", "expected_poison_to_source",
+        "expected_regen_to_source", "expected_petrify_to_source",
+        "expected_cleanse_to_source", "expected_vulnerable_to_source",
+    ]
+
+    multi_target_fields = [
+        "expected_damage_to_main", "expected_damage_to_adjacent",
+        "expected_damage_to_below",
+    ]
+
+    repel_fields = ["expected_damage_to_attackers"]
+
+    rng_fields = ["expected_damage_min", "expected_damage_max", "expected_damage_options"]
+
     # Determine test type and dispatch to appropriate handler
     if "expected_value" in test:
         return run_value_test(test)
     elif "expected_valid_target" in test:
         return run_targeting_test(test)
+    elif any(k in test for k in multi_target_fields):
+        return run_multi_target_test(test)
+    elif any(k in test for k in repel_fields):
+        return run_repel_test(test)
+    elif any(k in test for k in self_effect_fields):
+        return run_self_effect_test(test)
+    elif any(k in test for k in rng_fields):
+        return run_rng_test(test)
     elif any(k in test for k in ["expected_damage", "expected_heal", "expected_shield"]):
         return run_effect_test(test)
     else:

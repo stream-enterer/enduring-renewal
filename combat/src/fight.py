@@ -2027,9 +2027,9 @@ class FightLog:
         if calculated_side.has_keyword(Keyword.SELF_HEAL):
             self.apply_heal(entity, value)
 
-        # SELF_PETRIFY: petrify myself (one side)
+        # SELF_PETRIFY: petrify myself for N sides (per EntState.java:501)
         if calculated_side.has_keyword(Keyword.SELF_PETRIFY):
-            self.apply_petrify(entity, 1)
+            self.apply_petrify(entity, value)
 
         # === ADDITIONAL EFFECT KEYWORDS (apply extra effects to target) ===
         # HEAL: also heal target for N pips (in addition to main effect)
