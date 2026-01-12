@@ -1355,7 +1355,7 @@ def print_result(result: TestResult, verbose: bool = False):
                 print(f"      {line}")
 
 
-def print_summary(results: list[TestResult]):
+def print_summary(results: list[TestResult], tests: list[dict]):
     """Print a summary of all test results."""
     total = len(results)
     passed = sum(1 for r in results if r.status == TestStatus.PASS)
@@ -1367,9 +1367,9 @@ def print_summary(results: list[TestResult]):
     print("SUMMARY")
     print("=" * 60)
     print(f"Total:   {total}")
-    print(f"Passed:  \033[92m{passed}\033[0m")
+    print(f"Passed:  \033[92m{passed}\033[0m (verified)")
     print(f"Failed:  \033[91m{failed}\033[0m")
-    print(f"Skipped: \033[93m{skipped}\033[0m")
+    print(f"Skipped: \033[93m{skipped}\033[0m (unverified)")
     print(f"Errors:  \033[91m{errors}\033[0m")
 
     if failed > 0 or errors > 0:
@@ -1377,6 +1377,28 @@ def print_summary(results: list[TestResult]):
         for r in results:
             if r.status in (TestStatus.FAIL, TestStatus.ERROR):
                 print(f"  - {r.test_id}")
+
+    if skipped > 0:
+        # Build test lookup
+        test_lookup = {t["id"]: t for t in tests}
+
+        # Collect unverified keywords from skipped tests
+        unverified_keywords = set()
+        skipped_details = []
+        for r in results:
+            if r.status == TestStatus.SKIP:
+                test = test_lookup.get(r.test_id, {})
+                keywords = test.get("keywords", [])
+                unverified_keywords.update(keywords)
+                skipped_details.append((r.test_id, r.message, keywords))
+
+        print(f"\nUnverified keywords ({len(unverified_keywords)}):")
+        print(f"  {', '.join(sorted(unverified_keywords))}")
+
+        print(f"\nSkipped tests ({skipped}):")
+        for test_id, reason, keywords in skipped_details:
+            kw_str = f" [{', '.join(keywords)}]" if keywords else ""
+            print(f"  - {test_id}: {reason}{kw_str}")
 
 
 # =============================================================================
@@ -1425,7 +1447,7 @@ def main():
             break
 
     # Print summary
-    print_summary(results)
+    print_summary(results, tests)
 
     # Exit with appropriate code
     failed_count = sum(1 for r in results if r.status in (TestStatus.FAIL, TestStatus.ERROR))
